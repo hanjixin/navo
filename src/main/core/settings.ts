@@ -14,7 +14,7 @@ const DEFAULTS: Settings = {
   onboarded: false,
   mcpServer: { enabled: false, port: 38800, allowRun: true, allowWrite: false, allowMemory: false },
   files: { defaultEngine: 'builtin', ocr: true },
-  memory: { enabled: true, autoLearn: true, review: false, daily: true },
+  memory: { enabled: true, autoLearn: true, review: false, daily: true, modelId: null },
   langfuse: {
     enabled: false,
     baseUrl: 'https://cloud.langfuse.com',

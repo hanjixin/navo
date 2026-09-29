@@ -66,13 +66,18 @@ export class MemoryIndex {
     for (const it of this.items) for (const t of new Set([...it.title, ...it.body])) this.df.set(t, (this.df.get(t) ?? 0) + 1)
   }
 
+  /**
+   * ≥ 1 for every token, higher for rarer ones. (A plain log(N/df) collapses when there are only a
+   * handful of memories — exactly when a new user has one or two — and nothing clears the threshold.)
+   */
   private idf(t: string): number {
-    return Math.log(1 + this.items.length / (1 + (this.df.get(t) ?? 0)))
+    return 1 + Math.log((this.items.length + 1) / ((this.df.get(t) ?? 0) + 1))
   }
 
   /**
    * Memories relevant to `query`, best first. The score is the idf mass of shared tokens (title
-   * counts double); `minScore` keeps one shared common token from pulling in unrelated memories.
+   * counts double); `minScore` (default: more than one shared body token) keeps a single coincidental
+   * token from pulling in unrelated memories.
    */
   search(query: string, opts: { kinds?: MemoryKind[]; limit?: number; minScore?: number } = {}): { m: Memory; score: number }[] {
     const q = tokens(query)

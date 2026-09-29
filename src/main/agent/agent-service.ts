@@ -249,11 +249,13 @@ class AgentService {
     try {
       const allowed = new Set(this.allowList(threadId))
       const resolved = resolveModel(thread.modelId)
-      // memory: picked from the user's message and the site the conversation's tab is on
+      // memory: picked from the conversation (title, the user's previous two messages and this one —
+      // "那它用什么打包" alone says nothing) and the site the conversation's tab is on
       const tab = sessions.peek(threadId)
+      const earlier = input.kind === 'message' ? (await this.recentUserTexts(threadId, 2)).map((t) => t.slice(0, 500)) : []
       const mem = memory.forRun(
         threadId,
-        input.kind === 'message' ? `${thread.title}\n${input.text}` : thread.title,
+        [thread.title, ...earlier, input.kind === 'message' ? input.text : ''].join('\n'),
         tab && !tab.isDestroyed() ? tab.getURL() : null,
       )
       if (input.kind === 'message' && mem?.refs.length) input = { ...input, memories: mem.refs }

@@ -35,6 +35,7 @@ import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { KIND_HINT, KIND_LABEL, useMemories } from '@/stores/memory'
+import { useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
 
 const KINDS: MemoryKind[] = ['profile', 'preference', 'knowledge', 'site']
@@ -131,6 +132,10 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
   const { settings, update } = useSettings()
   const cfg = settings!.memory
   const [confirmClear, setConfirmClear] = useState(false)
+  const { models, load: loadModels } = useModels()
+  useEffect(() => {
+    void loadModels()
+  }, [loadModels])
   const row = (label: string, hint: string, value: boolean, onChange: (v: boolean) => void, disabled = false) => (
     <label className={cn('flex items-center justify-between gap-4 text-sm', disabled && 'opacity-60')}>
       <span>
@@ -173,6 +178,19 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
             (v) => void update({ memory: { ...cfg, review: v } }),
             !cfg.enabled || !cfg.autoLearn,
           )}
+          <div className={cn('flex items-center justify-between gap-4 text-sm', (!cfg.enabled || (!cfg.autoLearn && !cfg.daily)) && 'opacity-60')}>
+            <span>
+              记忆使用的模型
+              <span className="block text-xs text-muted-foreground">自动学习和每日记录各回复一次后台调用，可以换成更便宜的模型</span>
+            </span>
+            <Select
+              className="w-48"
+              disabled={!cfg.enabled || (!cfg.autoLearn && !cfg.daily)}
+              value={cfg.modelId ?? '__thread__'}
+              onChange={(v) => void update({ memory: { ...cfg, modelId: v === '__thread__' ? null : v } })}
+              options={[{ value: '__thread__', label: '跟随对话' }, ...(models ?? []).map((m) => ({ value: m.id, label: m.displayName || m.model }))]}
+            />
+          </div>
           <div className="flex items-center justify-between gap-4 border-t border-border pt-4 text-sm">
             <span>
               清空全部记忆

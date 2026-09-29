@@ -113,6 +113,8 @@ export function startMock(port = 38999) {
       const journal = /\[journal:([^\]]+)\]/.exec(said)?.[1] ?? null
       return say([JSON.stringify({ journal, ops })])
     }
+    // plain pleasantry: just answer
+    if (/^谢谢[!！。]?$/.test(userText.trim())) return say(['不客气！'])
     // [poisontool] a page tricks the agent into memory calls with made-up evidence
     if (userText.includes('[poisontool]')) {
       if (!toolMsgs.length)

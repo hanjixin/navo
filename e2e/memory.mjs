@@ -230,6 +230,31 @@ try {
   await runAndWait(tv.id, '[plain] 可视化用的日记 [journal:用户比较了三家云服务的报价。]')
   await sleep(1200)
 
+  // ---------- recall follows the conversation, not just the last message
+  const tc = await api('threads.create', m.id)
+  await api('threads.rename', tc.id, '杂项')
+  await runAndWait(tc.id, '[plain] 说说 Electron 桌面应用')
+  await runAndWait(tc.id, '[plain] 那它一般用什么打包')
+  ok(
+    systemOf(mock.requests.filter((r) => JSON.stringify(r.messages).includes('那它一般用什么打包')).at(-1)).includes('Electron 桌面 Agent'),
+    'a follow-up without keywords still recalls what the conversation is about',
+  )
+
+  // ---------- memory pass: skipped for pleasantries, can use its own (cheaper) model
+  const ts = await api('threads.create', m.id)
+  const beforeS = extractionCalls()
+  await runAndWait(ts.id, '谢谢')
+  await sleep(1200)
+  ok(extractionCalls() === beforeS, 'no background memory call for "谢谢"')
+  const cheap = await api('models.save', { providerId: p.id, model: 'mock-cheap', displayName: 'Cheap', supportsTools: true, supportsVision: false })
+  const sm = await api('settings.get')
+  await api('settings.set', { memory: { ...sm.memory, modelId: cheap.id } })
+  const tm = await api('threads.create', m.id)
+  await runAndWait(tm.id, '[plain] 用便宜模型整理 [journal:用户测试了记忆模型。]')
+  await sleep(1200)
+  ok(mock.extractions.at(-1)?.model === 'mock-cheap' && agentReq('用便宜模型整理').model === 'mock-1', 'the memory pass runs on the model chosen for memory')
+  await api('settings.set', { memory: { ...sm.memory, modelId: null } })
+
   // ---------- UI (let toasts from the steps above go away first)
   await page.waitForSelector('[data-sonner-toast]', { state: 'detached', timeout: 10000 }).catch(() => null)
   await page.evaluate(() => (window.location.hash = '#/memory'))

@@ -7,7 +7,7 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { paths } from '../core/paths'
 import { getSettings } from '../core/settings'
-import { createChatModel } from '../models/registry'
+import { createChatModel, models } from '../models/registry'
 import { extractionMessages, parseJournal, parseOps, type Exchange } from './extract'
 import { findDuplicate, findSecret, hostOf, KIND_LABEL, MemoryIndex, memoryPrompt, normalizeScope, quotedFrom, siteMatches } from './recall'
 
@@ -47,6 +47,11 @@ const toMemory = (r: Row): Memory => ({
 })
 
 type Source = { threadId: string; title: string } | null
+
+const SMALL_TALK =
+  /^(谢谢(你|啦)?|多谢|感谢|好的?|好滴|嗯+|哦+|噢+|ok(ay)?|thanks?( you)?|thx|收到|明白了?|知道了|了解|行|可以|没问题|再见|拜拜|bye|hi|hello|hey|你好|您好|在吗|早上好|晚安|哈+|👍|🙏)[\s!！。.~～,，]*$/i
+/** A message that is only a pleasantry ("谢谢", "好的", "ok") — not worth a memory pass. */
+export const isSmallTalk = (text: string) => SMALL_TALK.test(text.trim())
 
 interface DayRow {
   day: string
@@ -311,14 +316,17 @@ class MemoryService {
     const s = getSettings().memory
     const wantOps = s.autoLearn && !opts.journalOnly
     if ((!wantOps && !s.daily) || !this.threadEnabled(threadId) || this.learning.has(threadId)) return null
-    if (ex.userText.trim().length < 2) return null
+    // nothing to learn from pleasantries: skip the model call entirely
+    if (ex.userText.trim().length < 2 || (isSmallTalk(ex.userText) && !ex.actions.length)) return null
     this.learning.add(threadId)
     try {
       const all = this.list()
       const related = new MemoryIndex(all).search(`${ex.userText}\n${ex.reply.slice(0, 800)}`, { limit: 12, minScore: 0.5 }).map((x) => x.m)
       const today = localDay()
       const todayLog = this.dayEntry(today, threadId)?.text ?? null
-      const res = await createChatModel(modelId).invoke(extractionMessages(wantOps ? related : [], { ...ex, todayLog }))
+      // a cheaper model can be set for this pass; fall back to the conversation's if it was removed
+      const model = s.modelId && models.get(s.modelId) ? s.modelId : modelId
+      const res = await createChatModel(model).invoke(extractionMessages(wantOps ? related : [], { ...ex, todayLog }))
       const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       const journal = s.daily ? parseJournal(text) : null
       if (journal && !findSecret(journal)) this.writeDay(today, threadId, threadTitle, journal)

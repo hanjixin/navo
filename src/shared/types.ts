@@ -245,6 +245,8 @@ export interface MemorySettings {
   review: boolean
   /** keep a daily journal: one line per conversation per day */
   daily: boolean
+  /** model for the background memory pass; null = the conversation's model */
+  modelId: string | null
 }
 
 export interface MemoryLearned {

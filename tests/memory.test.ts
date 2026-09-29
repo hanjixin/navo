@@ -55,6 +55,14 @@ describe('MemoryIndex.search', () => {
   })
 })
 
+describe('MemoryIndex with very few memories', () => {
+  it('still recalls a matching memory when it is the only one', () => {
+    const only = new MemoryIndex([mem({ title: '项目', content: 'Navo 是用户正在做的 Electron 桌面 Agent。' })])
+    expect(only.search('说说 Electron 桌面应用')[0]?.m.title).toBe('项目')
+    expect(only.search('今天吃什么')).toEqual([])
+  })
+})
+
 describe('dedupe', () => {
   const existing = [mem({ kind: 'preference', title: '回答风格', content: '用户希望回答简洁，先给结论。' })]
   it('same title → same memory', () => {
