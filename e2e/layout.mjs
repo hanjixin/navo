@@ -43,9 +43,7 @@ try {
   const box2 = await (await page.$('[role=separator]')).boundingBox()
   await page.mouse.move(box2.x + 3, box2.y + 300)
   await page.mouse.down()
-  // the native page view is swapped for a snapshot first (one IPC round-trip); moving over it earlier
-  // would hand the pointer to the page instead of the gutter
-  for (let i = 0; i < 20 && (await nativeBounds()) !== null; i++) await page.waitForTimeout(50)
+  // no waiting: the native view is hidden on pointerdown, so moving straight over it keeps the drag
   await page.mouse.move(1470, box2.y + 300, { steps: 10 })
   // poll instead of fixed sleeps: under full-suite load the UI can take a few hundred ms longer
   const hint = await page.waitForSelector('text=松开以收起浏览器', { timeout: 2000 }).catch(() => null)

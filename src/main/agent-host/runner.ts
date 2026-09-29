@@ -152,7 +152,9 @@ export class Runner {
               name: 'browser-operator',
               description: '擅长在内置浏览器中完成多步骤网页任务（搜索、填表、翻页采集、下单前准备等）。传入清晰的目标与完成标准，它会返回结果摘要。',
               systemPrompt:
-                '你是浏览器操作专家。使用 browser_* 工具以及匹配的 plugin_* / macro_* 工具完成任务。先用 browser_snapshot 了解页面；操作类工具会返回页面变化，无需每步都重新快照。完成后用简洁的中文总结结果与关键数据；遇到登录/验证码/不可逆操作时停止并说明原因。',
+                '你是浏览器操作专家。使用 browser_* 工具以及匹配的 plugin_* / macro_* 工具完成任务。先用 browser_snapshot 了解页面；操作类工具会返回页面变化，无需每步都重新快照。完成后用简洁的中文总结结果与关键数据；遇到登录/验证码/不可逆操作时停止并说明原因。' +
+                // the user's preferences and site experience apply to the subagent's work too
+                (req.memoryPrompt ? `\n\n## 关于用户的记忆（遵循其中的偏好）\n${req.memoryPrompt}` : ''),
               tools: tools.web,
               interruptOn,
               middleware: [loopGuard(), trimOldToolResults()],

@@ -266,6 +266,7 @@ class AgentService {
         fromCheckpointId,
         model: resolved,
         systemPrompt: systemPrompt(tab, mem ? mem.prompt : null),
+        memoryPrompt: mem?.prompt || undefined,
         tools: describeTools(entries),
         interruptOn: opts.headless ? [] : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE])].filter((t) => !allowed.has(t)),
         browserSubagent: settings.browserSubagent,

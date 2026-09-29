@@ -36,6 +36,9 @@ function uniquePath(dir: string, name: string): string {
   return p
 }
 
+const PREVIEW_FAST = 500
+const PREVIEW_SLOW = 2000
+
 class BrowserService {
   private win: BrowserWindow | null = null
   private tabs = new Map<number, Tab>()
@@ -44,8 +47,11 @@ class BrowserService {
   private bounds: Bounds | null = null
   private attached = false
   /** mini preview while the panel is collapsed: the page stays attached just outside the window */
+  private previewing = false
   private previewTimer: NodeJS.Timeout | null = null
   private previewLast = ''
+  /** capture interval: 0.5s while the page changes, backing off to 2s while it stays the same */
+  private previewDelay = PREVIEW_FAST
   private pageSize = { width: 1280, height: 800 }
   /** Tabs currently driven by an agent run */
   private controlled = new Set<number>()
@@ -118,6 +124,7 @@ class BrowserService {
 
   /** Debounced state push to the renderer. */
   changed(): void {
+    this.previewSoon()
     if (this.emitTimer) return
     this.emitTimer = setTimeout(() => {
       this.emitTimer = null
@@ -271,7 +278,7 @@ class BrowserService {
     if (!this.win || this.activeId == null) return
     const t = this.tabs.get(this.activeId)!
     if (!this.bounds || this.bounds.width < 10 || this.bounds.height < 10) {
-      if (this.previewTimer) {
+      if (this.previewing) {
         // Keep rendering at the usual size, off-screen: a detached view stops producing frames and a
         // tiny one would switch sites to their mobile layout under the agent.
         if (!this.attached) this.win.contentView.addChildView(t.view)
@@ -332,42 +339,65 @@ class BrowserService {
 
   /** Streams small frames of the active tab (`browser.preview`) while the mini window is shown. */
   setPreview(on: boolean): void {
-    if (on === !!this.previewTimer) return
+    if (on === this.previewing) return
+    this.previewing = on
     if (on) {
       this.previewLast = ''
-      this.previewTimer = setInterval(() => void this.previewFrame(), 500)
+      this.previewDelay = PREVIEW_FAST
       this.layout()
-      void this.previewFrame()
+      void this.previewLoop()
     } else {
-      clearInterval(this.previewTimer!)
+      if (this.previewTimer) clearTimeout(this.previewTimer)
       this.previewTimer = null
       this.layout()
     }
+  }
+
+  /**
+   * Frame subscriptions don't fire for an off-screen view, so the preview polls — adaptively: an
+   * unchanged page is captured less and less often, and any tab activity (navigation, loading, an
+   * agent taking over) brings the pace back up.
+   */
+  private async previewLoop(): Promise<void> {
+    if (!this.previewing) return
+    const changed = await this.previewFrame()
+    this.previewDelay = changed ? PREVIEW_FAST : Math.min(this.previewDelay * 2, PREVIEW_SLOW)
+    if (this.previewing) this.previewTimer = setTimeout(() => void this.previewLoop(), this.previewDelay)
+  }
+
+  /** Something happened in the browser: look again soon. */
+  private previewSoon(): void {
+    if (!this.previewing || this.previewDelay === PREVIEW_FAST) return
+    this.previewDelay = PREVIEW_FAST
+    if (this.previewTimer) clearTimeout(this.previewTimer)
+    this.previewTimer = setTimeout(() => void this.previewLoop(), 150)
   }
 
   /** Collapsed panel + mini window: nobody looks at the tab strip, so show the agent's tab. */
   private followAgent(): void {
     const id = this.lastControlled
     // only while an agent is still driving that tab; finished runs don't steal the active tab
-    if (!this.previewTimer || this.bounds || id == null || id === this.activeId || !this.tabs.has(id) || !this.controlled.has(id)) return
+    if (!this.previewing || this.bounds || id == null || id === this.activeId || !this.tabs.has(id) || !this.controlled.has(id)) return
     this.activate(id)
   }
 
-  private async previewFrame(): Promise<void> {
+  /** Captures the active tab and sends it if it changed; returns whether it did. */
+  private async previewFrame(): Promise<boolean> {
     this.followAgent()
     const id = this.activeId
     const t = id != null ? this.tabs.get(id) : null
-    if (!t || !this.attached || t.view.webContents.isDestroyed()) return
+    if (!t || !this.attached || t.view.webContents.isDestroyed()) return false
     try {
       const img = await t.view.webContents.capturePage()
-      if (img.isEmpty() || !this.previewTimer) return
+      if (img.isEmpty() || !this.previewing) return false
       const jpeg = img.resize({ width: 560, quality: 'good' }).toJPEG(72)
       const key = `${id}:${createHash('md5').update(jpeg).digest('hex')}`
-      if (key === this.previewLast) return // unchanged page: nothing to send
+      if (key === this.previewLast) return false // unchanged page: nothing to send
       this.previewLast = key
       emit('browser.preview', { tabId: id!, image: `data:image/jpeg;base64,${jpeg.toString('base64')}` })
+      return true
     } catch {
-      /* page is navigating; next tick */
+      return false // page is navigating; next tick
     }
   }
 

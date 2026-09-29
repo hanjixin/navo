@@ -6,7 +6,6 @@
 //   [navhold:X] open a page, then stay running ~8s
 //   [memtool]   memory_save a site memory · [nav:URL] open URL · [learn] in the text → extraction returns memories
 //   [subagent]  delegate to browser-operator via `task`; the subagent navigates and answers
-//   [memory]    write /memories/prefs.md then answer
 //   [mcp]       call the first tool whose name contains "add", then answer with its result
 import { createServer } from 'node:http'
 
@@ -219,10 +218,6 @@ export function startMock(port = 38999) {
     if (userText.includes('[subagent]')) {
       if (!toolMsgs.length) return call('task', { description: '打开 mock 页面并报告标题', subagent_type: 'browser-operator' })
       return say(['子代理已完成：', text(toolMsgs.at(-1).content).slice(0, 60)])
-    }
-    if (userText.includes('[memory]')) {
-      if (!toolMsgs.length) return call('write_file', { file_path: '/memories/prefs.md', content: '# 偏好\n- 喜欢简洁回答\n' })
-      return say(['已记住。'])
     }
     if (userText.includes('[mcp]')) {
       const t = json.tools?.find((x) => x.function.name.includes('add'))

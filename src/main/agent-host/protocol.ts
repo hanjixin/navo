@@ -38,6 +38,8 @@ export interface RunRequest {
   /** Tool names that pause for human approval */
   interruptOn: string[]
   browserSubagent: boolean
+  /** the run's memory section, also given to the browser-operator subagent */
+  memoryPrompt?: string
   mounts: { id: string; root: string; allowed: string[] }[]
   paths: { skills: string; workspace: string; uploads: string }
   devMode: boolean

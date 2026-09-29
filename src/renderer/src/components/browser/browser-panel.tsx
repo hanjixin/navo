@@ -46,7 +46,8 @@ export function BrowserPanel() {
     let cancelled = false
     if (wantHidden) {
       // hide promptly even if capturing is slow (e.g. mid page load); the still frame fills in when ready
-      const timer = setTimeout(() => !cancelled && setHidden(true), 250)
+      // (a drag has already hidden it and shows the primed frame)
+      const timer = setTimeout(() => !cancelled && setHidden(true), dragging ? 0 : 250)
       void call('browser.capture')
         .catch(() => null)
         .then((img) => {
@@ -61,7 +62,7 @@ export function BrowserPanel() {
     return () => {
       cancelled = true
     }
-  }, [wantHidden])
+  }, [wantHidden, dragging])
 
   // Keep the native WebContentsView glued to the placeholder element.
   useLayoutEffect(() => {
@@ -84,10 +85,21 @@ export function BrowserPanel() {
 
   useEffect(() => () => void call('browser.setBounds', null), [])
 
+  // A still frame taken while the pointer rests on the gutter, so a drag can hide the native view at
+  // once: while it is up, it swallows pointer events and a quick drag would stop over the page.
+  const primed = useRef<string | null>(null)
+  const primeSnapshot = () => {
+    void call('browser.capture')
+      .catch(() => null)
+      .then((img) => (primed.current = img))
+  }
   const onHandleDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
+    void call('browser.setBounds', null)
+    setSnapshot(primed.current)
+    setHidden(true)
     setDragging(true)
   }
   const onHandleMove = (e: PointerEvent<HTMLDivElement>) => {
@@ -149,6 +161,7 @@ export function BrowserPanel() {
         tabIndex={0}
         title="拖动调整宽度 · 双击恢复默认"
         className="group relative flex w-[6px] shrink-0 cursor-col-resize justify-center bg-background outline-none"
+        onPointerEnter={primeSnapshot}
         onPointerDown={onHandleDown}
         onPointerMove={onHandleMove}
         onPointerUp={onHandleUp}

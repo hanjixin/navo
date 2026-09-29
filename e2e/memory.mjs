@@ -230,6 +230,12 @@ try {
   await runAndWait(tv.id, '[plain] 可视化用的日记 [journal:用户比较了三家云服务的报价。]')
   await sleep(1200)
 
+  // ---------- the browser subagent works with the user's preferences too
+  const tsub = await api('threads.create', m.id)
+  await runAndWait(tsub.id, '[subagent] 帮我打开测试页')
+  const subReq = mock.requests.find((r) => JSON.stringify(r.messages[0].content).includes('浏览器操作专家'))
+  ok(!!subReq && JSON.stringify(subReq.messages[0].content).includes('默认使用中文回复'), 'browser-operator subagent gets the memory section')
+
   // ---------- recall follows the conversation, not just the last message
   const tc = await api('threads.create', m.id)
   await api('threads.rename', tc.id, '杂项')
