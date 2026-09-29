@@ -1,0 +1,44 @@
+appId: com.navo.app
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+productName: Navo
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - '**/*.node'
+  # tesseract.js starts worker_threads from script files and loads wasm next to them
+  - '**/node_modules/tesseract.js/**'
+  - '**/node_modules/tesseract.js-core/**'
+extraResources:
+  # pdf.js CMaps (required for Chinese/Japanese/Korean PDFs) and standard font data
+  - from: node_modules/pdfjs-dist/cmaps
+    to: pdfjs/cmaps
+  - from: node_modules/pdfjs-dist/standard_fonts
+    to: pdfjs/standard_fonts
+  # OCR language data (Chinese simplified + English), so OCR works offline
+  - from: node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int
+    to: tessdata
+  - from: node_modules/@tesseract.js-data/eng/4.0.0_best_int
+    to: tessdata
+protocols:
+  - name: Navo
+    schemes: [navo]
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # set to true once APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID secrets are configured
+  notarize: false
+win:
+  target: nsis
+linux:
+  target: AppImage
+# publishing is configured by .github/workflows/release.yml (-c.publish.*), so local `pnpm dist` never uploads

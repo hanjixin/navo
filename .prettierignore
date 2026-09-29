@@ -1,0 +1,7 @@
+out
+release
+build
+coverage
+node_modules
+pnpm-lock.yaml
+resources/*.png
