@@ -1,0 +1,65 @@
+import type { ConnectorDef } from '@shared/types'
+
+/** Built-in connectors. Each is backed by a remote MCP server; auth is OAuth (MCP auth spec w/ dynamic registration) or a bearer token. */
+export const CATALOG: ConnectorDef[] = [
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: '读取仓库、Issue、PR，搜索代码，创建评论。',
+    icon: 'github',
+    auth: 'token',
+    mcpUrl: 'https://api.githubcopilot.com/mcp/',
+    tokenLabel: 'Personal Access Token',
+    tokenHelp: 'https://github.com/settings/personal-access-tokens',
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    description: '搜索与读取页面、数据库，创建和更新内容。',
+    icon: 'notebook',
+    auth: 'oauth',
+    mcpUrl: 'https://mcp.notion.com/mcp',
+  },
+  {
+    id: 'linear',
+    name: 'Linear',
+    description: '查询和创建 Issue、项目与评论。',
+    icon: 'list-checks',
+    auth: 'oauth',
+    mcpUrl: 'https://mcp.linear.app/mcp',
+  },
+  {
+    id: 'sentry',
+    name: 'Sentry',
+    description: '查看错误事件、Issue 详情与发布信息。',
+    icon: 'bug',
+    auth: 'oauth',
+    mcpUrl: 'https://mcp.sentry.dev/mcp',
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    description: '搜索模型、数据集与 Spaces。',
+    icon: 'boxes',
+    auth: 'token',
+    mcpUrl: 'https://huggingface.co/mcp',
+    tokenLabel: 'Access Token',
+    tokenHelp: 'https://huggingface.co/settings/tokens',
+  },
+  {
+    id: 'context7',
+    name: 'Context7',
+    description: '获取最新的开源库文档与代码示例。',
+    icon: 'book-open',
+    auth: 'none',
+    mcpUrl: 'https://mcp.context7.com/mcp',
+  },
+  {
+    id: 'deepwiki',
+    name: 'DeepWiki',
+    description: '针对 GitHub 仓库的文档问答。',
+    icon: 'library',
+    auth: 'none',
+    mcpUrl: 'https://mcp.deepwiki.com/mcp',
+  },
+]
