@@ -88,3 +88,22 @@ agentPlugin.register('list_stories', async ({ limit = 30 } = {}) =>
 开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试；推送 `v*` 标签触发三平台发布。
 
 E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。
+
+真实模型评测（使用你「模型」页里的默认模型，在配置的临时副本上运行，会产生少量调用费用）：
+
+- `pnpm eval:memory`：自动学习记忆的质量（该记的、不该记的、投毒、更新/删除）。
+- `pnpm eval:agent`：7 个浏览器任务（比价、填表、翻页、弹窗、长文、下拉、表格），在本地测试网站上运行。
+
+## 发布
+
+`pnpm dist` 在本机打包；推送 `v*` 标签由 `.github/workflows/release.yml` 在三个平台构建并创建 GitHub 草稿发布。
+
+macOS 要让别人能正常打开，需要签名和公证：
+
+| 用途                 | 需要                                                                                          | 本机                                                                    | GitHub Secrets                             |
+| -------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
+| 签名                 | Apple 开发者计划的 **Developer ID Application** 证书（「Apple Development」证书只能本机调试） | 装进钥匙串即可                                                          | `MAC_CERT_P12_BASE64`、`MAC_CERT_PASSWORD` |
+| 公证                 | Apple ID + App 专用密码 + Team ID                                                             | 设置环境变量 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` | 同名 Secrets                               |
+| Windows 签名（可选） | 代码签名证书                                                                                  | —                                                                       | `WIN_CERT_PFX_BASE64`、`WIN_CERT_PASSWORD` |
+
+没有配置时照常打包，只是跳过签名 / 公证（构建日志会提示）；这样的安装包在别的 Mac 上需要右键「打开」才能运行。
