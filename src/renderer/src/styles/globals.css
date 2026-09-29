@@ -1,0 +1,362 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Brand: #4474F2 (Navo blue). Restrained, low-saturation palette;
+ * surfaces are separated by 1px borders rather than shadows (shadows only on floating layers).
+ */
+:root {
+  --radius: 6px;
+
+  --background: #f6f7f9;
+  --foreground: #1f2933;
+  --card: #ffffff;
+  --card-foreground: #1f2933;
+  --popover: #ffffff;
+  --popover-foreground: #1f2933;
+  --primary: #4474f2;
+  --primary-hover: #3563e0;
+  --primary-foreground: #ffffff;
+  /* brand-coloured text / indicators, tuned for contrast on each background */
+  --brand: #2f5fd9;
+  --secondary: #eef1f5;
+  --secondary-foreground: #1f2933;
+  --muted: #eef0f3;
+  --muted-foreground: #667085;
+  --subtle-foreground: #98a2b3;
+  --accent: #eff3fe;
+  --accent-foreground: #2f5fd9;
+  --border: #e4e7ec;
+  --input: #d9dde3;
+  --ring: rgb(68 116 242 / 0.35);
+  --sidebar: #f2f4f7;
+  --sidebar-active: #e6ebf5;
+
+  --success: #3f8f6b;
+  --success-soft: rgb(63 143 107 / 0.1);
+  --warning: #b7862f;
+  --warning-soft: rgb(183 134 47 / 0.1);
+  --danger: #b5474b;
+  --danger-soft: rgb(181 71 75 / 0.08);
+  --info-soft: rgb(68 116 242 / 0.08);
+
+  --shadow-float: 0 8px 24px -6px rgb(16 24 40 / 0.12), 0 2px 6px -2px rgb(16 24 40 / 0.06);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.dark {
+  --background: #0b1220;
+  --foreground: #e6eaf0;
+  --card: #111a2b;
+  --card-foreground: #e6eaf0;
+  --popover: #131d30;
+  --popover-foreground: #e6eaf0;
+  --primary: #4474f2;
+  --primary-hover: #5a85f4;
+  --primary-foreground: #ffffff;
+  --brand: #8faef8;
+  --secondary: #172235;
+  --secondary-foreground: #e6eaf0;
+  --muted: #151f31;
+  --muted-foreground: #8a94a6;
+  --subtle-foreground: #5f6b80;
+  --accent: #1a2544;
+  --accent-foreground: #c9d7fb;
+  --border: #1e2a3d;
+  --input: #27354d;
+  --ring: rgb(68 116 242 / 0.5);
+  --sidebar: #0e1626;
+  --sidebar-active: #172340;
+
+  --success: #5aa886;
+  --success-soft: rgb(90 168 134 / 0.12);
+  --warning: #c99a47;
+  --warning-soft: rgb(201 154 71 / 0.12);
+  --danger: #c8676a;
+  --danger-soft: rgb(200 103 106 / 0.12);
+  --info-soft: rgb(68 116 242 / 0.12);
+
+  --shadow-float: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.35);
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-brand: var(--brand);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info-soft: var(--info-soft);
+
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
+  --radius-lg: 8px;
+  --shadow-float: var(--shadow-float);
+  --ease-standard: var(--ease);
+
+  /* type scale 12/13/14/16/20/24 */
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.55;
+  --text-base: 14px;
+  --text-base--line-height: 1.6;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.5;
+  --text-xl: 20px;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 1.3;
+
+  --animate-fade-in: fade-in 200ms var(--ease) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-caret: caret 1s steps(1) infinite;
+  --animate-progress: progress 1.2s var(--ease) infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    overflow: hidden;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable],
+  .selectable,
+  .prose-chat {
+    user-select: text;
+  }
+  /*
+   * Grid items default to min-width: auto, so one long unbreakable string (a URL, a long title)
+   * widens the whole column and pushes siblings out of view. App lists should truncate instead.
+   * Lives in the base layer so min-w-* utilities still override it.
+   */
+  .grid > * {
+    min-width: 0;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  ::selection {
+    background: rgb(68 116 242 / 0.22);
+  }
+  /* quiet scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 10px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* One global transition for interactive elements */
+  .interactive {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease);
+  }
+  .card-hover {
+    transition:
+      border-color 150ms var(--ease),
+      transform 150ms var(--ease),
+      box-shadow 150ms var(--ease);
+  }
+  .card-hover:hover {
+    border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+    transform: translateY(-1px);
+  }
+  .drag {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--muted) 0%, color-mix(in srgb, var(--muted) 55%, var(--card)) 50%, var(--muted) 100%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* Chat markdown */
+.prose-chat {
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.prose-chat > * + * {
+  margin-top: 0.7em;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 1.1em;
+}
+.prose-chat h1 {
+  font-size: 18px;
+}
+.prose-chat h2 {
+  font-size: 16px;
+}
+.prose-chat h3 {
+  font-size: 14px;
+}
+.prose-chat ul {
+  list-style: disc;
+  padding-left: 1.3em;
+}
+.prose-chat ol {
+  list-style: decimal;
+  padding-left: 1.3em;
+}
+.prose-chat li + li {
+  margin-top: 0.25em;
+}
+.prose-chat a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-chat pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.prose-chat pre code {
+  background: none;
+  padding: 0;
+}
+.prose-chat blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  color: var(--muted-foreground);
+}
+.prose-chat table {
+  border-collapse: collapse;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.prose-chat th {
+  background: var(--muted);
+  font-weight: 600;
+}
+.prose-chat hr {
+  border-color: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
