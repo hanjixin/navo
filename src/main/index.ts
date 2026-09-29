@@ -1,5 +1,3 @@
-import { readFileSync, writeFileSync } from 'node:fs'
-import type { Memory } from '@shared/types'
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { appFile } from './core/app-dir'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
@@ -7,7 +5,8 @@ import { emit, registerIpc } from './core/ipc'
 import { log } from './core/logger'
 import { db } from './core/db'
 import { applyTracingEnv, getSettings, setSettings } from './core/settings'
-import { providers, resolveModel } from './models/registry'
+import { providers } from './models/registry'
+import { runAgentEval, runMemoryEval } from './dev/evals'
 import { registerHandlers } from './handlers'
 import { browser } from './browser/browser-service'
 import { plugins } from './plugins/plugin-service'
@@ -77,24 +76,8 @@ app.whenReady().then(async () => {
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
 
   db()
-  // scripts/memory-eval.mjs: run automatic-learning dry runs with the real keychain, write results, quit
-  if (process.env.NAVO_MEMORY_EVAL) {
-    const file = process.env.NAVO_MEMORY_EVAL
-    const { cases } = JSON.parse(readFileSync(file, 'utf8')) as { cases: { ex: Parameters<typeof memory.dryRun>[0]; existing: Memory[] }[] }
-    const results = []
-    for (const c of cases) {
-      const started = Date.now()
-      results.push(
-        await memory.dryRun(c.ex, c.existing).then(
-          (r) => ({ ...r, ms: Date.now() - started }),
-          (e: Error) => ({ error: e.message }),
-        ),
-      )
-    }
-    writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
-    app.exit(0)
-    return
-  }
+  // scripts/memory-eval.mjs: automatic-learning dry runs with the real keychain, then quit
+  if (process.env.NAVO_MEMORY_EVAL) return runMemoryEval(process.env.NAVO_MEMORY_EVAL)
   memory.ensureDefaults()
   // people who already configured a model before onboarding existed shouldn't be walked through it
   if (!getSettings().onboarded && providers.list().length) setSettings({ onboarded: true })
@@ -119,6 +102,8 @@ app.whenReady().then(async () => {
   void mcp.connectAll()
   void connectors.startAll()
   void navoMcpServer.apply()
+  // scripts/agent-eval.mjs: browser tasks against the real model, then quit
+  if (process.env.NAVO_AGENT_EVAL) void runAgentEval(process.env.NAVO_AGENT_EVAL)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) browser.init(createWindow())

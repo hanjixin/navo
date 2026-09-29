@@ -235,7 +235,7 @@ export function createBrowserTools(ctx: ToolCtx) {
         }),
       {
         name: 'browser_eval',
-        description: '在页面主环境执行 JavaScript（函数体，需 return 结果）。仅在其他工具无法完成时使用。',
+        description: '在页面主环境执行 JavaScript（函数体，需 return 结果）。需要用户批准；仅在其他工具无法完成时使用，读取页面文字请用 browser_extract。',
         schema: z.object({ script: z.string() }),
       },
     ),

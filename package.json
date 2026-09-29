@@ -29,7 +29,8 @@
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
     "prepare": "simple-git-hooks",
     "test:packaged": "node e2e/packaged.mjs",
-    "eval:memory": "electron-vite build && node scripts/memory-eval.mjs"
+    "eval:memory": "electron-vite build && node scripts/memory-eval.mjs",
+    "eval:agent": "electron-vite build && node scripts/agent-eval.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
