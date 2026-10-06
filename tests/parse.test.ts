@@ -5,7 +5,7 @@
 import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createCanvas } from '@napi-rs/canvas'
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas'
 import fontkit from '@pdf-lib/fontkit'
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from 'docx'
 import iconv from 'iconv-lite'
@@ -28,7 +28,10 @@ const CJK_FONT = [
   '/usr/share/fonts/truetype/arphic/uming.ttc',
   '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
 ].find(existsSync)
-const ocrEnabled = process.env.SKIP_OCR !== '1'
+// The OCR tests draw Chinese text into an image first, so they need a CJK font: registered explicitly
+// (not left to system font matching) and skipped where none is installed.
+if (CJK_FONT) GlobalFonts.registerFromPath(CJK_FONT, 'NavoTestCJK')
+const ocrEnabled = process.env.SKIP_OCR !== '1' && !!CJK_FONT
 
 describe('Word (.docx)', () => {
   it('keeps headings, lists, tables, emphasis and Chinese text', async () => {
@@ -218,7 +221,8 @@ describe('PDF', () => {
     expect(r.markdown).not.toContain('|')
   })
 
-  it.runIf(!!CJK_FONT)('Chinese text + aligned columns become a table', async () => {
+  // pdf-lib embeds single fonts, not .ttc collections (what Linux ships for Noto CJK)
+  it.runIf(!!CJK_FONT && /\.(ttf|otf)$/i.test(CJK_FONT))('Chinese text + aligned columns become a table', async () => {
     const pdf = await PDFDocument.create()
     pdf.registerFontkit(fontkit)
     const font = await pdf.embedFont(readFileSync(CJK_FONT!), { subset: true })
@@ -370,7 +374,7 @@ function textImage(lines: string[]): Buffer {
   g.fillStyle = '#fff'
   g.fillRect(0, 0, c.width, c.height)
   g.fillStyle = '#111'
-  g.font = '44px "PingFang SC", "Heiti SC", "Noto Sans CJK SC", "Arial Unicode MS", sans-serif'
+  g.font = '44px "NavoTestCJK", "PingFang SC", "Noto Sans CJK SC", sans-serif'
   lines.forEach((l, i) => g.fillText(l, 60, 110 + i * 100))
   return c.toBuffer('image/png')
 }

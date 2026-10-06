@@ -21,6 +21,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # the PDF / OCR tests render Chinese text; the runner image has no CJK font
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
