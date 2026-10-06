@@ -1,13 +1,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
-import type { DayEntry, Memory, MemoryInput, MemoryKind, MemoryLearned, MemoryRef } from '@shared/types'
-import { db, kv } from '../core/db'
+import type { DayEntry, Memory, MemoryInput, MemoryMerge, MemoryKind, MemoryLearned, MemoryRef } from '@shared/types'
+import { db, json, kv } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { paths } from '../core/paths'
 import { getSettings } from '../core/settings'
 import { createChatModel, models } from '../models/registry'
+import { consolidationDue, mergeTarget, parsePlan, planMessages, reviewGroups, type PlanOp } from './consolidate'
 import { extractionMessages, parseJournal, parseOps, userTexts, type Exchange } from './extract'
 import { findDuplicate, findSecret, hostOf, KIND_LABEL, MemoryIndex, memoryPrompt, normalizeScope, quotedFrom, siteMatches } from './recall'
 
@@ -21,7 +22,7 @@ interface Row {
   title: string
   content: string
   scope: string | null
-  status: 'active' | 'pending'
+  status: 'active' | 'pending' | 'archived'
   pinned: number
   source_thread: string | null
   source_title: string | null
@@ -47,6 +48,8 @@ const toMemory = (r: Row): Memory => ({
 })
 
 type Source = { threadId: string; title: string } | null
+
+const TIDY_KEY = 'memory.tidy'
 
 const SMALL_TALK =
   /^(谢谢(你|啦)?|多谢|感谢|好的?|好滴|嗯+|哦+|噢+|ok(ay)?|thanks?( you)?|thx|收到|明白了?|知道了|了解|行|可以|没问题|再见|拜拜|bye|hi|hello|hey|你好|您好|在吗|早上好|晚安|哈+|👍|🙏)[\s!！。.~～,，]*$/i
@@ -81,11 +84,13 @@ class MemoryService {
   /** hosts whose site notes were already shown in a run */
   private siteSeen = new Map<string, Set<string>>()
   private learning = new Set<string>()
+  private tidying = false
 
   // ---------- storage
 
+  /** Live memories (active and pending). Archived ones — merged or replaced while tidying — are not listed. */
   list(): Memory[] {
-    return (db().prepare('SELECT * FROM memories ORDER BY pinned DESC, updated_at DESC').all() as Row[]).map(toMemory)
+    return (db().prepare("SELECT * FROM memories WHERE status != 'archived' ORDER BY pinned DESC, updated_at DESC").all() as Row[]).map(toMemory)
   }
 
   private active(): Memory[] {
@@ -135,6 +140,7 @@ class MemoryService {
       db()
         .prepare('UPDATE memories SET kind = ?, title = ?, content = ?, scope = ?, pinned = COALESCE(?, pinned), updated_at = ? WHERE id = ?')
         .run(c.kind, c.title, c.content, c.scope, input.pinned == null ? null : input.pinned ? 1 : 0, now, target.id)
+      this.bump()
       this.changed()
       return { memory: this.get(target.id)!, op: 'update', before: target }
     }
@@ -157,6 +163,7 @@ class MemoryService {
         now,
         now,
       )
+    this.bump()
     this.changed()
     return { memory: this.get(id)!, op: 'add', before: null }
   }
@@ -182,6 +189,8 @@ class MemoryService {
   clear(): void {
     db().prepare('DELETE FROM memories').run()
     db().prepare('DELETE FROM memory_days').run()
+    db().prepare('DELETE FROM memory_merges').run()
+    kv.set(TIDY_KEY, { at: Date.now(), changes: 0 })
     this.batches.clear()
     this.changed()
   }
@@ -388,6 +397,194 @@ class MemoryService {
   /** Tells the UI a memory is waiting for confirmation (toast with a link to the Memory page). */
   announcePending(threadId: string, m: Memory): void {
     emit('memory.learned', { threadId, batchId: newId(), items: [{ id: m.id, title: m.title, op: 'add', pending: true }], pending: true })
+  }
+
+  // ---------- tidying (consolidation)
+
+  /** Counts changes since the last tidy-up, which decides when the next one is due. */
+  private bump(): void {
+    const st = kv.get(TIDY_KEY, { at: 0, changes: 0 })
+    kv.set(TIDY_KEY, { at: st.at || Date.now(), changes: st.changes + 1 })
+  }
+
+  /** Runs a tidy-up if enough has changed since the last one (called after learning passes). */
+  async maybeConsolidate(modelId: string | null): Promise<void> {
+    const s = getSettings().memory
+    if (!s.enabled || !s.consolidate || this.tidying) return
+    if (!consolidationDue(kv.get(TIDY_KEY, { at: 0, changes: 0 }))) return
+    await this.consolidate(modelId).catch((err) => log.warn(`[memory] tidy-up failed: ${(err as Error).message}`))
+  }
+
+  /**
+   * Tidies the store: one model call proposes merges / replacements / retirements / open
+   * contradictions for look-alike groups; each proposal is checked (consolidate.ts) and applied.
+   * Replaced memories are archived, not deleted, and every step is recorded for undo.
+   */
+  async consolidate(modelId: string | null = null): Promise<{ changed: number; conflicts: number }> {
+    if (this.tidying) return { changed: 0, conflicts: 0 }
+    this.tidying = true
+    try {
+      const groups = reviewGroups(this.active())
+      kv.set(TIDY_KEY, { at: Date.now(), changes: 0 })
+      // archived memories are kept 30 days for undo
+      db()
+        .prepare("DELETE FROM memories WHERE status = 'archived' AND archived_at < ?")
+        .run(Date.now() - 30 * 24 * 3600_000)
+      if (!groups.length) return { changed: 0, conflicts: 0 }
+      const s = getSettings().memory
+      const model = s.modelId && models.get(s.modelId) ? s.modelId : modelId
+      const res = await createChatModel(model).invoke(planMessages(groups))
+      const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
+      const result = this.applyPlan(parsePlan(text, groups.flat()))
+      if (result.changed || result.conflicts) {
+        emit('memory.consolidated', result)
+        this.changed()
+      }
+      return result
+    } finally {
+      this.tidying = false
+    }
+  }
+
+  /** Development / evaluation: the checked plan a tidy-up would apply to these memories (nothing is stored). */
+  async dryPlan(memories: Memory[], modelId: string | null = null) {
+    const groups = reviewGroups(memories)
+    if (!groups.length) return { raw: '', ops: [] as PlanOp[] }
+    const res = await createChatModel(modelId).invoke(planMessages(groups))
+    const raw = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
+    return { raw, ops: parsePlan(raw, groups.flat()) }
+  }
+
+  /** Applies checked operations; returns how many memories changed and how many contradictions were opened. */
+  applyPlan(ops: PlanOp[]): { changed: number; conflicts: number } {
+    let changed = 0
+    let conflicts = 0
+    const now = Date.now()
+    const archive = db().prepare("UPDATE memories SET status = 'archived', merged_into = ?, archived_at = ? WHERE id = ?")
+    const record = (kind: MemoryMerge['kind'], resultId: string | null, sources: Memory[], reason: string) =>
+      db()
+        .prepare('INSERT INTO memory_merges(id, at, kind, result_id, sources, reason) VALUES(?, ?, ?, ?, ?, ?)')
+        .run(newId(), now, kind, resultId, JSON.stringify(sources), reason)
+    db().transaction(() => {
+      for (const op of ops) {
+        if (op.op === 'merge') {
+          const sources = op.ids.map((id) => this.get(id)).filter((m): m is Memory => !!m && m.status === 'active')
+          if (sources.length < 2) continue
+          const target = mergeTarget(sources)
+          const earliest = [...sources].sort((a, b) => a.createdAt - b.createdAt)[0]
+          db()
+            .prepare(
+              'UPDATE memories SET title = ?, content = ?, pinned = ?, use_count = ?, source_thread = ?, source_title = ?, created_at = ?, updated_at = ? WHERE id = ?',
+            )
+            .run(
+              op.title,
+              op.content,
+              sources.some((m) => m.pinned) ? 1 : 0,
+              sources.reduce((n, m) => n + m.useCount, 0),
+              (target.source ?? earliest.source)?.threadId ?? null,
+              (target.source ?? earliest.source)?.title ?? null,
+              earliest.createdAt,
+              now,
+              target.id,
+            )
+          for (const m of sources) if (m.id !== target.id) archive.run(target.id, now, m.id)
+          record('merge', target.id, sources, op.reason ?? '')
+          changed += sources.length
+        } else if (op.op === 'supersede') {
+          const keep = this.get(op.keep)
+          const drop = this.get(op.drop)
+          if (!keep || !drop || keep.status !== 'active' || drop.status !== 'active') continue
+          archive.run(keep.id, now, drop.id)
+          record('supersede', keep.id, [drop], op.reason ?? '')
+          changed++
+        } else if (op.op === 'expire') {
+          const m = this.get(op.id)
+          if (!m || m.status !== 'active') continue
+          archive.run(null, now, m.id)
+          record('expire', null, [m], op.reason ?? '')
+          changed++
+        } else {
+          const ms = op.ids.map((id) => this.get(id)).filter((m): m is Memory => !!m && m.status === 'active')
+          if (ms.length < 2) continue
+          // the same contradiction is asked about once
+          const key = ms
+            .map((m) => m.id)
+            .sort()
+            .join(',')
+          const open = this.merges().some(
+            (x) =>
+              x.kind === 'conflict' &&
+              !x.resolvedAt &&
+              !x.undoneAt &&
+              x.sources
+                .map((m) => m.id)
+                .sort()
+                .join(',') === key,
+          )
+          if (open) continue
+          record('conflict', null, ms, op.question)
+          conflicts++
+        }
+      }
+    })()
+    return { changed, conflicts }
+  }
+
+  /** What tidying did (newest first), with the memories as they were before. */
+  merges(limit = 100): MemoryMerge[] {
+    const rows = db().prepare('SELECT * FROM memory_merges ORDER BY at DESC, rowid DESC LIMIT ?').all(limit) as {
+      id: string
+      at: number
+      kind: MemoryMerge['kind']
+      result_id: string | null
+      sources: string
+      reason: string | null
+      undone_at: number | null
+      resolved_at: number | null
+    }[]
+    return rows.map((r) => ({
+      id: r.id,
+      at: r.at,
+      kind: r.kind,
+      result: r.result_id ? this.get(r.result_id) : null,
+      sources: json.parse<Memory[]>(r.sources) ?? [],
+      reason: r.reason ?? '',
+      undoneAt: r.undone_at,
+      resolvedAt: r.resolved_at,
+    }))
+  }
+
+  /** Puts the memories back exactly as they were before a tidy-up step. */
+  undoMerge(id: string): void {
+    const m = this.merges(1000).find((x) => x.id === id)
+    if (!m || m.undoneAt) throw new Error('这一步已经撤销或不存在')
+    db().transaction(() => {
+      if (m.kind !== 'conflict') for (const src of m.sources) this.putBack(src)
+      db().prepare('UPDATE memory_merges SET undone_at = ? WHERE id = ?').run(Date.now(), id)
+    })()
+    this.changed()
+  }
+
+  /** The user decides a contradiction: the memories to keep stay, the others are archived. */
+  resolveConflict(id: string, keepIds: string[]): void {
+    const m = this.merges(1000).find((x) => x.id === id && x.kind === 'conflict')
+    if (!m || m.resolvedAt) throw new Error('这个问题已经处理过了')
+    const keep = m.sources.filter((s) => keepIds.includes(s.id))
+    if (!keep.length) throw new Error('至少保留一条')
+    const now = Date.now()
+    db().transaction(() => {
+      for (const s of m.sources)
+        if (!keepIds.includes(s.id))
+          db().prepare("UPDATE memories SET status = 'archived', merged_into = ?, archived_at = ? WHERE id = ?").run(keep[0].id, now, s.id)
+      db().prepare('UPDATE memory_merges SET resolved_at = ?, result_id = ? WHERE id = ?').run(now, keep[0].id, id)
+    })()
+    this.changed()
+  }
+
+  /** Restores a memory row from a snapshot, whether it currently exists (changed / archived) or not. */
+  private putBack(m: Memory): void {
+    db().prepare('DELETE FROM memories WHERE id = ?').run(m.id)
+    this.restore(m)
   }
 
   /**

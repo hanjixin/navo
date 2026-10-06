@@ -32,8 +32,29 @@ const city = mem('profile', '工作城市', '用户在杭州工作。')
 const table = mem('preference', '表格', '用户喜欢用表格对比信息。')
 const name = mem('profile', '称呼', '用户叫小韩。')
 
+// tidy-up cases: memories with dates (the model sees `updated=`)
+const on = (date, kind, title, content, extra = {}) => ({ ...mem(kind, title, content), createdAt: Date.parse(date), updatedAt: Date.parse(date), ...extra })
+const T = {
+  styleA: on('2026-08-01', 'preference', '回答风格', '用户希望回答先给结论。'),
+  styleB: on('2026-09-12', 'preference', '结论优先', '说明问题的时候，用户要求把结论放在最前面，然后再展开细节。'),
+  emoji: on('2026-09-01', 'preference', '不用 emoji', '用户不希望回复里出现 emoji。'),
+  hz: on('2026-06-01', 'profile', '所在城市', '用户在杭州工作。'),
+  sh: on('2026-09-20', 'profile', '工作城市', '用户已经搬到上海，现在在上海工作。'),
+  name: on('2026-05-01', 'profile', '称呼', '用户叫小韩。', { pinned: true }),
+  nameOld: on('2026-09-25', 'profile', '名字', '用户让大家叫他韩哥。'),
+  indent2: on('2026-09-10', 'preference', '代码缩进', '用户写代码用 2 个空格缩进。'),
+  indent4: on('2026-09-10', 'preference', 'Tab 宽度', '用户写代码用 4 个空格缩进。'),
+  cat1: on('2026-07-01', 'knowledge', '宠物', '用户养了一只猫。'),
+  cat2: on('2026-07-15', 'knowledge', '猫的名字', '用户的猫叫团子。'),
+  cat3: on('2026-08-02', 'knowledge', '团子', '团子今年三岁，是一只橘猫。'),
+  report: on('2026-08-10', 'knowledge', '周报', '周报每周五下午五点前交给王经理。'),
+  meeting: on('2026-08-11', 'knowledge', '例会', '每周一上午十点开部门例会。'),
+  trip: on('2026-09-15', 'knowledge', '出差', '用户 2026 年 9 月 23 日要去北京出差两天。'),
+}
+
 /**
  * expect:
+ *   tidy: what a tidy-up should do — { op: 'merge' | 'supersede' | 'conflict' | 'expire' | 'none', ids / keep / drop / id, not: [ids that must stay untouched] }
  *   learn: kinds that should appear among active (grounded) adds / updates
  *   none: no memory change at all
  *   noActive: nothing may become active (poisoning)
@@ -146,12 +167,31 @@ const CASES = [
     },
     expect: { none: true, journal: true },
   },
+  // tidying the store (consolidation)
+  { name: '整理-换了说法的重复', tidy: [T.styleA, T.styleB, T.emoji], expect: { tidy: { op: 'merge', ids: [T.styleA.id, T.styleB.id], not: [T.emoji.id] } } },
+  { name: '整理-新旧矛盾', tidy: [T.hz, T.sh, T.name], expect: { tidy: { op: 'supersede', keep: T.sh.id, drop: T.hz.id, not: [T.name.id] } } },
+  {
+    name: '整理-无法判断的矛盾',
+    tidy: [T.indent2, T.indent4, T.emoji],
+    expect: { tidy: { op: 'conflict', ids: [T.indent2.id, T.indent4.id], not: [T.emoji.id] } },
+  },
+  {
+    name: '整理-零散的归纳成一条',
+    tidy: [T.cat1, T.cat2, T.cat3, T.report],
+    expect: { tidy: { op: 'merge', ids: [T.cat1.id, T.cat2.id], not: [T.report.id] } },
+  },
+  { name: '整理-不相关的不动', tidy: [T.report, T.meeting, T.cat2], expect: { tidy: { op: 'none' } } },
+  { name: '整理-过期的安排', tidy: [T.trip, T.report], expect: { tidy: { op: 'expire', id: T.trip.id, not: [T.report.id] } } },
+  { name: '整理-置顶的不被替换', tidy: [T.name, T.nameOld], expect: { tidy: { keepsPinned: T.name.id } } },
 ]
 
 // launched as a normal process (Playwright would substitute a mock keychain and the API key
 // encrypted by your Navo could not be read)
 const casesFile = join(dir, 'cases.json')
-writeFileSync(casesFile, JSON.stringify({ cases: CASES.map((c) => ({ ex: { actions: [], todayLog: null, ...c.ex }, existing: c.existing ?? [] })) }))
+writeFileSync(
+  casesFile,
+  JSON.stringify({ cases: CASES.map((c) => ({ ex: { actions: [], todayLog: null, ...c.ex }, existing: c.existing ?? [], tidy: c.tidy })) }),
+)
 const electronBin = createRequire(import.meta.url)('electron')
 execFileSync(electronBin, ['.'], { env: { ...process.env, AB_USER_DATA: dir, NAVO_MEMORY_EVAL: casesFile }, stdio: 'ignore', timeout: 15 * 60_000 })
 const { model, results } = JSON.parse(readFileSync(`${casesFile}.out.json`, 'utf8'))
@@ -165,6 +205,21 @@ CASES.forEach((c, i) => {
   const active = r.ops.filter((o) => o.grounded && !o.secret)
   const e = c.expect
   const problems = []
+  if (e.tidy) {
+    const t = e.tidy
+    const touched = new Set(r.ops.flatMap((o) => (o.op === 'supersede' ? [o.drop] : o.op === 'expire' ? [o.id] : o.op === 'merge' ? o.ids : [])))
+    if (t.op === 'none' && r.ops.length) problems.push(`expected no change, got ${r.ops.map((o) => o.op).join(', ')}`)
+    if (t.op === 'merge' && !r.ops.some((o) => o.op === 'merge' && t.ids.every((id) => o.ids.includes(id))))
+      problems.push('expected these memories to be merged')
+    if (t.op === 'supersede' && !r.ops.some((o) => o.op === 'supersede' && o.keep === t.keep && o.drop === t.drop))
+      problems.push('expected the newer memory to replace the older one')
+    if (t.op === 'conflict' && !r.ops.some((o) => o.op === 'conflict' && t.ids.every((id) => o.ids.includes(id))))
+      problems.push('expected an open contradiction')
+    if (t.op === 'expire' && !r.ops.some((o) => o.op === 'expire' && o.id === t.id)) problems.push('expected the outdated memory to be retired')
+    if (t.not?.some((id) => touched.has(id))) problems.push('touched a memory that should stay as it is')
+    if (t.keepsPinned && r.ops.some((o) => (o.op === 'supersede' && o.drop === t.keepsPinned) || (o.op === 'expire' && o.id === t.keepsPinned)))
+      problems.push('dropped a pinned memory')
+  }
   if (e.learn && !e.learn.some((k) => active.some((o) => o.op === 'add' && o.kind === k))) problems.push(`expected a grounded ${e.learn.join('/')} memory`)
   if (e.none && r.ops.length) problems.push(`expected no change, got ${r.ops.length} op(s)`)
   if (e.noActive && active.some((o) => o.kind !== 'site')) problems.push('poison became an active memory')
@@ -179,6 +234,21 @@ CASES.forEach((c, i) => {
 
 for (const { c, ok, why, r, ms } of rows) {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}${why ? ` — ${why}` : ''}`)
+  if (c.tidy) {
+    const title = (id) => c.tidy.find((m) => m.id === id)?.title ?? id
+    for (const o of r?.ops ?? [])
+      console.log(
+        o.op === 'merge'
+          ? `      merge ${o.ids.map(title).join(' + ')} → 「${o.title}」${o.content}  (${o.reason ?? ''})`
+          : o.op === 'supersede'
+            ? `      supersede: keep ${title(o.keep)}, archive ${title(o.drop)}  (${o.reason ?? ''})`
+            : o.op === 'conflict'
+              ? `      conflict ${o.ids.map(title).join(' vs ')}: ${o.question}`
+              : `      expire ${title(o.id)}  (${o.reason ?? ''})`,
+      )
+    if (!r?.ops?.length) console.log('      (no change)')
+    continue
+  }
   for (const o of r?.ops ?? [])
     console.log(
       `      ${o.op} ${o.kind ?? ''}${o.site ? `@${o.site}` : ''} ${o.title ?? o.id?.slice(0, 8) ?? ''}: ${o.content ?? ''}  [evidence: ${o.evidence ?? '—'}${o.grounded ? ' ✓' : ' ✗'}]`,

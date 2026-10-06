@@ -290,6 +290,71 @@ try {
   ok(mock.extractions.at(-1)?.model === 'mock-cheap' && agentReq('用便宜模型整理').model === 'mock-1', 'the memory pass runs on the model chosen for memory')
   await api('settings.set', { memory: { ...sm.memory, modelId: null } })
 
+  // ---------- tidying: merge duplicates, replace contradicted memories, ask about undecidable ones
+  await settle()
+  for (const [kind, title, content] of [
+    ['preference', '回答风格', '用户希望回答先给结论。'],
+    ['preference', '结论优先', '说明问题时请把结论放在最前面，再展开细节。'],
+    ['profile', '所在城市', '用户在杭州工作。'],
+    ['profile', '工作城市', '用户已搬到上海工作。'],
+    ['preference', '代码缩进', '用户写代码用 2 个空格缩进。'],
+    ['preference', 'Tab 宽度', '项目里统一用 4 格缩进，用户强调过。'],
+    ['knowledge', '周报', '周报每周五下午交给王经理。'],
+    ['knowledge', '例会', '每周一上午十点开部门例会。'],
+  ])
+    await api('memory.save', { kind, title, content })
+  const style = await byTitle('回答风格')
+  const dup = await byTitle('结论优先')
+  const tidy = await api('memory.consolidate')
+  ok(
+    tidy.changed === 3 && tidy.conflicts === 1,
+    `tidy-up merged a duplicate pair, replaced an outdated memory and found one open contradiction (${JSON.stringify(tidy)})`,
+  )
+  const merged = await byTitle('回答风格')
+  ok(
+    merged?.id === style.id && merged.content.includes('再展开细节') && !(await byTitle('结论优先')),
+    'duplicates are merged into one memory (the other is archived)',
+  )
+  ok(!(await byTitle('所在城市')) && (await byTitle('工作城市'))?.status === 'active', 'the newer memory replaced the one it contradicts')
+  ok(
+    (await byTitle('周报'))?.content === '周报每周五下午交给王经理。' && !!(await byTitle('例会')),
+    'a merge that adds facts its sources never said is rejected',
+  )
+  const tt = await api('threads.create', m.id)
+  await runAndWait(tt.id, '[plain] 整理之后的对话')
+  const sysT = systemOf(agentReq('整理之后的对话'))
+  ok(
+    sysT.includes('上海') && !sysT.includes('杭州工作') && !sysT.includes('说明问题时请把结论放在最前面，再展开细节。'),
+    'archived memories are no longer recalled',
+  )
+  let log = await api('memory.merges')
+  ok(
+    log.filter((x) => x.kind === 'merge').length === 1 && log.find((x) => x.kind === 'merge').sources.length === 2,
+    'each step is recorded with the memories as they were',
+  )
+  await api('memory.undoMerge', log.find((x) => x.kind === 'merge').id)
+  ok(
+    (await byTitle('回答风格'))?.content === '用户希望回答先给结论。' && (await byTitle('结论优先'))?.id === dup.id,
+    'undo puts both memories back exactly as they were',
+  )
+  // the open contradiction is put to the user
+  await page.evaluate(() => (window.location.hash = '#/memory'))
+  await page.waitForSelector('[data-testid=memory-conflict]', { timeout: 5000 })
+  ok(await page.isVisible('text=写代码时缩进用 2 格还是 4 格？'), 'an undecidable contradiction is shown as a question')
+  await page.screenshot({ path: join(out, 'memory-conflict.png') })
+  await page.locator('[data-testid=memory-conflict]').getByRole('button', { name: '保留这条' }).first().click()
+  await page.waitForSelector('[data-testid=memory-conflict]', { state: 'detached', timeout: 3000 }).catch(() => null)
+  ok(!!(await byTitle('代码缩进')) && !(await byTitle('Tab 宽度')), 'the user picks one: the other is archived')
+  await page.getByRole('tab', { name: '整理记录' }).click()
+  await page.waitForSelector('[data-testid=memory-merge]', { timeout: 3000 })
+  ok(
+    (await page.$$('[data-testid=memory-merge]')).length >= 3 && (await page.isVisible('text=已撤销')),
+    'the tidy-up log lists every step, including undone ones',
+  )
+  await page.screenshot({ path: join(out, 'memory-merges.png') })
+  await page.getByRole('tab', { name: /全部/ }).click()
+  log = await api('memory.merges')
+
   // ---------- UI (let toasts from the steps above go away first)
   await page.waitForSelector('[data-sonner-toast]', { state: 'detached', timeout: 10000 }).catch(() => null)
   await page.evaluate(() => (window.location.hash = '#/memory'))

@@ -34,6 +34,8 @@ export const learning = new LearningScheduler({
       // the agent already handled memory itself in every one of these turns: only the journal is due
       { journalOnly: turns.every((t) => t.journalOnly) },
     )
+    // enough new memories since the last tidy-up? merge duplicates, settle contradictions
+    void memory.maybeConsolidate(thread.model_id)
   },
   onError: (threadId, err) => log.warn(`[learning] ${threadId}: ${(err as Error).message}`),
 })

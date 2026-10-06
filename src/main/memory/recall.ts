@@ -176,6 +176,19 @@ export function quotedFrom(evidence: string | null | undefined, userTexts: strin
   })
 }
 
+/**
+ * How much of `text` is backed by `sources` (0–1): the share of its character pairs that occur in
+ * them. Used to check that a merged memory only says what the memories it came from already said.
+ */
+export function pairCoverage(text: string, sources: string[]): number {
+  const t = pairs(norm(text))
+  if (!t.size) return 1
+  const src = pairs(norm(sources.join(' ')))
+  let hit = 0
+  for (const p of t) if (src.has(p)) hit++
+  return hit / t.size
+}
+
 // ---------- when to learn
 
 // "我…" patterns must not follow 帮/给/让/替 ("帮我在京东搜" is a request, not a fact about the user)

@@ -200,8 +200,11 @@ export interface Memory {
   content: string
   /** site memories: the host they apply to ("taobao.com" also covers subdomains) */
   scope: string | null
-  /** pending: learned automatically, waiting for the user to confirm (review mode) */
-  status: 'active' | 'pending'
+  /**
+   * pending: learned automatically, waiting for the user to confirm (review mode);
+   * archived: merged into / replaced by another memory during tidying (kept for undo, never recalled)
+   */
+  status: 'active' | 'pending' | 'archived'
   pinned: boolean
   /** conversation it was learned in */
   source: { threadId: string; title: string } | null
@@ -224,6 +227,25 @@ export interface MemoryRef {
   id: string
   title: string
   kind: MemoryKind
+}
+
+/**
+ * One thing the background tidy-up did: merged several memories into one, let a newer one replace
+ * an older contradicting one, retired an outdated one — or found a contradiction it can't decide.
+ */
+export interface MemoryMerge {
+  id: string
+  at: number
+  kind: 'merge' | 'supersede' | 'expire' | 'conflict'
+  /** the memory that remains (merge / supersede) */
+  result: Memory | null
+  /** the memories as they were before */
+  sources: Memory[]
+  /** why; for a conflict: the question put to the user */
+  reason: string
+  undoneAt: number | null
+  /** conflicts: when the user decided */
+  resolvedAt: number | null
 }
 
 /** One line of the daily journal: what the user did in one conversation on one day. */

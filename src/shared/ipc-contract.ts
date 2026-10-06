@@ -18,6 +18,7 @@ import type {
   Memory,
   MemoryInput,
   MemoryLearned,
+  MemoryMerge,
   ModelConfig,
   ModelInput,
   PluginInfo,
@@ -104,6 +105,12 @@ export interface Api {
   /** reverts an automatic learning batch */
   'memory.undo': (batchId: string) => void
   'memory.clear': () => void
+  /** tidy now: merge duplicates, resolve contradictions, retire outdated memories */
+  'memory.consolidate': () => { changed: number; conflicts: number }
+  'memory.merges': () => MemoryMerge[]
+  'memory.undoMerge': (id: string) => void
+  /** decide a contradiction: the memories to keep (the others are archived); all = keep both */
+  'memory.resolveConflict': (id: string, keepIds: string[]) => void
   /** daily journal, newest day first */
   'memory.days': (limit?: number) => DayEntry[]
   /** development: what automatic learning would do for an exchange (nothing is stored) */
@@ -204,6 +211,7 @@ export interface Api {
 export interface Events {
   'memory.changed': void
   'memory.learned': MemoryLearned
+  'memory.consolidated': { changed: number; conflicts: number }
   'chat.event': ChatEvent
   'threads.changed': void
   'browser.state': BrowserState

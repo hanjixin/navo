@@ -12,10 +12,20 @@ import { resolveModel } from '../models/registry'
 
 /** Automatic-learning dry runs: nothing is stored. Runs before the rest of the app starts. */
 export async function runMemoryEval(file: string): Promise<void> {
-  const { cases } = JSON.parse(readFileSync(file, 'utf8')) as { cases: { ex: Parameters<typeof memory.dryRun>[0]; existing: Memory[] }[] }
+  const { cases } = JSON.parse(readFileSync(file, 'utf8')) as { cases: { ex: Parameters<typeof memory.dryRun>[0]; existing: Memory[]; tidy?: Memory[] }[] }
   const results = []
   for (const c of cases) {
     const started = Date.now()
+    // tidy cases: what a consolidation pass would do to this set of memories
+    if (c.tidy) {
+      results.push(
+        await memory.dryPlan(c.tidy).then(
+          (r) => ({ ...r, journal: null, ms: Date.now() - started }),
+          (e: Error) => ({ error: e.message }),
+        ),
+      )
+      continue
+    }
     results.push(
       await memory.dryRun(c.ex, c.existing).then(
         (r) => ({ ...r, ms: Date.now() - started }),

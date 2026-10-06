@@ -3,6 +3,12 @@ import {
   Brain,
   CalendarDays,
   Check,
+  Combine,
+  History,
+  Loader2,
+  Replace,
+  TimerOff,
+  Undo2,
   Globe,
   MessageSquare,
   MoreHorizontal,
@@ -20,7 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import type { DayEntry, Memory, MemoryKind } from '@shared/types'
+import type { DayEntry, Memory, MemoryKind, MemoryMerge } from '@shared/types'
 import { PageHeader } from '@/components/layout/page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -40,7 +46,7 @@ import { useSettings } from '@/stores/settings'
 
 const KINDS: MemoryKind[] = ['profile', 'preference', 'knowledge', 'site']
 const KIND_ICON = { profile: User, preference: Sparkles, knowledge: BookOpen, site: Globe } as const
-type Filter = 'all' | MemoryKind | 'pending' | 'daily'
+type Filter = 'all' | MemoryKind | 'pending' | 'daily' | 'merges'
 
 // ---------- editor
 
@@ -132,6 +138,7 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
   const { settings, update } = useSettings()
   const cfg = settings!.memory
   const [confirmClear, setConfirmClear] = useState(false)
+  const [tidying, setTidying] = useState(false)
   const { models, load: loadModels } = useModels()
   useEffect(() => {
     void loadModels()
@@ -159,7 +166,7 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
           {row('使用记忆', '对话时带上与你有关的记忆。关闭后既不读取也不学习。', cfg.enabled, (v) => void update({ memory: { ...cfg, enabled: v } }))}
           {row(
             '自动学习',
-            '每次回复后，从对话中挑出值得长期记住的内容（会额外调用一次模型）。',
+            '从对话中挑出值得长期记住的内容（后台调用模型）。',
             cfg.autoLearn,
             (v) => void update({ memory: { ...cfg, autoLearn: v } }),
             !cfg.enabled,
@@ -171,6 +178,37 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
             (v) => void update({ memory: { ...cfg, daily: v } }),
             !cfg.enabled,
           )}
+          <div className={cn('flex items-center justify-between gap-4 text-sm', !cfg.enabled && 'opacity-60')}>
+            <span>
+              自动整理
+              <span className="block text-xs text-muted-foreground">
+                记忆积累到一定数量后，在后台合并重复的、让新的替换矛盾的旧记忆、归档过期的。每一步都可以在「整理记录」里撤销
+              </span>
+            </span>
+            <div className="flex shrink-0 items-center gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!cfg.enabled || tidying || count < 2}
+                onClick={async () => {
+                  setTidying(true)
+                  try {
+                    const r = await call('memory.consolidate')
+                    if (r.changed || r.conflicts) toast.success(`整理了 ${r.changed} 条记忆${r.conflicts ? `，有 ${r.conflicts} 处矛盾需要你确认` : ''}`)
+                    else toast('没有需要整理的记忆')
+                  } catch (e) {
+                    toast.error('整理失败', { description: errorMessage(e) })
+                  } finally {
+                    setTidying(false)
+                  }
+                }}
+              >
+                {tidying ? <Loader2 className="animate-spin" /> : null}
+                立即整理
+              </Button>
+              <Switch checked={cfg.consolidate} onCheckedChange={(v) => void update({ memory: { ...cfg, consolidate: v } })} disabled={!cfg.enabled} />
+            </div>
+          </div>
           {row(
             '新记忆需要我确认',
             '自动学到的内容先放进「待确认」，确认后才会使用。',
@@ -469,6 +507,131 @@ function DaysView({ q }: { q: string }) {
   )
 }
 
+// ---------- tidying: what was merged / replaced, and contradictions to decide
+
+function useMerges(): MemoryMerge[] | null {
+  const [merges, setMerges] = useState<MemoryMerge[] | null>(null)
+  useEffect(() => {
+    const load = () => void call('memory.merges').then(setMerges, () => setMerges([]))
+    load()
+    return on('memory.changed', load)
+  }, [])
+  return merges
+}
+
+/** A contradiction tidying could not decide: the user picks what is true. */
+function ConflictCard({ m }: { m: MemoryMerge }) {
+  const resolve = (keep: string[]) => void call('memory.resolveConflict', m.id, keep).catch((e) => toast.error('处理失败', { description: errorMessage(e) }))
+  return (
+    <div data-testid="memory-conflict" className="mb-4 rounded-lg border border-l-2 border-border border-l-warning bg-card px-4 py-3">
+      <p className="text-sm font-medium">这几条记忆互相矛盾，哪条是对的？</p>
+      <p className="mt-0.5 text-sm text-muted-foreground">{m.reason}</p>
+      <div className="mt-3 grid gap-2">
+        {m.sources.map((s) => (
+          <div key={s.id} className="flex items-start gap-3 rounded-md border border-border px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">{s.title}</div>
+              <div className="text-sm text-muted-foreground">{s.content}</div>
+              <div className="mt-0.5 text-xs text-subtle-foreground">更新于 {timeAgo(s.updatedAt)}</div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => resolve([s.id])}>
+              保留这条
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-end">
+        <Button variant="ghost" size="sm" onClick={() => resolve(m.sources.map((s) => s.id))}>
+          都保留
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+const MERGE_META = {
+  merge: { icon: Combine, label: (m: MemoryMerge) => `把 ${m.sources.length} 条合并成一条` },
+  supersede: { icon: Replace, label: () => '新的记忆替换了旧的' },
+  expire: { icon: TimerOff, label: () => '归档了一条过期的记忆' },
+  conflict: { icon: Check, label: () => '你处理了一处矛盾' },
+} as const
+
+function MergeRow({ m }: { m: MemoryMerge }) {
+  const meta = MERGE_META[m.kind]
+  const Icon = meta.icon
+  return (
+    <div data-testid="memory-merge" className={cn('rounded-lg border border-border bg-card px-4 py-3', m.undoneAt && 'opacity-60')}>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <Icon className="size-3.5 stroke-[1.75]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {meta.label(m)}
+            {m.undoneAt ? <Badge variant="neutral">已撤销</Badge> : null}
+          </div>
+          {m.reason ? <p className="mt-0.5 text-sm text-muted-foreground">{m.reason}</p> : null}
+          <div className="mt-2 grid gap-1 text-xs">
+            {m.sources.map((s) => (
+              <div key={s.id} className="flex gap-2 text-subtle-foreground">
+                <span className="shrink-0">原</span>
+                <span className="min-w-0">
+                  「{s.title}」{s.content}
+                </span>
+              </div>
+            ))}
+            {m.result && !m.undoneAt ? (
+              <div className="flex gap-2 text-foreground">
+                <span className="shrink-0 text-brand">{m.kind === 'conflict' ? '留' : '现'}</span>
+                <span className="min-w-0">
+                  「{m.result.title}」{m.result.content}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-1.5 text-xs text-subtle-foreground">{timeAgo(m.at)}</div>
+        </div>
+        {!m.undoneAt && m.kind !== 'conflict' ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={() =>
+              void call('memory.undoMerge', m.id).then(
+                () => toast.success('已撤销，记忆恢复原样'),
+                (e) => toast.error('撤销失败', { description: errorMessage(e) }),
+              )
+            }
+          >
+            <Undo2 />
+            撤销
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function MergesView({ merges }: { merges: MemoryMerge[] | null }) {
+  if (!merges) return <ListSkeleton rows={3} />
+  const done = merges.filter((m) => m.kind !== 'conflict' || m.resolvedAt)
+  if (!done.length)
+    return (
+      <EmptyState
+        icon={History}
+        title="还没有整理记录"
+        description="记忆多起来之后，Navo 会在后台把重复的合并、让新的替换矛盾的旧记忆。每一步都会记在这里，可以撤销。"
+      />
+    )
+  return (
+    <div className="grid gap-2">
+      {done.map((m) => (
+        <MergeRow key={m.id} m={m} />
+      ))}
+    </div>
+  )
+}
+
 export function MemoryPage() {
   const { items, error, load } = useMemories()
   const settings = useSettings((s) => s.settings)
@@ -478,6 +641,7 @@ export function MemoryPage() {
   const [editing, setEditing] = useState<Partial<Memory> | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const filter = (params.get('filter') as Filter | null) ?? 'all'
+  const merges = useMerges()
   const focus = params.get('focus')
 
   useEffect(() => {
@@ -534,6 +698,11 @@ export function MemoryPage() {
             </Button>
           </div>
         ) : null}
+        {(merges ?? [])
+          .filter((m) => m.kind === 'conflict' && !m.resolvedAt && !m.undoneAt)
+          .map((m) => (
+            <ConflictCard key={m.id} m={m} />
+          ))}
         {pending.length && filter !== 'pending' ? (
           <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-border bg-card px-4 py-2.5 text-sm">
             <span>
@@ -570,6 +739,7 @@ export function MemoryPage() {
                 </TabsTrigger>
               ))}
               <TabsTrigger value="daily">每日</TabsTrigger>
+              <TabsTrigger value="merges">整理记录</TabsTrigger>
               {pending.length ? (
                 <TabsTrigger value="pending">
                   待确认 <span className="ml-1 text-warning">{pending.length}</span>
@@ -585,6 +755,8 @@ export function MemoryPage() {
 
         {filter === 'daily' ? (
           <DaysView q={q} />
+        ) : filter === 'merges' ? (
+          <MergesView merges={merges} />
         ) : error && !items ? (
           <ErrorState error={error} onRetry={() => void load()} />
         ) : !items ? (

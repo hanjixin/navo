@@ -37,6 +37,12 @@ export function wireMemoryEvents(): void {
   on('memory.changed', () => {
     if (useMemories.getState().items) void useMemories.getState().load()
   })
+  on('memory.consolidated', ({ changed, conflicts }) => {
+    toast(conflicts && !changed ? '发现互相矛盾的记忆' : `整理了 ${changed} 条记忆`, {
+      description: conflicts ? `有 ${conflicts} 处矛盾需要你确认` : '合并了重复的、更新了过时的，可以在整理记录里撤销',
+      action: { label: '查看', onClick: () => (window.location.hash = conflicts ? '#/memory' : '#/memory?filter=merges') },
+    })
+  })
   // automatic learning after a reply: say what was remembered, with a way back
   on('memory.learned', (l) => {
     const names = l.items.map((i) => `「${i.title}」`).join('、')

@@ -66,6 +66,14 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (day, thread_id)
   );
   `,
+  `
+  ALTER TABLE memories ADD COLUMN merged_into TEXT;
+  ALTER TABLE memories ADD COLUMN archived_at INTEGER;
+  CREATE TABLE memory_merges (
+    id TEXT PRIMARY KEY, at INTEGER NOT NULL, kind TEXT NOT NULL, result_id TEXT, sources TEXT NOT NULL,
+    reason TEXT, undone_at INTEGER, resolved_at INTEGER
+  );
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

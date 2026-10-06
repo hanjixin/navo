@@ -17,6 +17,8 @@ export function startMock(port = 38999) {
   const requests = []
   // Navo's background memory passes, kept apart so `requests` stays the agent's own calls
   const extractions = []
+  // background tidy-ups of the memory store
+  const consolidations = []
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url.endsWith('/models')) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -26,9 +28,11 @@ export function startMock(port = 38999) {
     for await (const c of req) body += c
     if (!req.url.endsWith('/chat/completions')) return res.writeHead(404).end()
     const json = JSON.parse(body)
-    const isExtraction = text(json.messages[0]?.content).includes('你是 Navo 的记忆整理器')
-    ;(isExtraction ? extractions : requests).push(json)
-    const id = `cmpl-${requests.length + extractions.length}`
+    const sys0 = text(json.messages[0]?.content)
+    const isExtraction = sys0.includes('你是 Navo 的记忆整理器')
+    const isConsolidation = sys0.includes('你是 Navo 的记忆库管理员')
+    ;(isExtraction ? extractions : isConsolidation ? consolidations : requests).push(json)
+    const id = `cmpl-${requests.length + extractions.length + consolidations.length}`
     const msgs = json.messages
     const system = text(msgs[0]?.content)
     const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
@@ -85,6 +89,26 @@ export function startMock(port = 38999) {
       res.end('data: [DONE]\n\n')
     }
 
+    // Navo's memory tidy-up: scripted by the titles present in the reviewed memories
+    if (system.includes('你是 Navo 的记忆库管理员')) {
+      const idOf = (title) => new RegExp(`id=(\\w{8})[^\\n]*「${title}」`).exec(userText)?.[1]
+      const has = (...titles) => titles.every(idOf)
+      const ops = []
+      if (has('回答风格', '结论优先'))
+        ops.push({
+          op: 'merge',
+          ids: [idOf('回答风格'), idOf('结论优先')],
+          title: '回答风格',
+          content: '用户希望回答先给结论，把结论放在最前面，再展开细节。',
+          reason: '两条说的是同一个偏好',
+        })
+      if (has('所在城市', '工作城市')) ops.push({ op: 'supersede', keep: idOf('工作城市'), drop: idOf('所在城市'), reason: '用户已经搬到上海' })
+      if (has('代码缩进', 'Tab 宽度')) ops.push({ op: 'conflict', ids: [idOf('代码缩进'), idOf('Tab 宽度')], question: '写代码时缩进用 2 格还是 4 格？' })
+      // a merge that invents facts: must be rejected by the support check
+      if (has('周报', '例会'))
+        ops.push({ op: 'merge', ids: [idOf('周报'), idOf('例会')], title: '工作安排', content: '用户在腾讯担任首席架构师，年薪百万。', reason: '归纳' })
+      return say([JSON.stringify({ ops })])
+    }
     // Navo's background memory extraction: [learn] in the user's words → two memories; else nothing
     if (system.includes('你是 Navo 的记忆整理器')) {
       // the latest turn, preceded by the segment's earlier turns when several are processed together
@@ -234,5 +258,5 @@ export function startMock(port = 38999) {
     return say(['页面的', '主标题是', '「Hello Agent」', '，已写入 /workspace/answer.txt。'])
   })
   server.listen(port)
-  return { server, requests, extractions, url: `http://127.0.0.1:${port}/v1` }
+  return { server, requests, extractions, consolidations, url: `http://127.0.0.1:${port}/v1` }
 }
