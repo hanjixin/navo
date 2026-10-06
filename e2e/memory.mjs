@@ -388,7 +388,11 @@ try {
 
   // chat: the message that used memories shows the chip; it opens the memory on the Memory page
   await page.evaluate(() => (window.location.hash = '#/chat'))
-  await page.getByText('帮我看看 Navo 这个项目', { exact: false }).first().click()
+  // on a small window the conversation list is auto-hidden to keep the chat column readable
+  const row = page.getByText('帮我看看 Navo 这个项目', { exact: false }).first()
+  await page.waitForTimeout(300)
+  if (!(await row.isVisible().catch(() => false))) await page.getByRole('button', { name: '切换对话列表' }).click()
+  await row.click()
   const chip = await page.waitForSelector('button[aria-label^="引用了"]', { timeout: 5000 }).catch(() => null)
   ok(!!chip, 'chat shows which memories a message used')
   await sleep(600)

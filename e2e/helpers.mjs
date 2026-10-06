@@ -9,6 +9,16 @@ export async function mainWindow(app, { onboarding = false } = {}) {
     const found = app.windows().find(isMain)
     if (found) {
       await found.waitForFunction(() => !!window.api && !!document.querySelector('nav, [aria-label="首次设置"]'))
+      // NAVO_E2E_WINDOW=1024x700 reproduces a small screen (e.g. CI runners) on a large one
+      const size = /^(\d+)x(\d+)$/.exec(process.env.NAVO_E2E_WINDOW ?? '')
+      if (size)
+        await app.evaluate(
+          ({ BrowserWindow }, [w, h]) =>
+            BrowserWindow.getAllWindows()
+              .find((x) => x.webContents.getURL().includes('index.html'))
+              ?.setSize(w, h),
+          [Number(size[1]), Number(size[2])],
+        )
       if (!onboarding && (await found.$('[aria-label="首次设置"]'))) {
         await found.evaluate(() => window.api.invoke('settings.set', { onboarded: true }))
         await found.reload()
