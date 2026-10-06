@@ -117,6 +117,35 @@ const CASES = [
     ex: { userText: '再帮我把第三部分润色一下', reply: '第三部分已经改好：……', todayLog: '用户在写季度总结，完成了前两部分。' },
     expect: { none: true, journal: true },
   },
+  // several turns processed in one pass (what happens when a conversation goes quiet)
+  {
+    name: '多轮-偏好分散在几轮里',
+    ex: {
+      earlier: [
+        {
+          userText: '帮我看看下周三去北京的高铁',
+          reply: '下周三上午有 G2、G6、G14 等车次，二等座 553 元起。',
+          actions: ['browser_navigate https://www.12306.cn/'],
+        },
+        { userText: '要二等座，我出差都是坐二等座', reply: '好的，G6 二等座还有票。', actions: [] },
+      ],
+      userText: '选靠窗的，每次都帮我选靠窗',
+      reply: '已为你选择 G6 二等座靠窗（A 座）。',
+    },
+    expect: { learn: ['preference'], journal: true },
+  },
+  {
+    name: '多轮-都是一次性任务',
+    ex: {
+      earlier: [
+        { userText: '把这段话翻译成英文：项目延期一周', reply: 'The project is delayed by one week.', actions: [] },
+        { userText: '再正式一点', reply: 'The project schedule has been extended by one week.', actions: [] },
+      ],
+      userText: '好，再帮我写成一封邮件',
+      reply: 'Subject: Project Schedule Update …',
+    },
+    expect: { none: true, journal: true },
+  },
 ]
 
 // launched as a normal process (Playwright would substitute a mock keychain and the API key

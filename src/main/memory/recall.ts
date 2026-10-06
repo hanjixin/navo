@@ -176,6 +176,30 @@ export function quotedFrom(evidence: string | null | undefined, userTexts: strin
   })
 }
 
+// ---------- when to learn
+
+// "我…" patterns must not follow 帮/给/让/替 ("帮我在京东搜" is a request, not a fact about the user)
+const ME = '(?<![帮给让替为跟和对])我'
+const SIGNAL = new RegExp(
+  [
+    '记住|记一下|记下来|别忘|不要忘|以后|今后|往后|下次|从现在(起|开始)|从今(天|往后)|不要再|别再|不用再',
+    '不对|错了|应该是|忘掉|忘了.{0,12}吧',
+    `叫我|${ME}叫|${ME}是|${ME}的.{1,8}是`,
+    `${ME}(现在|已经|目前|一直)?(住在|搬到|在.{1,10}(工作|上班|上学|生活|做))`,
+    `${ME}(不|只|一般|通常|习惯|喜欢|讨厌|更喜欢|平时)`,
+    "remember|don'?t forget|from now on|next time|call me|my name is",
+    "\\bi am\\b|\\bi'm\\b|\\bi (prefer|always|never|usually|live|work)\\b|\\b(always|never) ",
+  ].join('|'),
+  'i',
+)
+
+/**
+ * Whether the user's message carries an explicit cue that something should be remembered now
+ * (a "记住…", a correction, a standing preference, a fact about themselves). Everything else can
+ * wait for the conversation to go quiet and be looked at as a whole.
+ */
+export const hasMemorySignal = (text: string): boolean => SIGNAL.test(text)
+
 // ---------- prompt
 
 export const KIND_LABEL: Record<MemoryKind, string> = { profile: '关于用户', preference: '偏好', knowledge: '知识', site: '站点经验' }

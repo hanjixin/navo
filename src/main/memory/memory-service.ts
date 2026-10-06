@@ -8,7 +8,7 @@ import { log } from '../core/logger'
 import { paths } from '../core/paths'
 import { getSettings } from '../core/settings'
 import { createChatModel, models } from '../models/registry'
-import { extractionMessages, parseJournal, parseOps, type Exchange } from './extract'
+import { extractionMessages, parseJournal, parseOps, userTexts, type Exchange } from './extract'
 import { findDuplicate, findSecret, hostOf, KIND_LABEL, MemoryIndex, memoryPrompt, normalizeScope, quotedFrom, siteMatches } from './recall'
 
 const KINDS: MemoryKind[] = ['profile', 'preference', 'knowledge', 'site']
@@ -317,11 +317,13 @@ class MemoryService {
     const wantOps = s.autoLearn && !opts.journalOnly
     if ((!wantOps && !s.daily) || !this.threadEnabled(threadId) || this.learning.has(threadId)) return null
     // nothing to learn from pleasantries: skip the model call entirely
-    if (ex.userText.trim().length < 2 || (isSmallTalk(ex.userText) && !ex.actions.length)) return null
+    const turns = [...(ex.earlier ?? []), ex]
+    const said = userTexts(ex)
+    if (turns.every((t) => t.userText.trim().length < 2 || (isSmallTalk(t.userText) && !t.actions.length))) return null
     this.learning.add(threadId)
     try {
       const all = this.list()
-      const related = new MemoryIndex(all).search(`${ex.userText}\n${ex.reply.slice(0, 800)}`, { limit: 12, minScore: 0.5 }).map((x) => x.m)
+      const related = new MemoryIndex(all).search(`${said.join('\n')}\n${ex.reply.slice(0, 800)}`, { limit: 12, minScore: 0.5 }).map((x) => x.m)
       const today = localDay()
       const todayLog = this.dayEntry(today, threadId)?.text ?? null
       // a cheaper model can be set for this pass; fall back to the conversation's if it was removed
@@ -338,7 +340,7 @@ class MemoryService {
       const status = s.review ? 'pending' : 'active'
       // memories about the user must quote the user's own words; anything else (web pages, the
       // agent's reply) is either held for confirmation (adds) or not applied (updates / deletes)
-      const grounded = (kind: MemoryKind, ev: string | null | undefined) => kind === 'site' || quotedFrom(ev, [ex.userText])
+      const grounded = (kind: MemoryKind, ev: string | null | undefined) => kind === 'site' || quotedFrom(ev, said)
       for (const op of ops) {
         try {
           if (op.op === 'delete') {
@@ -400,7 +402,7 @@ class MemoryService {
       const content = op.op === 'delete' ? '' : op.content
       return {
         ...op,
-        grounded: kind === 'site' || quotedFrom(op.evidence, [ex.userText]),
+        grounded: kind === 'site' || quotedFrom(op.evidence, userTexts(ex)),
         secret: findSecret(`${op.op === 'add' ? op.title : ''}\n${content}`),
       }
     })

@@ -180,6 +180,21 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
           )}
           <div className={cn('flex items-center justify-between gap-4 text-sm', (!cfg.enabled || (!cfg.autoLearn && !cfg.daily)) && 'opacity-60')}>
             <span>
+              什么时候整理对话
+              <span className="block text-xs text-muted-foreground">
+                你说「记住…」、纠正它或说明自己的情况时会立刻记；其余内容等对话停下这么久后，对整段对话统一整理一次
+              </span>
+            </span>
+            <Select
+              className="w-32"
+              disabled={!cfg.enabled || (!cfg.autoLearn && !cfg.daily)}
+              value={String(cfg.idleMinutes)}
+              onChange={(v) => void update({ memory: { ...cfg, idleMinutes: Number(v) } })}
+              options={[1, 3, 10, 30].map((n) => ({ value: String(n), label: `空闲 ${n} 分钟后` }))}
+            />
+          </div>
+          <div className={cn('flex items-center justify-between gap-4 text-sm', (!cfg.enabled || (!cfg.autoLearn && !cfg.daily)) && 'opacity-60')}>
+            <span>
               记忆使用的模型
               <span className="block text-xs text-muted-foreground">自动学习和每日记录各回复一次后台调用，可以换成更便宜的模型</span>
             </span>

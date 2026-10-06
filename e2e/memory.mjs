@@ -17,7 +17,8 @@ writeFileSync(join(profile, 'memories', '项目.md'), 'Navo 是用户正在做�
 
 const site = createServer((_, res) => res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>Shop</title><h1>Shop</h1>')).listen(38986)
 const mock = startMock(38987)
-const app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: profile } })
+// a short idle wait, so turns without an explicit cue are still processed quickly in these checks
+let app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: profile, AB_MEMORY_IDLE_MS: '400' } })
 const page = await mainWindow(app)
 const api = (m, ...a) => page.evaluate(([m, a]) => window.api.invoke(m, ...a), [m, a])
 const ok = (c, msg) => {
@@ -50,6 +51,8 @@ const waitLearned = async (n, ms = 8000) => {
 /** the main agent's request for a given user message (not the extraction call) */
 const agentReq = (text) => mock.requests.filter((r) => JSON.stringify(r.messages).includes(text))[0]
 const extractionCalls = () => mock.extractions.length
+/** lets passes that are still waiting for the idle timer (from the steps before) finish, so they aren't counted below */
+const settle = () => sleep(1200)
 const systemOf = (r) => JSON.stringify(r.messages[0].content)
 const byTitle = async (t) => (await api('memory.list')).find((m) => m.title === t)
 
@@ -101,6 +104,7 @@ try {
   // ---------- per-conversation off
   const t4 = await api('threads.create', m.id)
   await api('memory.setThreadEnabled', t4.id, false)
+  await settle()
   const before4 = extractionCalls()
   await runAndWait(t4.id, '[plain] 无痕对话 [learn]')
   await sleep(1500)
@@ -113,6 +117,7 @@ try {
 
   // ---------- the agent's own tool call (automatic learning then skips the exchange)
   const t5 = await api('threads.create', m.id)
+  await settle()
   const before5 = extractionCalls()
   await runAndWait(t5.id, '[memtool] 记住这家店改地址的方法')
   const siteMem = await byTitle('下单入口')
@@ -236,6 +241,29 @@ try {
   const subReq = mock.requests.find((r) => JSON.stringify(r.messages[0].content).includes('浏览器操作专家'))
   ok(!!subReq && JSON.stringify(subReq.messages[0].content).includes('默认使用中文回复'), 'browser-operator subagent gets the memory section')
 
+  // ---------- when to learn: a cue → at once; everything else → one pass when the conversation goes quiet
+  const setIdle = (ms) => app.evaluate((_, v) => void (process.env.AB_MEMORY_IDLE_MS = v), String(ms))
+  await sleep(1000) // let earlier passes finish
+  await setIdle(2500)
+  const tb = await api('threads.create', m.id)
+  const b0 = extractionCalls()
+  await runAndWait(tb.id, '[plain] 帮我看看去成都的机票，查航班默认看上午的 [learn-pref]')
+  await runAndWait(tb.id, '[plain] 再看看回程的')
+  ok(extractionCalls() === b0, 'turns without a cue do not trigger a background call right away')
+  for (let i = 0; i < 80 && extractionCalls() === b0; i++) await sleep(100)
+  await sleep(600)
+  const batch = JSON.stringify(mock.extractions.at(-1)?.messages ?? '')
+  ok(
+    extractionCalls() === b0 + 1 && batch.includes('之前的 1 轮') && batch.includes('查航班默认看上午的') && batch.includes('再看看回程的'),
+    'once the conversation is quiet, the whole stretch is processed in a single call',
+  )
+  ok((await byTitle('航班时间'))?.status === 'active', 'a preference from an earlier turn of the stretch is learned (evidence found in that turn)')
+  const b1 = extractionCalls()
+  await runAndWait(tb.id, '[plain] 记住我只坐靠窗的位置')
+  for (let i = 0; i < 20 && extractionCalls() === b1; i++) await sleep(100)
+  ok(extractionCalls() === b1 + 1, 'an explicit "记住…" is processed at once, not after the idle wait')
+  await setIdle(400)
+
   // ---------- recall follows the conversation, not just the last message
   const tc = await api('threads.create', m.id)
   await api('threads.rename', tc.id, '杂项')
@@ -248,6 +276,7 @@ try {
 
   // ---------- memory pass: skipped for pleasantries, can use its own (cheaper) model
   const ts = await api('threads.create', m.id)
+  await settle()
   const beforeS = extractionCalls()
   await runAndWait(ts.id, '谢谢')
   await sleep(1200)
@@ -306,6 +335,23 @@ try {
     (await page.evaluate(() => window.location.hash)).includes('focus=') && !!(await page.$('[data-testid=memory-row].ring-2')),
     'clicking it highlights the memory',
   )
+
+  // ---------- pending turns survive a restart
+  await sleep(800)
+  await app.evaluate(() => void (process.env.AB_MEMORY_IDLE_MS = '600000'))
+  const tr = await api('threads.create', m.id)
+  await runAndWait(tr.id, '[plain] 对比了两款显示器 [journal:用户对比了两款显示器，倾向 27 寸那款。]')
+  await sleep(500)
+  ok(!(await api('memory.days')).some((e) => e.threadId === tr.id), 'not processed yet (long idle wait)')
+  await app.close()
+  app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: profile, AB_MEMORY_IDLE_MS: '400' } })
+  const page2 = await mainWindow(app)
+  let resumed = false
+  for (let i = 0; i < 150 && !resumed; i++) {
+    resumed = (await page2.evaluate(() => window.api.invoke('memory.days'))).some((e) => e.text.includes('27 寸'))
+    if (!resumed) await sleep(100)
+  }
+  ok(resumed, 'after a restart, the turns that were still waiting are processed')
 } catch (e) {
   await page.screenshot({ path: join(out, 'memory-fail.png') }).catch(() => null)
   console.log('FAIL exception', e)

@@ -2,6 +2,7 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { appFile } from '../core/app-dir'
 import type { ChatEvent, Decision, Thread, ThreadState } from '@shared/types'
 import { buildAttachmentContext } from '../files/attachments'
+import { learning } from '../learning'
 import { memory } from '../memory/memory-service'
 import { files } from '../files/file-service'
 import { db, kv } from '../core/db'
@@ -140,6 +141,7 @@ class AgentService {
     kv.set(`thread.allow.${id}`, [])
     sessions.forget(id)
     memory.forgetThread(id)
+    learning.drop(id)
     kv.set(`thread.memory.${id}`, true)
     await this.host().call('thread.delete', { threadId: id })
     emit('threads.changed')
@@ -304,18 +306,23 @@ class AgentService {
       .map((m) => m.content)
   }
 
+  /** Hands a finished turn to the learning scheduler (which decides: now, or when the conversation goes quiet). */
   private async learnFrom(threadId: string, userText: string, reply: string, journalOnly: boolean): Promise<void> {
-    const thread = this.getThread(threadId)
-    if (!thread || !reply.trim()) return
-    // what the agent did since the user's message: tool names, plus the pages it opened
+    if (!reply.trim() || !this.getThread(threadId)) return
+    // what the agent did since the user's message: tool names, the pages it opened, the files it read
     const msgs = (await this.threadState(threadId).catch(() => null))?.messages ?? []
-    const from = msgs.map((m) => m.role).lastIndexOf('user')
-    const actions = msgs
-      .slice(from + 1)
-      .flatMap((m) => m.toolCalls ?? [])
-      .map((c) => (typeof c.args?.url === 'string' ? `${c.name} ${c.args.url}` : c.name))
-      .slice(0, 30)
-    await memory.learn(threadId, thread.title, thread.modelId, { userText, reply, actions }, { journalOnly })
+    const since = msgs.slice(msgs.map((m) => m.role).lastIndexOf('user') + 1)
+    const calls = since.flatMap((m) => m.toolCalls ?? [])
+    learning.submit(threadId, {
+      userText,
+      reply,
+      actions: calls.map((c) => (typeof c.args?.url === 'string' ? `${c.name} ${c.args.url}` : c.name)).slice(0, 30),
+      journalOnly,
+      at: Date.now(),
+      filesRead: calls.filter((c) => c.name === 'read_file' && typeof c.args?.file_path === 'string').map((c) => c.args.file_path as string),
+      toolCalls: calls.length,
+      toolErrors: since.filter((m) => m.role === 'tool' && m.status === 'error').length,
+    })
   }
 
   /** Executes a tool the agent process asked for, on the conversation's tab. */

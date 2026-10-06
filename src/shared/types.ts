@@ -247,6 +247,10 @@ export interface MemorySettings {
   daily: boolean
   /** model for the background memory pass; null = the conversation's model */
   modelId: string | null
+  /** turns without an explicit cue are looked at together once the conversation has been quiet this long */
+  idleMinutes: number
+  /** tidy memories in the background: merge duplicates, resolve contradictions, generalise */
+  consolidate: boolean
 }
 
 export interface MemoryLearned {

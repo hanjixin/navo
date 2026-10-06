@@ -11,6 +11,7 @@ import { registerHandlers } from './handlers'
 import { browser } from './browser/browser-service'
 import { plugins } from './plugins/plugin-service'
 import { recorder } from './recorder/recorder-service'
+import { learning } from './learning'
 import { memory } from './memory/memory-service'
 import { mcp } from './mcp/mcp-service'
 import { connectors } from './connectors/connector-service'
@@ -102,6 +103,8 @@ app.whenReady().then(async () => {
   void mcp.connectAll()
   void connectors.startAll()
   void navoMcpServer.apply()
+  // turns that were still waiting to be learned from when the app last quit
+  learning.resume()
   // scripts/agent-eval.mjs: browser tasks against the real model, then quit
   if (process.env.NAVO_AGENT_EVAL) void runAgentEval(process.env.NAVO_AGENT_EVAL)
 
