@@ -115,6 +115,11 @@ export function pageRuntime(): void {
     const all = opts.scope === 'all'
     const max = opts.maxChars ?? (all ? 20000 : 6000)
     const vh = window.innerHeight || 800
+    // "current + next screen" is measured from where the content starts: a long header / nav can push
+    // <main> more than a screen down (small windows), and the page would otherwise look empty
+    const mainEl = document.querySelector('main,article,[role="main"]')
+    const mainTop = mainEl ? mainEl.getBoundingClientRect().top : 0
+    const contentTop = mainTop > vh ? mainTop : 0
     const main: string[] = []
     const chrome: string[] = []
     let foldedLinks = 0
@@ -132,14 +137,18 @@ export function pageRuntime(): void {
       const para = tag === 'p' || tag === 'li' || tag === 'td' || tag === 'th' || tag === 'label' || tag === 'dd' || tag === 'blockquote'
       if (!interactive && !heading && !para) continue
       const r = el.getBoundingClientRect()
-      if (!all && r.top > vh * 2) {
+      const inChrome = !!el.closest(CHROME)
+      // links in the chrome are only counted, and its form controls (a search box) are always worth
+      // keeping — wherever they sit; everything else is limited to two screens
+      const chromeLink = inChrome && interactive && !el.matches(FORM_CONTROL) && !(tag === 'button' && el.closest('form'))
+      const chromeControl = inChrome && interactive && !chromeLink
+      if (!all && !chromeLink && !chromeControl && r.top > (inChrome ? 0 : contentTop) + vh * 2) {
         if (interactive) below++
         continue
       }
-      const inChrome = !!el.closest(CHROME)
       if (interactive) {
         seen.add(el)
-        if (inChrome && !el.matches(FORM_CONTROL) && !(tag === 'button' && el.closest('form'))) {
+        if (chromeLink) {
           foldedLinks++
           if (!all) continue
           chrome.push(describe(el))

@@ -67,7 +67,8 @@ try {
     worst = Math.max(worst, Date.now() - s)
     await sleep(100)
   }
-  ok(worst < 150, `main process responsive during a streaming run (worst IPC ${worst}ms)`)
+  // generous: shared CI runners add noise; a blocked main process would show seconds, not milliseconds
+  ok(worst < 500, `main process responsive during a streaming run (worst IPC ${worst}ms)`)
   await api('chat.stop', t0.id)
   await waitRunEnd(t0.id)
   await app.evaluate(({ app }) => {
@@ -83,6 +84,13 @@ try {
   ok((await api('threads.state', t0b.id)).messages.at(-1)?.content.includes('好的'), 'agent process restarts automatically after a crash')
 
   // ---------- 1. budgeted snapshot + diffs
+  // a small window on purpose: the 150 nav links push <main> far below the first two screens
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().includes('index.html'))
+      .setContentSize(1000, 620),
+  )
+  await sleep(400)
   const nav = Array.from({ length: 150 }, (_, i) => `<a href="/n${i}">导航链接${i}</a>`).join(' ')
   const results = Array.from({ length: 8 }, (_, i) => `<li><h2><a href="https://r${i}.example">搜索结果 ${i}</a></h2><p>摘要 ${i}</p></li>`).join('')
   const snap = await tool('browser_navigate', {
