@@ -60,13 +60,16 @@ try {
   ok((await nativeBounds())?.width === 560, 'shortcut reopens + double-click resets to default width')
 
   // sidebar toggle
+  // the width animates: poll for the end state instead of sleeping a fixed time (slow CI runners)
+  const navSettles = async (w) => {
+    for (let i = 0; i < 60 && (await navWidth()) !== w; i++) await page.waitForTimeout(50)
+    return (await navWidth()) === w
+  }
   await page.keyboard.press('ControlOrMeta+b')
-  await page.waitForTimeout(350)
-  ok((await navWidth()) === 56, 'Cmd/Ctrl+B collapses sidebar to icon rail')
+  ok(await navSettles(56), 'Cmd/Ctrl+B collapses sidebar to icon rail')
   await shot('layout-collapsed.png')
   await page.keyboard.press('ControlOrMeta+b')
-  await page.waitForTimeout(350)
-  ok((await navWidth()) === 208, 'Cmd/Ctrl+B expands again')
+  ok(await navSettles(208), 'Cmd/Ctrl+B expands again')
 
   // responsive: clear explicit prefs, then narrow window
   await page.evaluate(() => {
