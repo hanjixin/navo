@@ -129,11 +129,12 @@ export class Runner {
       ? Object.fromEntries(req.interruptOn.map((n) => [n, { allowedDecisions: ['approve', 'edit', 'reject'] as ('approve' | 'edit' | 'reject')[] }]))
       : undefined
     const backend = new CompositeBackend(new StateBackend(), {
-      '/skills/': new FilesystemBackend({ rootDir: req.paths.skills, virtualMode: true }),
+      // read-only: skills change through the skill tools, so every change is versioned and checked
+      '/skills/': new ScopedSkillBackend(req.paths.skills, null, 'Skill 文件不能直接改写。改进已有 Skill 用 skill_note，新建或重写用 navo_save_skill。'),
       '/workspace/': new FilesystemBackend({ rootDir: req.paths.workspace, virtualMode: true }),
       ...Object.fromEntries(req.mounts.map((m) => [`/ext/${m.id}/`, new ScopedSkillBackend(m.root, new Set(m.allowed))])),
       // parsed uploads: readable (read_file supports offset/limit for long documents), never writable
-      '/uploads/': new ScopedSkillBackend(req.paths.uploads, null),
+      '/uploads/': new ScopedSkillBackend(req.paths.uploads, null, '上传的文件是只读的。'),
     })
     return createDeepAgent({
       name: 'navo',

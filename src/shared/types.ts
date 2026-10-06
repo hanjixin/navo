@@ -187,6 +187,71 @@ export interface DiscoveredMcp {
   imported: boolean
 }
 
+// ---------- Skill self-improvement ----------
+
+/** who / what wrote a version of a skill */
+export type SkillVersionSource = 'user' | 'import' | 'agent-patch' | 'agent-proposal' | 'experience' | 'rollback'
+
+export interface SkillVersion {
+  skill: string
+  version: number
+  content: string
+  at: number
+  source: SkillVersionSource
+  /** why it changed (shown in the history) */
+  reason: string
+  threadId: string | null
+}
+
+/**
+ * A change the agent wants to make to a skill but may not apply by itself:
+ * create = a new skill distilled from a finished task · rewrite = a large change · patch = a change
+ * too big to apply automatically · fork = an improved local copy of a read-only shared skill ·
+ * rollback = going back because the last automatic change made things worse
+ */
+export interface SkillProposal {
+  id: string
+  skill: string
+  kind: 'create' | 'rewrite' | 'patch' | 'fork' | 'rollback'
+  /** full SKILL.md as it would be after approval */
+  content: string
+  /** current SKILL.md (empty for create), for the diff */
+  before: string
+  reason: string
+  evidence: string
+  threadId: string | null
+  at: number
+}
+
+export interface SkillStats {
+  uses: number
+  ok: number
+  corrected: number
+  failed: number
+  /** current version number (0 = never versioned) */
+  version: number
+  /** automatic improvements applied so far */
+  autoPatches: number
+}
+
+export interface SkillEvolved {
+  skill: string
+  /** patched / created: applied (undo = roll back) · proposed: waiting for the user */
+  kind: 'patched' | 'created' | 'proposed'
+  summary: string
+  version?: number
+  proposalId?: string
+}
+
+export interface SkillSettings {
+  /** look back at finished tasks to improve skills and distil new ones */
+  selfImprove: boolean
+  /** small fixes to local skills apply by themselves (versioned, can be rolled back) */
+  autoApplySmall: boolean
+  /** a way of doing a task that has worked repeatedly becomes a skill without asking */
+  autoCreateFromExperience: boolean
+}
+
 // ---------- Memory ----------
 // ---------- Memory ----------
 
@@ -449,6 +514,7 @@ export interface Settings {
   files: FilesSettings
   langfuse: LangfuseSettings
   memory: MemorySettings
+  skills: SkillSettings
 }
 
 export interface LangfuseSettings {

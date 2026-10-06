@@ -27,6 +27,10 @@ import type {
   McpServerStatus,
   Settings,
   Skill,
+  SkillEvolved,
+  SkillProposal,
+  SkillStats,
+  SkillVersion,
   SkillSource,
   Task,
   TaskRun,
@@ -92,6 +96,14 @@ export interface Api {
   'skills.removeSource': (id: string) => void
   /** Copies an external skill into the local library so it can be edited */
   'skills.copyToLocal': (id: string) => Skill
+  /** every recorded state of a local skill, newest first */
+  'skills.versions': (name: string) => SkillVersion[]
+  'skills.rollback': (name: string, version: number) => void
+  /** changes the agent suggests but may not apply by itself */
+  'skills.proposals': () => SkillProposal[]
+  'skills.resolveProposal': (id: string, approve: boolean, content?: string) => void
+  /** uses and outcomes per skill id */
+  'skills.stats': () => Record<string, SkillStats>
 
   // memory
   'memory.list': () => Memory[]
@@ -211,6 +223,9 @@ export interface Api {
 export interface Events {
   'memory.changed': void
   'memory.learned': MemoryLearned
+  /** a skill was improved / created by itself, or a suggestion is waiting */
+  'skills.evolved': SkillEvolved
+  'skills.changed': void
   'memory.consolidated': { changed: number; conflicts: number }
   'chat.event': ChatEvent
   'threads.changed': void

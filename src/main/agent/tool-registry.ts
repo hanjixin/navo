@@ -31,7 +31,7 @@ function navoTools(threadId?: string): ToolEntry[] {
         const out = await d.run(args ?? {}, { threadId })
         return typeof out === 'string' ? out : JSON.stringify(out, null, 2)
       },
-      { name: d.name, description: d.name.startsWith('memory_') ? d.description : `[Navo 管理] ${d.description}`, schema: z.object(d.input) },
+      { name: d.name, description: /^(memory|skill)_/.test(d.name) ? d.description : `[Navo 管理] ${d.description}`, schema: z.object(d.input) },
     ) as unknown as StructuredToolInterface,
   }))
 }
@@ -105,7 +105,9 @@ ${mem ? `\n${mem}\n` : ''}`
 }
 ## 文件
 - /workspace/ 用于保存需要长期保留的产出文件；其他路径为会话临时文件。
-- /skills/ 与 /ext/ 下是可用的 Skill（/ext/ 为用户其他 Agent 共享的只读目录），按需读取其 SKILL.md 并遵循。
+- /skills/ 与 /ext/ 下是可用的 Skill（/ext/ 为用户其他 Agent 共享的目录），按需读取其 SKILL.md 并遵循。两处都是只读的，不能用 write_file / edit_file 改。
+- Skill 会越用越好：按 Skill 做的结果被用户纠正，或某一步行不通、换了做法才成功时，用 skill_note 把这条经验或修正记进那个 Skill（不要只是这一次绕过去）。小修正会直接生效，大改动会变成给用户的建议。
+- 用户让你「写一个 Skill」时用 navo_save_skill。你自己觉得某个做法值得沉淀时也可以调用它，但会先作为建议等用户确认。
 
 ${s.systemPrompt ? `## 用户自定义指令\n${s.systemPrompt}\n` : ''}`
 }

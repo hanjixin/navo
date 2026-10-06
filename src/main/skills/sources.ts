@@ -37,20 +37,8 @@ export interface SkillMount {
   skills: ExternalSkill[]
 }
 
-export function parseFrontmatter(md: string): Record<string, string> {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(md)
-  if (!m) return {}
-  const out: Record<string, string> = {}
-  for (const line of m[1].split(/\r?\n/)) {
-    const i = line.indexOf(':')
-    if (i > 0 && !/^\s/.test(line))
-      out[line.slice(0, i).trim()] = line
-        .slice(i + 1)
-        .trim()
-        .replace(/^["']|["']$/g, '')
-  }
-  return out
-}
+export { parseFrontmatter } from './frontmatter'
+import { parseFrontmatter } from './frontmatter'
 
 function customSources(): CustomSource[] {
   return kv.get<CustomSource[]>('skills.customSources', [])

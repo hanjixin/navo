@@ -1,9 +1,10 @@
 import { dialog, shell } from 'electron'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { Skill, SkillSource } from '@shared/types'
+import type { Skill, SkillSource, SkillVersionSource } from '@shared/types'
 import { db } from '../core/db'
 import { paths } from '../core/paths'
+import { skillVersions } from './versions'
 import { addCustomSource, parseFrontmatter, removeCustomSource, scanSources, sourceInfo, tildify, type SkillMount } from './sources'
 
 export { parseFrontmatter }
@@ -114,7 +115,11 @@ export const skills = {
     return readFileSync(join(loc.root, id, 'SKILL.md'), 'utf8')
   },
 
-  save(name: string, content: string): void {
+  /**
+   * Writes a local skill. Every change is versioned (the state before the first tracked change is
+   * kept as version 1), so it can be compared and rolled back.
+   */
+  save(name: string, content: string, meta: { source?: SkillVersionSource; reason?: string; threadId?: string | null } = {}): void {
     if (name.startsWith('ext:')) throw new Error('外部 Skill 是只读的，请先复制到本地')
     if (!NAME_RE.test(name)) throw new Error('Skill 名称只能包含小写字母、数字和连字符')
     const fm = parseFrontmatter(content)
@@ -122,14 +127,29 @@ export const skills = {
     if (fm.name !== name) throw new Error(`frontmatter 中的 name (${fm.name}) 必须与目录名 (${name}) 一致`)
     const loc = locate(name)
     const dir = join(loc?.root ?? paths.skills, name)
+    const file = join(dir, 'SKILL.md')
+    if (existsSync(file) && !skillVersions.latest(name)) skillVersions.record(name, readFileSync(file, 'utf8'), 'import', '开始记录版本前的内容')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'SKILL.md'), content)
+    writeFileSync(file, content)
+    skillVersions.record(name, content, meta.source ?? 'user', meta.reason ?? '', meta.threadId ?? null)
+  },
+
+  /** Makes an earlier version current again (recorded as a new version). */
+  rollback(name: string, version: number): void {
+    const v = skillVersions.get(name, version)
+    if (!v) throw new Error('这个版本不存在')
+    this.save(name, v.content, { source: 'rollback', reason: `回滚到版本 ${version}` })
+  },
+
+  exists(id: string): boolean {
+    return id.startsWith('ext:') ? !!findExternal(id) : !!locate(id)
   },
 
   delete(id: string): void {
     if (id.startsWith('ext:')) throw new Error('外部 Skill 不能在这里删除，可以禁用它')
     const loc = locate(id)
     if (loc) rmSync(join(loc.root, id), { recursive: true, force: true })
+    skillVersions.forget(id)
   },
 
   setEnabled(id: string, enabled: boolean): void {

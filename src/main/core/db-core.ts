@@ -74,6 +74,21 @@ const MIGRATIONS: string[] = [
     reason TEXT, undone_at INTEGER, resolved_at INTEGER
   );
   `,
+  `
+  CREATE TABLE skill_versions (
+    id TEXT PRIMARY KEY, skill TEXT NOT NULL, version INTEGER NOT NULL, content TEXT NOT NULL, at INTEGER NOT NULL,
+    source TEXT NOT NULL, reason TEXT, thread_id TEXT
+  );
+  CREATE INDEX skill_versions_skill ON skill_versions(skill, version);
+  CREATE TABLE skill_runs (
+    id TEXT PRIMARY KEY, skill TEXT NOT NULL, version INTEGER, thread_id TEXT, at INTEGER NOT NULL, outcome TEXT NOT NULL, note TEXT
+  );
+  CREATE INDEX skill_runs_skill ON skill_runs(skill, at);
+  CREATE TABLE skill_proposals (
+    id TEXT PRIMARY KEY, skill TEXT NOT NULL, kind TEXT NOT NULL, content TEXT NOT NULL, base_version INTEGER,
+    reason TEXT, evidence TEXT, thread_id TEXT, status TEXT NOT NULL DEFAULT 'pending', at INTEGER NOT NULL
+  );
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

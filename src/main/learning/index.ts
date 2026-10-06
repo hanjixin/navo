@@ -2,6 +2,7 @@ import { db, json, kv } from '../core/db'
 import { log } from '../core/logger'
 import { getSettings } from '../core/settings'
 import { memory } from '../memory/memory-service'
+import { skillEvolution } from '../skills/evolution'
 import { LearningScheduler, type LearnTurn } from './scheduler'
 
 const KEY = 'learning.pending.'
@@ -34,6 +35,9 @@ export const learning = new LearningScheduler({
       // the agent already handled memory itself in every one of these turns: only the journal is due
       { journalOnly: turns.every((t) => t.journalOnly) },
     )
+    // skills: note which were used, fix what went wrong, distil what worked
+    await skillEvolution.reflect(threadId, turns, thread.model_id)
+    skillEvolution.syncSiteSkills(memory.list())
     // enough new memories since the last tidy-up? merge duplicates, settle contradictions
     void memory.maybeConsolidate(thread.model_id)
   },

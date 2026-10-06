@@ -4,6 +4,7 @@ import type { ChatEvent, Decision, Thread, ThreadState } from '@shared/types'
 import { buildAttachmentContext } from '../files/attachments'
 import { learning } from '../learning'
 import { memory } from '../memory/memory-service'
+import { hostOf } from '../memory/recall'
 import { files } from '../files/file-service'
 import { db, kv } from '../core/db'
 import { newId } from '../core/id'
@@ -304,6 +305,17 @@ class AgentService {
       .filter((m) => m.role === 'user' && !m.ns)
       .slice(-n)
       .map((m) => m.content)
+  }
+
+  /** Websites the agent opened since the user's last message (what links in a skill note may point to). */
+  async recentHosts(threadId: string): Promise<string[]> {
+    const msgs = (await this.threadState(threadId).catch(() => null))?.messages ?? []
+    const since = msgs.slice(msgs.map((m) => m.role).lastIndexOf('user') + 1)
+    const hosts = since
+      .flatMap((m) => m.toolCalls ?? [])
+      .map((c) => (typeof c.args?.url === 'string' ? hostOf(c.args.url) : null))
+      .filter((h): h is string => !!h)
+    return [...new Set(hosts)]
   }
 
   /** Hands a finished turn to the learning scheduler (which decides: now, or when the conversation goes quiet). */

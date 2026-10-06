@@ -17,7 +17,7 @@
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-vite build && electron-builder --publish never",
     "postdist": "electron-builder install-app-deps",
-    "test:e2e": "electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs",
+    "test:e2e": "electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs",
     "test:agent": "electron-vite build && node e2e/agent.mjs",
     "screenshots": "electron-vite build && node e2e/smoke.mjs",
     "icon": "node e2e/render-icon.mjs",
@@ -30,7 +30,8 @@
     "prepare": "simple-git-hooks",
     "test:packaged": "node e2e/packaged.mjs",
     "eval:memory": "electron-vite build && node scripts/memory-eval.mjs",
-    "eval:agent": "electron-vite build && node scripts/agent-eval.mjs"
+    "eval:agent": "electron-vite build && node scripts/agent-eval.mjs",
+    "eval:skill": "electron-vite build && node scripts/skill-eval.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

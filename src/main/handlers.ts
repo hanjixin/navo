@@ -11,6 +11,8 @@ import { sessions } from './browser/agent-session'
 import { browser } from './browser/browser-service'
 import { skills } from './skills/skill-service'
 import { memory } from './memory/memory-service'
+import { skillEvolution } from './skills/evolution'
+import { skillVersions } from './skills/versions'
 import { mcp } from './mcp/mcp-service'
 import { connectors } from './connectors/connector-service'
 import { plugins } from './plugins/plugin-service'
@@ -88,9 +90,19 @@ export function registerHandlers(): void {
     'skills.addSource': () => skills.addSource(),
     'skills.removeSource': (id) => skills.removeSource(id),
     'skills.copyToLocal': (id) => skills.copyToLocal(id),
+    'skills.versions': (name) => skillVersions.history(name),
+    'skills.rollback': (name, version) => skills.rollback(name, version),
+    'skills.proposals': () => skillEvolution.proposals(),
+    'skills.resolveProposal': (id, approve, content) => skillEvolution.resolveProposal(id, approve, content),
+    'skills.stats': () => skillEvolution.stats(),
 
     'memory.list': () => memory.list(),
-    'memory.save': (input) => memory.save(input).memory,
+    'memory.save': (input) => {
+      const m = memory.save(input).memory
+      // enough tips for one site become a skill
+      if (m.kind === 'site') skillEvolution.syncSiteSkills(memory.list())
+      return m
+    },
     'memory.delete': (id) => memory.delete(id),
     'memory.restore': (m) => memory.undelete(m),
     'memory.pin': (id, pinned) => memory.pin(id, pinned),

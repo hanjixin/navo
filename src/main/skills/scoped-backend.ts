@@ -1,7 +1,7 @@
 import { FilesystemBackend } from 'deepagents'
 
 type AnyResult = Record<string, unknown> & { error?: string }
-const READ_ONLY = { error: '外部 Skill 目录是只读的；如需修改，请先在「Skill」页面复制到本地。' }
+const EXTERNAL_READ_ONLY = '外部 Skill 目录是只读的；如需修改，请先在「Skill」页面复制到本地。'
 
 /**
  * Read-only view of an external skill folder that only exposes the allowed top-level directories.
@@ -15,6 +15,8 @@ export class ScopedSkillBackend {
     rootDir: string,
     /** top-level entries to expose; null = everything */
     private readonly allowed: Set<string> | null,
+    /** what a write attempt is told */
+    private readonly readOnlyMessage = EXTERNAL_READ_ONLY,
   ) {
     this.inner = new FilesystemBackend({ rootDir, virtualMode: true })
   }
@@ -64,15 +66,15 @@ export class ScopedSkillBackend {
   }
 
   async write() {
-    return READ_ONLY
+    return { error: this.readOnlyMessage }
   }
 
   async edit() {
-    return READ_ONLY
+    return { error: this.readOnlyMessage }
   }
 
   async delete() {
-    return READ_ONLY
+    return { error: this.readOnlyMessage }
   }
 
   async uploadFiles(files: Array<[string, Uint8Array]>) {

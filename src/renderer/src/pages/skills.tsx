@@ -1,9 +1,10 @@
-import { Copy, FolderCog, FolderInput, FolderOpen, FolderPlus, Lock, Plus, RotateCw, Save, Sparkles, Trash2, X } from 'lucide-react'
+import { Copy, FolderCog, FolderInput, FolderOpen, FolderPlus, History, Lock, Plus, RotateCw, Save, Sparkles, Trash2, WandSparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type { Skill } from '@shared/types'
 import { CodeEditor } from '@/components/code-editor'
 import { PageHeader } from '@/components/layout/page'
+import { EvolutionSettingsDialog, ProposalCards, SkillHistoryDialog } from '@/components/skills/evolution'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -12,6 +13,7 @@ import { AsyncView, EmptyState, ErrorState, ListSkeleton, Skeleton } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useAsync } from '@/hooks/use-async'
+import { useSkillEvolution } from '@/hooks/use-skill-evolution'
 import { call } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 
@@ -114,6 +116,14 @@ export function SkillsPage() {
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [q, setQ] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [evolutionOpen, setEvolutionOpen] = useState(false)
+  // a skill changed by itself (or a suggestion was applied): refresh the list and the open file
+  const [revision, setRevision] = useState(0)
+  const { proposals, stats } = useSkillEvolution(() => {
+    list.reload()
+    setRevision((n) => n + 1)
+  })
 
   const groups = useMemo(() => {
     const m = new Map<string, Skill[]>()
@@ -137,7 +147,7 @@ export function SkillsPage() {
     setLoadError(null)
     setDirty(false)
     call('skills.read', selected).then(setContent, (e) => setLoadError(errorMessage(e)))
-  }, [selected])
+  }, [selected, revision])
 
   const save = async () => {
     if (!current || current.readOnly || content == null) return
@@ -216,6 +226,10 @@ export function SkillsPage() {
                 <RotateCw className={cn(list.loading && 'animate-spin')} />
               </Button>
             </Tooltip>
+            <Button variant="secondary" onClick={() => setEvolutionOpen(true)}>
+              <WandSparkles />
+              自迭代
+            </Button>
             <Button variant="secondary" onClick={() => setSourcesOpen(true)}>
               <FolderCog />
               来源
@@ -238,6 +252,7 @@ export function SkillsPage() {
           </>
         }
       />
+      <ProposalCards proposals={proposals} />
       <div className="flex min-h-0 flex-1 gap-4">
         <div className="flex w-56 shrink-0 flex-col @4xl:w-72">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 Skill" className="mb-3 h-7 text-xs" />
@@ -287,6 +302,15 @@ export function SkillsPage() {
                                 <Switch checked={s.enabled} onClick={(e) => e.stopPropagation()} onCheckedChange={(v) => void toggle(s, v)} aria-label="启用" />
                               </div>
                               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{s.description || '（缺少描述）'}</p>
+                              {stats[s.id]?.uses || stats[s.id]?.autoPatches ? (
+                                <p className="mt-1 text-[11px] text-subtle-foreground">
+                                  {stats[s.id].uses ? `用过 ${stats[s.id].uses} 次` : ''}
+                                  {stats[s.id].uses && stats[s.id].corrected + stats[s.id].failed
+                                    ? ` · ${stats[s.id].corrected + stats[s.id].failed} 次不顺`
+                                    : ''}
+                                  {stats[s.id].autoPatches ? `${stats[s.id].uses ? ' · ' : ''}自动改进 ${stats[s.id].autoPatches} 次` : ''}
+                                </p>
+                              ) : null}
                               {s.origin || s.shadowed ? (
                                 <div className="mt-1.5 flex flex-wrap gap-1">
                                   {s.origin ? <Badge variant="outline">{s.origin}</Badge> : null}
@@ -338,6 +362,10 @@ export function SkillsPage() {
                     </Button>
                   ) : (
                     <>
+                      <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                        <History />
+                        版本
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -405,6 +433,18 @@ export function SkillsPage() {
         ) : null}
       </Dialog>
       {sourcesOpen ? <SourcesDialog onClose={() => setSourcesOpen(false)} onChanged={list.reload} /> : null}
+      {evolutionOpen ? <EvolutionSettingsDialog onClose={() => setEvolutionOpen(false)} /> : null}
+      {historyOpen && current && !current.readOnly ? (
+        <SkillHistoryDialog
+          skill={current.id}
+          stats={stats[current.id]}
+          onClose={() => setHistoryOpen(false)}
+          onChanged={() => {
+            list.reload()
+            setRevision((n) => n + 1)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

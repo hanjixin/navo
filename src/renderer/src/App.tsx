@@ -8,6 +8,7 @@ import { useTheme } from '@/hooks/use-theme'
 import { useSettings } from '@/stores/settings'
 import { wireChatEvents } from '@/stores/chat'
 import { wireMemoryEvents } from '@/stores/memory'
+import { wireSkillEvents } from '@/stores/skills'
 import { wireBrowserEvents } from '@/stores/browser'
 import { ChatPage } from '@/pages/chat'
 import { TasksPage } from '@/pages/tasks'
@@ -31,6 +32,7 @@ export function App() {
     wireChatEvents()
     wireBrowserEvents()
     wireMemoryEvents()
+    wireSkillEvents()
   }, [load])
 
   return (

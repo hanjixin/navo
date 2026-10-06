@@ -2,8 +2,10 @@ import { app } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Memory } from '@shared/types'
 import { agent } from '../agent/agent-service'
+import type { LearnTurn } from '../learning/scheduler'
 import { memory } from '../memory/memory-service'
 import { resolveModel } from '../models/registry'
+import { skillEvolution } from '../skills/evolution'
 
 /**
  * Real-model evaluations (scripts/memory-eval.mjs, scripts/agent-eval.mjs). They run in a normally
@@ -59,6 +61,23 @@ export async function runAgentEval(file: string): Promise<void> {
     })
     // partial results, so a long run can be followed (and survives a crash)
     writeFileSync(`${file}.progress.json`, JSON.stringify(results, null, 2))
+  }
+  writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
+  app.exit(0)
+}
+
+/** Skill coach dry runs: what it would change for a stretch of conversation, and what the gate decides. */
+export async function runSkillEval(file: string): Promise<void> {
+  const { cases } = JSON.parse(readFileSync(file, 'utf8')) as { cases: { used: { id: string; content: string }[]; turns: LearnTurn[] }[] }
+  const results = []
+  for (const c of cases) {
+    const started = Date.now()
+    results.push(
+      await skillEvolution.dryRun(c.used, c.turns).then(
+        (r) => ({ ...r, ms: Date.now() - started }),
+        (e: Error) => ({ error: e.message }),
+      ),
+    )
   }
   writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
   app.exit(0)
