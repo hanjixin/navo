@@ -9,6 +9,20 @@ import { connectEndpoint } from '../mcp/mcp-service'
 import { CATALOG } from './catalog'
 import { isNavoSelfUrl } from '../mcp-server/self'
 import { StoredOAuthProvider, waitForAuthCode } from './oauth'
+import { builtinTools, notifyBuiltin, verifyBuiltin } from './builtin'
+import { isWriteTool } from './write-tools'
+import type { BotMessage } from './builtin/bots'
+
+/** fills {{key}}; null when a placeholder has no value (that arg / env var is left out) */
+function fill(template: string, values: Record<string, string>): string | null {
+  let missing = false
+  const out = template.replace(/\{\{(\w+)\}\}/g, (_, k: string) => {
+    const v = values[k]?.trim()
+    if (!v) missing = true
+    return v ?? ''
+  })
+  return missing ? null : out
+}
 
 interface Row {
   id: string
@@ -17,6 +31,8 @@ interface Row {
   connected_at: number | null
   error: string | null
   custom_def: string | null
+  /** non-secret field values (JSON) */
+  config: string | null
 }
 
 type Live = { tools: StructuredToolInterface[]; close: () => Promise<void> }
@@ -42,12 +58,12 @@ class ConnectorService {
   }
 
   private upsert(id: string, patch: Partial<Omit<Row, 'id'>>): void {
-    const cur = this.row(id) ?? { id, connected: 0, enabled: 1, connected_at: null, error: null, custom_def: null }
+    const cur = this.row(id) ?? { id, connected: 0, enabled: 1, connected_at: null, error: null, custom_def: null, config: null }
     const next = { ...cur, ...patch }
     db()
       .prepare(
-        `INSERT INTO connectors(id, connected, enabled, connected_at, error, custom_def) VALUES(@id, @connected, @enabled, @connected_at, @error, @custom_def)
-         ON CONFLICT(id) DO UPDATE SET connected=@connected, enabled=@enabled, connected_at=@connected_at, error=@error, custom_def=@custom_def`,
+        `INSERT INTO connectors(id, connected, enabled, connected_at, error, custom_def, config) VALUES(@id, @connected, @enabled, @connected_at, @error, @custom_def, @config)
+         ON CONFLICT(id) DO UPDATE SET connected=@connected, enabled=@enabled, connected_at=@connected_at, error=@error, custom_def=@custom_def, config=@config`,
       )
       .run(next)
     emit('connectors.changed')
@@ -62,6 +78,7 @@ class ConnectorService {
         enabled: r ? !!r.enabled : true,
         connectedAt: r?.connected_at,
         error: r?.error,
+        config: json.parse<Record<string, string>>(r?.config ?? null) ?? undefined,
       }
     })
   }
@@ -70,8 +87,53 @@ class ConnectorService {
     return this.states().find((s) => s.id === id)!
   }
 
-  async connect(id: string, token?: string): Promise<ConnectorState> {
+  /** A form connector's values: the stored non-secret ones plus secrets from the keychain. */
+  private values(def: ConnectorDef): Record<string, string> {
+    const config = json.parse<Record<string, string>>(this.row(def.id)?.config ?? null) ?? {}
+    const out: Record<string, string> = {}
+    for (const f of def.fields ?? []) {
+      const v = f.secret ? secrets.get(`connector:${def.id}:${f.key}`) : config[f.key]
+      if (v ?? f.default) out[f.key] = v ?? f.default!
+    }
+    return out
+  }
+
+  /** Stores a form's values: secrets in the keychain (kept when left blank on a reconnect), the rest in the database. */
+  private saveValues(def: ConnectorDef, input: Record<string, string>): void {
+    const config: Record<string, string> = {}
+    for (const f of def.fields ?? []) {
+      const v = input[f.key]?.trim() ?? ''
+      const hidden = f.showIf && !f.showIf.values.includes(input[f.showIf.key] ?? this.values(def)[f.showIf.key] ?? '')
+      if (f.secret) {
+        const key = `connector:${def.id}:${f.key}`
+        if (v) secrets.set(key, v)
+        else if (f.optional && input[f.key] !== undefined) secrets.delete(key)
+        if (!f.optional && !hidden && !secrets.has(key)) throw new Error(`请填写${f.label}`)
+      } else {
+        const val = v || f.default || ''
+        if (!val && !f.optional && !hidden) throw new Error(`请填写${f.label}`)
+        if (val) config[f.key] = val
+      }
+    }
+    this.upsert(def.id, { config: JSON.stringify(config) })
+  }
+
+  async connect(id: string, credentials?: string | Record<string, string>): Promise<ConnectorState> {
     const def = this.def(id)
+    const token = typeof credentials === 'string' ? credentials : undefined
+    if (def.auth === 'fields') {
+      try {
+        this.saveValues(def, typeof credentials === 'object' ? credentials : {})
+        await this.start(def)
+        this.upsert(id, { connected: 1, enabled: 1, connected_at: Date.now(), error: null })
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err)
+        log.warn(`[connector] ${id} connect failed: ${error}`)
+        this.upsert(id, { connected: 0, error })
+        throw err
+      }
+      return this.state(id)
+    }
     if (!def.mcpUrl) throw new Error('该连接器缺少 MCP 地址')
     try {
       if (def.auth === 'token') {
@@ -98,6 +160,26 @@ class ConnectorService {
 
   private async start(def: ConnectorDef): Promise<void> {
     await this.stop(def.id)
+    if (def.kind === 'builtin' && def.builtin) {
+      const values = this.values(def)
+      await verifyBuiltin(def.builtin, values)
+      this.live.set(def.id, { tools: builtinTools(def.builtin, values, values.name ?? ''), close: async () => undefined })
+      log.info(`[connector] ${def.id} ready (built in)`)
+      return
+    }
+    if (def.kind === 'stdio' && def.stdio) {
+      const values = this.values(def)
+      const args = def.stdio.args.map((a) => fill(a, values)).filter((a): a is string => a !== null)
+      const env = Object.fromEntries(
+        Object.entries(def.stdio.env ?? {})
+          .map(([k, t]) => [k, fill(t, values)] as const)
+          .filter((e): e is readonly [string, string] => e[1] !== null),
+      )
+      const conn = await connectEndpoint({ name: def.id, transport: 'stdio', command: def.stdio.command, args, env })
+      this.live.set(def.id, { tools: conn.tools, close: () => conn.client.close() })
+      log.info(`[connector] ${def.id} ready with ${conn.tools.length} tools`)
+      return
+    }
     const token = def.auth === 'token' ? secrets.get(`connector:${def.id}`) : null
     const conn = await connectEndpoint({
       name: def.id,
@@ -119,6 +201,7 @@ class ConnectorService {
   async disconnect(id: string): Promise<void> {
     await this.stop(id)
     secrets.delete(`connector:${id}`)
+    for (const f of this.def(id).fields ?? []) if (f.secret) secrets.delete(`connector:${id}:${f.key}`)
     new StoredOAuthProvider(id).clear()
     this.upsert(id, { connected: 0, connected_at: null, error: null })
   }
@@ -146,6 +229,35 @@ class ConnectorService {
         })
       }
     }
+  }
+
+  /** Sends a message through a connected group bot / mailbox (monitor alerts, test messages). */
+  async notify(id: string, msg: BotMessage): Promise<void> {
+    const def = this.def(id)
+    const s = this.state(id)
+    if (!def.canNotify || !def.builtin) throw new Error(`${def.name} 不能接收通知`)
+    if (!s.connected || !s.enabled) throw new Error(`${def.name} 没有连接`)
+    await notifyBuiltin(def.builtin, this.values(def), msg)
+  }
+
+  testNotify(id: string): Promise<void> {
+    return this.notify(id, { title: 'Navo 测试消息', text: `连接正常。之后网页监控的提醒等可以发到这里。\n\n${new Date().toLocaleString('zh-CN')}` })
+  }
+
+  /**
+   * Tools of the office connectors that change something (send a message, create / delete a
+   * document or event…): they pause for approval like the built-in send tools.
+   */
+  writeTools(): string[] {
+    const office = new Set(
+      this.catalog()
+        .filter((d) => d.group === 'office-cn')
+        .map((d) => d.id),
+    )
+    return [...this.live]
+      .filter(([id]) => office.has(id))
+      .flatMap(([, l]) => l.tools.map((t) => t.name))
+      .filter(isWriteTool)
   }
 
   tools(): StructuredToolInterface[] {

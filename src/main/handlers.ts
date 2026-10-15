@@ -141,7 +141,8 @@ export function registerHandlers(): void {
 
     'connectors.catalog': () => connectors.catalog(),
     'connectors.states': () => connectors.states(),
-    'connectors.connect': (id, token) => connectors.connect(id, token),
+    'connectors.connect': (id, credentials) => connectors.connect(id, credentials),
+    'connectors.testNotify': (id) => connectors.testNotify(id),
     'connectors.disconnect': (id) => connectors.disconnect(id),
     'connectors.setEnabled': (id, enabled) => connectors.setEnabled(id, enabled),
     'connectors.addCustom': (def) => connectors.addCustom(def),

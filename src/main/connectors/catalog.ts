@@ -1,7 +1,156 @@
-import type { ConnectorDef } from '@shared/types'
+import type { ConnectorDef, ConnectorField } from '@shared/types'
+import { PROVIDERS } from './builtin/email'
 
-/** Built-in connectors. Each is backed by a remote MCP server; auth is OAuth (MCP auth spec w/ dynamic registration) or a bearer token. */
+const webhook = (placeholder: string, help: string): ConnectorField => ({ key: 'webhook', label: 'Webhook 地址', secret: true, placeholder, help })
+const signSecret = (help: string): ConnectorField => ({ key: 'secret', label: '签名密钥（可选）', secret: true, optional: true, help })
+
+/** Office tools used in China: official local MCP servers, group bots, mail and calendars. */
+const OFFICE_CN: ConnectorDef[] = [
+  {
+    id: 'feishu',
+    name: '飞书',
+    description: '飞书官方 MCP：消息、群聊、云文档、多维表格、日历等开放平台接口。',
+    icon: 'feishu',
+    auth: 'fields',
+    kind: 'stdio',
+    group: 'office-cn',
+    setupHelp: 'https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/mcp_integration/mcp_installation',
+    fields: [
+      { key: 'app_id', label: 'App ID', placeholder: 'cli_…', help: '在飞书开放平台创建企业自建应用，在「凭证与基础信息」里找到' },
+      { key: 'app_secret', label: 'App Secret', secret: true },
+      {
+        key: 'domain',
+        label: '版本',
+        default: 'https://open.feishu.cn',
+        options: [
+          { value: 'https://open.feishu.cn', label: '飞书（中国）' },
+          { value: 'https://open.larksuite.com', label: 'Lark（国际）' },
+        ],
+      },
+      { key: 'tools', label: '启用的工具（可选）', optional: true, placeholder: 'preset.default', help: '工具名或预设，逗号分隔；留空使用官方默认的常用接口' },
+    ],
+    stdio: {
+      command: 'npx',
+      args: ['-y', '@larksuiteoapi/lark-mcp', 'mcp', '-a', '{{app_id}}', '-s', '{{app_secret}}', '--domain={{domain}}', '--tools={{tools}}'],
+    },
+  },
+  {
+    id: 'dingtalk',
+    name: '钉钉',
+    description: '钉钉官方 MCP：通讯录、机器人消息、日程、待办、工作通知等开放平台接口。',
+    icon: 'dingtalk',
+    auth: 'fields',
+    kind: 'stdio',
+    group: 'office-cn',
+    setupHelp: 'https://open.dingtalk.com/document/ai-dev/dingtalk-server-api-mcp-overview',
+    fields: [
+      { key: 'client_id', label: 'Client ID（AppKey）', help: '在钉钉开放平台创建应用，在「凭证与基础信息」里找到，并按需要添加权限' },
+      { key: 'client_secret', label: 'Client Secret（AppSecret）', secret: true },
+      {
+        key: 'profiles',
+        label: '启用的服务',
+        default: 'dingtalk-contacts,dingtalk-robot-send-message,dingtalk-calendar',
+        help: '逗号分隔，ALL 为全部；需要在开放平台给应用开通对应权限',
+      },
+    ],
+    stdio: {
+      command: 'npx',
+      args: ['-y', 'dingtalk-mcp@latest'],
+      env: { DINGTALK_Client_ID: '{{client_id}}', DINGTALK_Client_Secret: '{{client_secret}}', ACTIVE_PROFILES: '{{profiles}}' },
+    },
+  },
+  {
+    id: 'wecom-bot',
+    name: '企业微信群机器人',
+    description: '往企业微信群里发消息：日报、提醒、网页监控的通知。',
+    icon: 'wecom',
+    auth: 'fields',
+    kind: 'builtin',
+    builtin: 'wecom-bot',
+    group: 'office-cn',
+    canNotify: true,
+    fields: [
+      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '研发群', help: '告诉 Agent 这是哪个群' },
+      webhook('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…', '群聊 → 右上角 → 消息推送 / 群机器人 → 添加，复制 Webhook 地址'),
+    ],
+  },
+  {
+    id: 'dingtalk-bot',
+    name: '钉钉群机器人',
+    description: '往钉钉群里发消息：日报、提醒、网页监控的通知。',
+    icon: 'dingtalk',
+    auth: 'fields',
+    kind: 'builtin',
+    builtin: 'dingtalk-bot',
+    group: 'office-cn',
+    canNotify: true,
+    fields: [
+      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '项目群' },
+      webhook('https://oapi.dingtalk.com/robot/send?access_token=…', '群设置 → 机器人 → 添加机器人 → 自定义，复制 Webhook'),
+      signSecret('安全设置选了「加签」时填写（SEC 开头）'),
+    ],
+  },
+  {
+    id: 'feishu-bot',
+    name: '飞书群机器人',
+    description: '往飞书群里发消息（支持 Markdown 卡片）：日报、提醒、网页监控的通知。',
+    icon: 'feishu',
+    auth: 'fields',
+    kind: 'builtin',
+    builtin: 'feishu-bot',
+    group: 'office-cn',
+    canNotify: true,
+    fields: [
+      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '运营群' },
+      webhook('https://open.feishu.cn/open-apis/bot/v2/hook/…', '群设置 → 群机器人 → 添加机器人 → 自定义机器人，复制 Webhook 地址'),
+      signSecret('安全设置开启了「签名校验」时填写'),
+    ],
+  },
+  {
+    id: 'email',
+    name: '邮箱',
+    description: '收发邮件：查看和搜索收件箱、读正文、发送（发送前确认）。支持 QQ、163、企业邮箱等。',
+    icon: 'mail',
+    auth: 'fields',
+    kind: 'builtin',
+    builtin: 'email',
+    group: 'office-cn',
+    canNotify: true,
+    fields: [
+      { key: 'provider', label: '邮箱服务', default: 'qq', options: Object.entries(PROVIDERS).map(([value, p]) => ({ value, label: p.label })) },
+      { key: 'address', label: '邮箱地址', placeholder: 'name@qq.com' },
+      { key: 'password', label: '授权码', secret: true, help: '不是登录密码：在邮箱设置里开启 IMAP/SMTP 后生成' },
+      { key: 'imap_host', label: 'IMAP 服务器', placeholder: 'imap.example.com', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'imap_port', label: 'IMAP 端口', default: '993', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'smtp_host', label: 'SMTP 服务器', placeholder: 'smtp.example.com', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'smtp_port', label: 'SMTP 端口', default: '465', showIf: { key: 'provider', values: ['custom'] } },
+    ],
+  },
+  {
+    id: 'caldav',
+    name: '日历（CalDAV）',
+    description: '查看和创建日程。支持 iCloud，以及在飞书、钉钉等日历设置里开启的 CalDAV 同步。',
+    icon: 'calendar',
+    auth: 'fields',
+    kind: 'builtin',
+    builtin: 'caldav',
+    group: 'office-cn',
+    fields: [
+      {
+        key: 'server',
+        label: 'CalDAV 服务器',
+        placeholder: 'https://caldav.example.com',
+        help: 'iCloud 填 icloud；飞书、钉钉等在日历设置的「CalDAV 同步」里可以看到服务器地址、用户名和密码',
+      },
+      { key: 'username', label: '用户名' },
+      { key: 'password', label: '密码', secret: true, help: 'iCloud 用 App 专用密码' },
+    ],
+  },
+]
+
+/** Built-in connectors: remote MCP servers (OAuth or a token), and the office tools above. */
 export const CATALOG: ConnectorDef[] = [
+  ...OFFICE_CN,
   {
     id: 'github',
     name: 'GitHub',

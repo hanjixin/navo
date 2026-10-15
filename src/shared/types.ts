@@ -495,12 +495,41 @@ export interface McpStatus {
 }
 
 // ---------- Connectors ----------
+/** A value the user fills in to connect (secret ones go to the keychain). */
+export interface ConnectorField {
+  key: string
+  label: string
+  secret?: boolean
+  optional?: boolean
+  placeholder?: string
+  help?: string
+  default?: string
+  /** a choice instead of free text */
+  options?: { value: string; label: string }[]
+  /** shown only when another field has one of these values */
+  showIf?: { key: string; values: string[] }
+}
+
+export type BuiltinConnector = 'wecom-bot' | 'dingtalk-bot' | 'feishu-bot' | 'email' | 'caldav'
+
 export interface ConnectorDef {
   id: string
   name: string
   description: string
   icon: string
-  auth: 'oauth' | 'token' | 'none'
+  /** fields: a form (app credentials, webhook, mailbox…) instead of one token */
+  auth: 'oauth' | 'token' | 'none' | 'fields'
+  /** remote MCP (default), a local MCP server started by Navo, or implemented in Navo */
+  kind?: 'remote' | 'stdio' | 'builtin'
+  group?: 'office-cn'
+  fields?: ConnectorField[]
+  /** stdio: command and args/env with {{field}} placeholders; an arg whose placeholders are empty is left out */
+  stdio?: { command: string; args: string[]; env?: Record<string, string> }
+  builtin?: BuiltinConnector
+  /** can receive messages, e.g. a monitor's alerts */
+  canNotify?: boolean
+  /** where to get the credentials */
+  setupHelp?: string
   mcpUrl?: string
   tokenLabel?: string
   tokenHelp?: string
@@ -519,6 +548,8 @@ export interface ConnectorState {
   enabled: boolean
   connectedAt?: number | null
   error?: string | null
+  /** the non-secret field values (secret ones are never sent back) */
+  config?: Record<string, string>
 }
 
 // ---------- Plugins ----------
@@ -616,6 +647,8 @@ export interface MonitorConfig {
   /** notify only, or also run `prompt` through the agent */
   action: 'notify' | 'agent'
   prompt?: string | null
+  /** also send the alert to a connector (a group bot, or email to yourself) */
+  notifyConnector?: string | null
 }
 
 export interface MonitorCheck {

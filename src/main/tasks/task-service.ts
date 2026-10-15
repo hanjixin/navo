@@ -8,6 +8,7 @@ import { log } from '../core/logger'
 import { agent } from '../agent/agent-service'
 import { flows } from '../flows/flows'
 import { monitor } from '../monitor/monitor-service'
+import { connectors } from '../connectors/connector-service'
 
 interface TaskRow {
   id: string
@@ -158,8 +159,14 @@ class TaskService {
 
   /** Checks a monitor now; when it triggers with an agent action, that runs as one of the task's runs. */
   check(task: Task) {
-    return monitor.check(task, (summary) => {
+    return monitor.check(task, async (summary) => {
       const cfg = task.monitor!
+      // also to a group bot / mailbox, when chosen
+      if (cfg.notifyConnector)
+        await connectors.notify(cfg.notifyConnector, { title: `监控提醒：${task.name}`, text: `${summary}\n\n[打开网页](${cfg.url})` }).catch((err: Error) => {
+          log.warn(`[tasks] monitor alert to ${cfg.notifyConnector} failed: ${err.message}`)
+          if (Notification.isSupported()) new Notification({ title: `监控提醒没能发出：${task.name}`, body: err.message.slice(0, 160) }).show()
+        })
       if (cfg.action !== 'agent' || !cfg.prompt?.trim()) return null
       const prompt = `${cfg.prompt.trim()}\n\n（这是网页监控「${task.name}」触发后的任务。触发原因：${summary}。网页：${cfg.url}）`
       return this.runAgent(task, prompt, `监控：${task.name}`).threadId

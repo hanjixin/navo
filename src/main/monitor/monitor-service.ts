@@ -115,7 +115,7 @@ class MonitorService {
    * One check. `onTrigger` runs when the condition is met (the task service starts the agent there)
    * and may return the thread it started.
    */
-  async check(task: Task, onTrigger?: (summary: string) => string | null): Promise<MonitorCheck> {
+  async check(task: Task, onTrigger?: (summary: string) => Promise<string | null>): Promise<MonitorCheck> {
     const cfg = task.monitor
     if (!cfg) throw new Error('这个任务不是网页监控')
     if (this.busy.has(task.id)) throw new Error('上一次检查还没有结束')
@@ -137,7 +137,7 @@ class MonitorService {
     return result
   }
 
-  private async compare(task: Task, onTrigger?: (summary: string) => string | null): Promise<MonitorCheck> {
+  private async compare(task: Task, onTrigger?: (summary: string) => Promise<string | null>): Promise<MonitorCheck> {
     const cfg = task.monitor!
     const base = blank(task.id)
     const { text } = await this.read(cfg.url, cfg.selector)
@@ -174,7 +174,7 @@ class MonitorService {
       const verdict = parseJudge(out)
       // without a verdict the new text doesn't become the baseline: the next check compares again
       if (!verdict) throw new Error('模型没有给出可用的判断')
-      const threadId = verdict.triggered ? (onTrigger?.(verdict.summary) ?? null) : null
+      const threadId = verdict.triggered ? ((await onTrigger?.(verdict.summary)) ?? null) : null
       const check = this.insert({
         ...base,
         hash,

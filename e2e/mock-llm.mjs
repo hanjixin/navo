@@ -350,6 +350,12 @@ export function startMock(port = 38999) {
       if (!toolMsgs.length) return call('browser_screenshot', {})
       return say(['截好了'])
     }
+    // [bot:NAME] sends a message through the group-bot tool NAME (e.g. wecom_send_message)
+    const botTool = /\[bot:(\w+)\]/.exec(userText)?.[1]
+    if (botTool) {
+      if (!toolMsgs.length) return call(botTool, { title: '今日日报', text: '完成 **3** 项任务' })
+      return say([`已发送：${text(toolMsgs.at(-1).content)}`])
+    }
     // [outputs:TAG] writes a report and a table under /workspace/, then hands over a Word version
     const outTag = /\[outputs:(\w+)\]/.exec(userText)?.[1]
     if (outTag) {

@@ -83,6 +83,17 @@ agentPlugin.register('list_stories', async ({ limit = 30 } = {}) =>
 
 浏览器工具栏或「录制宏」页点击录制 → 在右侧浏览器操作 → 停止。步骤可编辑、重排；在值中写 `{{name}}` 即成为参数。开启「作为 Agent 工具」后以 `macro_*` 暴露；回放失败可一键交给 Agent 继续；也可导出为 Skill。
 
+## 国内办公连接器
+
+「连接器」页的「国内办公」：
+
+- **飞书 / 钉钉**：接入官方 MCP（[飞书 OpenAPI MCP](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/mcp_integration/mcp_installation)、[钉钉 MCP](https://open.dingtalk.com/document/ai-dev/dingtalk-server-api-mcp-overview)），填写开放平台应用的凭证即可，由 Navo 在本机启动（需要 Node.js）。
+- **企业微信 / 钉钉 / 飞书群机器人**：填写 Webhook 地址（钉钉「加签」、飞书「签名校验」的密钥可选），Agent 可以往群里发消息，网页监控的提醒也能发到群里。
+- **邮箱**：IMAP / SMTP，内置 QQ、163、126、腾讯企业邮箱、阿里企业邮箱、Gmail 的服务器，使用授权码；可以列出、筛选、阅读和发送邮件。
+- **日历**：CalDAV（iCloud，以及飞书、钉钉等日历提供的 CalDAV 同步），查看和创建日程。
+
+发消息、发邮件、创建日程，以及飞书 / 钉钉 MCP 里会改动数据的操作，执行前都会请你确认。凭证保存在系统钥匙串。`pnpm check:connectors-live` 用本机的 IMAP / SMTP、CalDAV 测试服务器和官方 MCP 做一次真实检查。
+
 ## 产出物
 
 Agent 在 `/workspace/` 写下的文件、在对话标签页里下载的文件，都归到这个对话的「产出」里（对话顶部的「产出 N」）。可以直接预览 Markdown、HTML、CSV / Excel 表格、图片、PDF 与 Office 文档，并导出：Markdown → Word / PDF，CSV、JSON 记录或 Markdown 里的表格 → Excel；也可以另存、在访达中显示。Agent 也能用 `export_file` 工具直接交付 Word / PDF / Excel。

@@ -179,7 +179,10 @@ export interface Api {
   // connectors
   'connectors.catalog': () => ConnectorDef[]
   'connectors.states': () => ConnectorState[]
-  'connectors.connect': (id: string, token?: string) => ConnectorState
+  /** a token, or the values of the connector's fields */
+  'connectors.connect': (id: string, credentials?: string | Record<string, string>) => ConnectorState
+  /** sends a test message through a connector that can notify */
+  'connectors.testNotify': (id: string) => void
   'connectors.disconnect': (id: string) => void
   'connectors.setEnabled': (id: string, enabled: boolean) => void
   'connectors.addCustom': (def: Omit<ConnectorDef, 'id' | 'custom' | 'icon'>) => ConnectorDef

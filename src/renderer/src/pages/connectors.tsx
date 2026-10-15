@@ -1,7 +1,26 @@
-import { BookOpen, Boxes, Bug, ExternalLink, GitBranch, Library, ListChecks, Notebook, Plug, Plus, Radar, type LucideIcon } from 'lucide-react'
+import {
+  Bell,
+  BookOpen,
+  Boxes,
+  Bug,
+  CalendarDays,
+  ExternalLink,
+  GitBranch,
+  Library,
+  ListChecks,
+  Mail,
+  MessageCircle,
+  Notebook,
+  Plug,
+  Plus,
+  Radar,
+  Send,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { ConnectorDef, ConnectorState, DiscoveredMcp } from '@shared/types'
+import { FieldsDialog } from '@/components/connectors/fields-dialog'
 import { Page, PageHeader, Section } from '@/components/layout/page'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +44,11 @@ const ICONS: Record<string, LucideIcon> = {
   'book-open': BookOpen,
   library: Library,
   plug: Plug,
+  feishu: Send,
+  dingtalk: Bell,
+  wecom: MessageCircle,
+  mail: Mail,
+  calendar: CalendarDays,
 }
 
 function TokenDialog({ def, onClose, onDone }: { def: ConnectorDef; onClose: () => void; onDone: () => void }) {
@@ -154,18 +178,34 @@ function ConnectorCard({
   state,
   reload,
   onToken,
+  onFields,
   usedIn,
 }: {
   def: ConnectorDef
   state?: ConnectorState
   reload: () => void
   onToken: () => void
+  onFields: () => void
   usedIn?: string[]
 }) {
   const [pending, setPending] = useState(false)
+  const [testing, setTesting] = useState(false)
   const Icon = ICONS[def.icon] ?? Plug
 
+  const test = async () => {
+    setTesting(true)
+    try {
+      await call('connectors.testNotify', def.id)
+      toast.success('测试消息已发送')
+    } catch (e) {
+      toast.error('发送失败', { description: errorMessage(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const connect = async () => {
+    if (def.auth === 'fields') return onFields()
     if (def.auth === 'token') return onToken()
     setPending(true)
     if (def.auth === 'oauth') toast('已在浏览器中打开授权页面', { description: '完成授权后会自动返回' })
@@ -218,13 +258,35 @@ function ConnectorCard({
               {state.enabled ? '已连接' : '已暂停'}
               {state.connectedAt ? ` · ${timeAgo(state.connectedAt)}` : ''}
             </span>
-            <Button variant="ghost" size="sm" className="ml-auto" onClick={async () => (await call('connectors.disconnect', def.id), reload())}>
-              断开
-            </Button>
+            <span className="ml-auto flex gap-1">
+              {def.canNotify ? (
+                <Button variant="ghost" size="sm" loading={testing} onClick={() => void test()}>
+                  测试
+                </Button>
+              ) : null}
+              {def.auth === 'fields' ? (
+                <Button variant="ghost" size="sm" onClick={onFields}>
+                  修改
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="sm" onClick={async () => (await call('connectors.disconnect', def.id), reload())}>
+                断开
+              </Button>
+            </span>
           </>
         ) : (
           <>
-            <span className="text-xs text-subtle-foreground">{def.auth === 'oauth' ? 'OAuth 授权' : def.auth === 'token' ? '需要 Token' : '无需认证'}</span>
+            <span className="text-xs text-subtle-foreground">
+              {def.auth === 'oauth'
+                ? 'OAuth 授权'
+                : def.auth === 'token'
+                  ? '需要 Token'
+                  : def.auth === 'fields'
+                    ? def.kind === 'stdio'
+                      ? '官方 MCP · 填写应用凭证'
+                      : '填写配置'
+                    : '无需认证'}
+            </span>
             <Button variant="secondary" size="sm" className="ml-auto" loading={pending} onClick={connect}>
               {pending && def.auth === 'oauth' ? '等待授权…' : '连接'}
             </Button>
@@ -245,6 +307,7 @@ export function ConnectorsPage() {
     return { catalog, states: Object.fromEntries(states.map((s) => [s.id, s])), discovered: discovered.filter((d) => d.transport !== 'stdio') }
   })
   const [tokenFor, setTokenFor] = useState<ConnectorDef | null>(null)
+  const [fieldsFor, setFieldsFor] = useState<ConnectorDef | null>(null)
   const [custom, setCustom] = useState(false)
 
   const reload = data.reload
@@ -277,12 +340,25 @@ export function ConnectorsPage() {
 
   const connected = data.data?.catalog.filter((d) => data.data!.states[d.id]?.connected) ?? []
   const available = data.data?.catalog.filter((d) => !data.data!.states[d.id]?.connected) ?? []
+  const office = available.filter((d) => d.group === 'office-cn')
+  const others = available.filter((d) => d.group !== 'office-cn')
+  const card = (d: ConnectorDef) => (
+    <ConnectorCard
+      key={d.id}
+      def={d}
+      state={data.data!.states[d.id]}
+      reload={data.reload}
+      onToken={() => setTokenFor(d)}
+      onFields={() => setFieldsFor(d)}
+      usedIn={usedIn(d.id)}
+    />
+  )
 
   return (
     <Page wide>
       <PageHeader
         title="连接器"
-        description="把常用服务接入 Agent。连接器基于远程 MCP，凭据加密保存在本机。"
+        description="把常用服务接入 Agent：远程 MCP、官方本地 MCP，以及群机器人、邮箱、日历。凭据加密保存在本机。"
         actions={
           <Button variant="primary" onClick={() => setCustom(true)}>
             <Plus />
@@ -313,7 +389,15 @@ export function ConnectorsPage() {
             <Section title="已连接" description={`${connected.length} 个连接器的工具已提供给 Agent`}>
               <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
                 {connected.map((d) => (
-                  <ConnectorCard key={d.id} def={d} state={data.data!.states[d.id]} reload={data.reload} onToken={() => setTokenFor(d)} usedIn={usedIn(d.id)} />
+                  <ConnectorCard
+                    key={d.id}
+                    def={d}
+                    state={data.data!.states[d.id]}
+                    reload={data.reload}
+                    onToken={() => setTokenFor(d)}
+                    onFields={() => setFieldsFor(d)}
+                    usedIn={usedIn(d.id)}
+                  />
                 ))}
               </div>
             </Section>
@@ -341,15 +425,17 @@ export function ConnectorsPage() {
               </Card>
             </Section>
           ) : null}
+          {office.length ? (
+            <Section title="国内办公" description="飞书、钉钉的官方 MCP，群机器人、邮箱和日历">
+              <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">{office.map(card)}</div>
+            </Section>
+          ) : null}
           <Section title="可用连接器">
-            <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
-              {available.map((d) => (
-                <ConnectorCard key={d.id} def={d} state={data.data!.states[d.id]} reload={data.reload} onToken={() => setTokenFor(d)} usedIn={usedIn(d.id)} />
-              ))}
-            </div>
+            <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">{others.map(card)}</div>
           </Section>
         </>
       )}
+      {fieldsFor ? <FieldsDialog def={fieldsFor} state={data.data?.states[fieldsFor.id]} onClose={() => setFieldsFor(null)} onDone={data.reload} /> : null}
       {tokenFor ? <TokenDialog def={tokenFor} onClose={() => setTokenFor(null)} onDone={data.reload} /> : null}
       {custom ? <CustomDialog onClose={() => setCustom(false)} onDone={data.reload} /> : null}
     </Page>

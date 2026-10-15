@@ -20,6 +20,8 @@ import { skills } from '../skills/skill-service'
 import type { RpcMessage, RunRequest, RunResult, ToolCallRequest, UsageEvent } from '../agent-host/protocol'
 import { usage } from '../usage/usage-service'
 import { outputs } from '../outputs/outputs-service'
+import { BUILTIN_SEND_TOOLS } from '../connectors/builtin'
+import { connectors } from '../connectors/connector-service'
 import { Rpc } from '../agent-host/rpc'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
@@ -283,7 +285,9 @@ class AgentService {
         systemPrompt: systemPrompt(tab, mem ? mem.prompt : null),
         memoryPrompt: mem?.prompt || undefined,
         tools: describeTools(entries),
-        interruptOn: opts.headless ? [] : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE])].filter((t) => !allowed.has(t)),
+        interruptOn: opts.headless
+          ? []
+          : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter((t) => !allowed.has(t)),
         browserSubagent: settings.browserSubagent,
         mounts: skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })),
         paths: { skills: paths.skills, workspace: paths.workspace, uploads: paths.uploads },

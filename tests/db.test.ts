@@ -8,6 +8,6 @@ describe('database migrations', async () => {
     expect(block).not.toMatch(/`\s*,\s*,/)
     const entries = block.match(/`[\s\S]*?`/g) ?? []
     expect(entries.length).toBeGreaterThanOrEqual(2)
-    for (const e of entries) expect(e).toMatch(/CREATE TABLE/)
+    for (const e of entries) expect(e).toMatch(/CREATE TABLE|ALTER TABLE/)
   })
 })

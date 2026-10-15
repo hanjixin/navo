@@ -133,6 +133,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX outputs_thread ON outputs(thread_id, at);
   `,
+  `
+  ALTER TABLE connectors ADD COLUMN config TEXT;
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */
