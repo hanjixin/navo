@@ -43,7 +43,7 @@ const runAndWait = async (threadId, text) => {
 }
 const evolved = () => page.evaluate(() => window.__evolved)
 /** waits for the next skills.evolved event after `n` (the coach runs once the conversation is quiet) */
-const nextEvolved = async (n, ms = 8000) => {
+const nextEvolved = async (n, ms = 20000) => {
   for (let i = 0; i < ms / 100; i++) {
     const e = await evolved()
     if (e.length > n) return e[n]

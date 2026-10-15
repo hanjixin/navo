@@ -6,7 +6,7 @@ import { log } from './core/logger'
 import { db } from './core/db'
 import { applyTracingEnv, getSettings, setSettings } from './core/settings'
 import { providers } from './models/registry'
-import { runAgentEval, runFlowEval, runMemoryEval, runSkillEval } from './dev/evals'
+import { runAgentEval, runFlowEval, runMemoryEval, runMonitorEval, runSkillEval } from './dev/evals'
 import { registerHandlers } from './handlers'
 import { browser } from './browser/browser-service'
 import { plugins } from './plugins/plugin-service'
@@ -97,6 +97,7 @@ app.whenReady().then(async () => {
   // scripts/memory-eval.mjs: automatic-learning dry runs with the real keychain, then quit
   if (process.env.NAVO_MEMORY_EVAL) return runMemoryEval(process.env.NAVO_MEMORY_EVAL)
   if (process.env.NAVO_SKILL_EVAL) return runSkillEval(process.env.NAVO_SKILL_EVAL)
+  if (process.env.NAVO_MONITOR_EVAL) return runMonitorEval(process.env.NAVO_MONITOR_EVAL)
   memory.ensureDefaults()
   // people who already configured a model before onboarding existed shouldn't be walked through it
   if (!getSettings().onboarded && providers.list().length) setSettings({ onboarded: true })

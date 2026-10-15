@@ -107,6 +107,16 @@ const MIGRATIONS: string[] = [
   ALTER TABLE tasks ADD COLUMN macro_id TEXT;
   ALTER TABLE tasks ADD COLUMN params TEXT;
   `,
+  `
+  ALTER TABLE tasks ADD COLUMN monitor TEXT;
+  CREATE TABLE monitor_checks (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, at INTEGER NOT NULL, first INTEGER NOT NULL DEFAULT 0,
+    hash TEXT, text TEXT, changed INTEGER NOT NULL DEFAULT 0, triggered INTEGER NOT NULL DEFAULT 0,
+    summary TEXT, error TEXT, added TEXT, removed TEXT, thread_id TEXT,
+    repeats INTEGER NOT NULL DEFAULT 1, last_at INTEGER
+  );
+  CREATE INDEX monitor_checks_task ON monitor_checks(task_id, at);
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

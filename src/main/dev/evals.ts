@@ -6,7 +6,8 @@ import { describeStep } from '../flows/flows-core'
 import { flows } from '../flows/flows'
 import type { LearnTurn } from '../learning/scheduler'
 import { memory } from '../memory/memory-service'
-import { resolveModel } from '../models/registry'
+import { diffLines, judgeMessages, normalize, parseJudge } from '../monitor/monitor-core'
+import { createChatModel, resolveModel } from '../models/registry'
 import { recorder } from '../recorder/recorder-service'
 import { skillEvolution } from '../skills/evolution'
 
@@ -133,5 +134,28 @@ export async function runFlowEval(file: string): Promise<void> {
     out.error = (e as Error).message
   }
   save()
+  app.exit(0)
+}
+
+/** Monitor judgments (scripts/monitor-eval.mjs): does the change meet the condition? Runs before the rest of the app. */
+export async function runMonitorEval(file: string): Promise<void> {
+  const { cases } = JSON.parse(readFileSync(file, 'utf8')) as {
+    cases: { url: string; focus?: string; condition?: string; prev: string; cur: string }[]
+  }
+  const results = []
+  for (const c of cases) {
+    const started = Date.now()
+    const prev = normalize(c.prev)
+    const cur = normalize(c.cur)
+    const { added, removed } = diffLines(prev, cur)
+    try {
+      const res = await createChatModel(null).invoke(judgeMessages({ ...c, prev, cur, added, removed }))
+      const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
+      results.push({ verdict: parseJudge(text), raw: text.slice(0, 300), ms: Date.now() - started })
+    } catch (e) {
+      results.push({ error: (e as Error).message })
+    }
+  }
+  writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
   app.exit(0)
 }

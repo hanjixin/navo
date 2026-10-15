@@ -522,8 +522,12 @@ export interface MacroRunResult {
 export interface Task {
   id: string
   name: string
-  /** agent: the prompt runs through the model · flow: a fixed flow replays without the model */
-  kind?: 'agent' | 'flow'
+  /**
+   * agent: the prompt runs through the model · flow: a fixed flow replays without the model ·
+   * monitor: a page is checked; the model is asked only when it changed
+   */
+  kind?: 'agent' | 'flow' | 'monitor'
+  monitor?: MonitorConfig | null
   /** flow tasks: the flow (macro) to replay and its parameter values */
   macroId?: string | null
   params?: Record<string, string> | null
@@ -534,6 +538,47 @@ export interface Task {
   createdAt: number
   lastRunAt?: number | null
   lastStatus?: TaskRunStatus | null
+}
+
+export interface MonitorConfig {
+  url: string
+  /** CSS selector of the part to watch; empty = the page's main content */
+  selector?: string | null
+  /** what to look at, in words (for the model) */
+  focus?: string | null
+  /** when to alert, in words; empty = any real change */
+  condition?: string | null
+  /** notify only, or also run `prompt` through the agent */
+  action: 'notify' | 'agent'
+  prompt?: string | null
+}
+
+export interface MonitorCheck {
+  id: string
+  taskId: string
+  at: number
+  /** the first check: the content is recorded, nothing to compare yet */
+  first: boolean
+  changed: boolean
+  triggered: boolean
+  summary: string | null
+  error: string | null
+  added: string[]
+  removed: string[]
+  /** the agent run started by the trigger */
+  threadId: string | null
+  /** unchanged checks in a row are kept as one: how many, and when the last one was */
+  repeats: number
+  lastAt: number
+}
+
+export interface MonitorSummary {
+  lastAt: number | null
+  checks: number
+  triggers: number
+  /** consecutive failed checks, most recent first */
+  failStreak: number
+  lastSummary: string | null
 }
 
 export type TaskRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled'

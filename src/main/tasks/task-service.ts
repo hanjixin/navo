@@ -1,12 +1,13 @@
 import { Notification } from 'electron'
 import cron, { type ScheduledTask } from 'node-cron'
-import type { Task, TaskRun, TaskRunStatus } from '@shared/types'
+import type { MonitorConfig, Task, TaskRun, TaskRunStatus } from '@shared/types'
 import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { agent } from '../agent/agent-service'
 import { flows } from '../flows/flows'
+import { monitor } from '../monitor/monitor-service'
 
 interface TaskRow {
   id: string
@@ -16,9 +17,10 @@ interface TaskRow {
   cron: string | null
   enabled: number
   created_at: number
-  kind: 'agent' | 'flow'
+  kind: 'agent' | 'flow' | 'monitor'
   macro_id: string | null
   params: string | null
+  monitor: string | null
 }
 
 interface RunRow {
@@ -49,8 +51,14 @@ class TaskService {
   list(): Task[] {
     const rows = db().prepare('SELECT * FROM tasks ORDER BY created_at DESC').all() as TaskRow[]
     return rows.map((r) => {
-      const last = db().prepare('SELECT status, started_at FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1').get(r.id) as
+      let last = db().prepare('SELECT status, started_at FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1').get(r.id) as
         { status: TaskRunStatus; started_at: number } | undefined
+      if (r.kind === 'monitor') {
+        // a monitor's history is its checks
+        const c = db().prepare('SELECT COALESCE(last_at, at) AS at, error FROM monitor_checks WHERE task_id = ? ORDER BY at DESC LIMIT 1').get(r.id) as
+          { at: number; error: string | null } | undefined
+        last = c ? { status: c.error ? 'error' : 'success', started_at: c.at } : undefined
+      }
       return {
         id: r.id,
         name: r.name,
@@ -61,6 +69,7 @@ class TaskService {
         kind: r.kind ?? 'agent',
         macroId: r.macro_id,
         params: json.parse<Record<string, string>>(r.params),
+        monitor: json.parse<MonitorConfig>(r.monitor),
         createdAt: r.created_at,
         lastRunAt: last?.started_at ?? null,
         lastStatus: last?.status ?? null,
@@ -79,12 +88,17 @@ class TaskService {
     if (!input.name.trim()) throw new Error('名称必填')
     if (kind === 'agent' && !input.prompt.trim()) throw new Error('任务描述必填')
     if (kind === 'flow' && !input.macroId) throw new Error('请选择要回放的固定流程')
+    if (kind === 'monitor') {
+      const url = input.monitor?.url.trim() ?? ''
+      if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('请填写要监控的网址（http:// 或 https:// 开头）')
+      if (input.monitor?.action === 'agent' && !input.monitor.prompt?.trim()) throw new Error('请填写触发后让 Agent 做什么')
+    }
     if (input.cron && !cron.validate(input.cron)) throw new Error('Cron 表达式无效')
     const id = input.id ?? newId()
     db()
       .prepare(
-        `INSERT INTO tasks(id, name, prompt, model_id, cron, enabled, created_at, kind, macro_id, params) VALUES(@id, @name, @prompt, @modelId, @cron, @enabled, @now, @kind, @macroId, @params)
-         ON CONFLICT(id) DO UPDATE SET name=@name, prompt=@prompt, model_id=@modelId, cron=@cron, enabled=@enabled, kind=@kind, macro_id=@macroId, params=@params`,
+        `INSERT INTO tasks(id, name, prompt, model_id, cron, enabled, created_at, kind, macro_id, params, monitor) VALUES(@id, @name, @prompt, @modelId, @cron, @enabled, @now, @kind, @macroId, @params, @monitor)
+         ON CONFLICT(id) DO UPDATE SET name=@name, prompt=@prompt, model_id=@modelId, cron=@cron, enabled=@enabled, kind=@kind, macro_id=@macroId, params=@params, monitor=@monitor`,
       )
       .run({
         id,
@@ -97,6 +111,7 @@ class TaskService {
         kind,
         macroId: kind === 'flow' ? input.macroId : null,
         params: kind === 'flow' ? json.str(input.params ?? {}) : null,
+        monitor: kind === 'monitor' ? json.str({ ...input.monitor!, url: input.monitor!.url.trim() }) : null,
       })
     this.schedule(this.get(id))
     emit('tasks.changed')
@@ -107,6 +122,7 @@ class TaskService {
     this.jobs.get(id)?.stop()
     this.jobs.delete(id)
     db().prepare('DELETE FROM tasks WHERE id = ?').run(id)
+    monitor.forget(id)
     emit('tasks.changed')
   }
 
@@ -132,7 +148,27 @@ class TaskService {
   run(taskId: string): TaskRun {
     const task = this.get(taskId)
     if (task.kind === 'flow') return this.runFlow(task)
-    const thread = agent.createThread(task.modelId, { title: `任务：${task.name}` })
+    if (task.kind === 'monitor') {
+      // a check isn't a run (they are recorded as checks); what it triggers is
+      void this.check(task).catch((err: Error) => log.warn(`[tasks] monitor check: ${err.message}`))
+      return { id: '', taskId, threadId: '', status: 'running', startedAt: Date.now() }
+    }
+    return this.runAgent(task, task.prompt, `任务：${task.name}`)
+  }
+
+  /** Checks a monitor now; when it triggers with an agent action, that runs as one of the task's runs. */
+  check(task: Task) {
+    return monitor.check(task, (summary) => {
+      const cfg = task.monitor!
+      if (cfg.action !== 'agent' || !cfg.prompt?.trim()) return null
+      const prompt = `${cfg.prompt.trim()}\n\n（这是网页监控「${task.name}」触发后的任务。触发原因：${summary}。网页：${cfg.url}）`
+      return this.runAgent(task, prompt, `监控：${task.name}`).threadId
+    })
+  }
+
+  private runAgent(task: Task, prompt: string, title: string): TaskRun {
+    const taskId = task.id
+    const thread = agent.createThread(task.modelId, { title })
     const run: RunRow = {
       id: newId(),
       task_id: taskId,
@@ -146,7 +182,7 @@ class TaskService {
     db().prepare('INSERT INTO task_runs(id, task_id, thread_id, status, started_at) VALUES(@id, @task_id, @thread_id, @status, @started_at)').run(run)
     emit('tasks.changed')
 
-    void agent.send_(thread.id, task.prompt).then(
+    void agent.send_(thread.id, prompt).then(
       (res) => {
         const status: TaskRunStatus = res.aborted ? 'cancelled' : res.error ? 'error' : 'success'
         this.updateRun(run.id, {

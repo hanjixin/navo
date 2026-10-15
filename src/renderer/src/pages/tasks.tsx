@@ -1,8 +1,10 @@
-import { CalendarClock, ListChecks, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Square, Trash2 } from 'lucide-react'
+import { CalendarClock, History, ListChecks, MessageSquare, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import type { Task, TaskRun, TaskRunStatus } from '@shared/types'
+import type { MonitorConfig, Task, TaskRunStatus } from '@shared/types'
+import { MonitorFields } from '@/components/tasks/monitor-fields'
+import { MonitorHistory } from '@/components/tasks/monitor-history'
 import { Page, PageHeader, Section } from '@/components/layout/page'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,7 +30,27 @@ const PRESETS = [
   { value: 'custom', label: '自定义 Cron…' },
 ]
 
-const describeCron = (c?: string | null) => (c ? (PRESETS.find((p) => p.value === c)?.label ?? `Cron: ${c}`) : '手动')
+const EMPTY_MONITOR: MonitorConfig = { url: '', selector: '', focus: '', condition: '', action: 'notify', prompt: '' }
+
+/** monitors check more often than tasks run */
+const MONITOR_PRESETS = [
+  { value: '*/5 * * * *', label: '每 5 分钟' },
+  { value: '*/15 * * * *', label: '每 15 分钟' },
+  { value: '*/30 * * * *', label: '每 30 分钟' },
+  { value: '0 * * * *', label: '每小时' },
+  { value: '0 9 * * *', label: '每天 09:00' },
+  { value: '', label: '仅手动检查' },
+  { value: 'custom', label: '自定义 Cron…' },
+]
+
+const describeCron = (c?: string | null) => (c ? ([...PRESETS, ...MONITOR_PRESETS].find((p) => p.value === c)?.label ?? `Cron: ${c}`) : '手动')
+const hostOf = (url?: string) => {
+  try {
+    return new URL(url ?? '').host
+  } catch {
+    return url ?? ''
+  }
+}
 
 const STATUS: Record<
   TaskRunStatus,
@@ -46,12 +68,19 @@ type Draft = Omit<Task, 'id' | 'createdAt'> & { id?: string }
 function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: () => void; onSaved: () => void }) {
   const models = useModels((s) => s.models) ?? []
   const [d, setD] = useState<Draft>(task ?? { name: '', prompt: '', modelId: null, cron: null, enabled: true, kind: 'agent' })
-  const [mode, setMode] = useState(() => (!d.cron ? 'none' : PRESETS.some((p) => p.value === d.cron) ? d.cron : 'custom'))
+  const presets = (d.kind ?? 'agent') === 'monitor' ? MONITOR_PRESETS : PRESETS
+  const [mode, setMode] = useState(() => (!d.cron ? 'none' : presets.some((p) => p.value === d.cron) ? d.cron : 'custom'))
   const [saving, setSaving] = useState(false)
   const kind = d.kind ?? 'agent'
   const flowsList = useAsync(() => call('macros.list'), [])
   const flow = flowsList.data?.find((x) => x.id === d.macroId)
-  const ready = d.name.trim() && (kind === 'flow' ? !!d.macroId : d.prompt.trim())
+  const ready = d.name.trim() && (kind === 'flow' ? !!d.macroId : kind === 'monitor' ? /^https?:\/\/\S+$/i.test(d.monitor?.url.trim() ?? '') : d.prompt.trim())
+  const setKind = (v: NonNullable<Task['kind']>) => {
+    setD({ ...d, kind: v, monitor: v === 'monitor' ? (d.monitor ?? EMPTY_MONITOR) : d.monitor })
+    // a new monitor checks every 30 minutes unless told otherwise
+    if (v === 'monitor' && mode === 'none' && !task) setMode('*/30 * * * *')
+    if (v !== 'monitor' && !PRESETS.some((p) => p.value === mode) && mode !== 'none' && mode !== 'custom') setMode('none')
+  }
 
   const save = async () => {
     setSaving(true)
@@ -71,7 +100,9 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         title={task ? '编辑任务' : '新建任务'}
-        description="任务在后台以独立会话运行，完成后发送系统通知。"
+        description={
+          kind === 'monitor' ? '在后台定时查看网页；内容没变不调用模型，有变化才判断是否满足条件。' : '任务在后台以独立会话运行，完成后发送系统通知。'
+        }
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
@@ -92,6 +123,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
               [
                 ['agent', 'Agent 任务', '由模型理解并完成'],
                 ['flow', '固定流程', '按保存的步骤直接回放，不调用模型'],
+                ['monitor', '网页监控', '定时查看网页，内容变化且满足条件时提醒'],
               ] as const
             ).map(([v, label, hint]) => (
               <button
@@ -99,7 +131,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
                 role="tab"
                 aria-selected={kind === v}
                 title={hint}
-                onClick={() => setD({ ...d, kind: v })}
+                onClick={() => setKind(v)}
                 className={cn(
                   'interactive h-8 flex-1 rounded-[5px] text-sm',
                   kind === v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
@@ -109,7 +141,9 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
               </button>
             ))}
           </div>
-          {kind === 'agent' ? (
+          {kind === 'monitor' ? (
+            <MonitorFields value={d.monitor ?? EMPTY_MONITOR} onChange={(monitor) => setD({ ...d, monitor })} />
+          ) : kind === 'agent' ? (
             <Field label="任务描述" hint="像对 Agent 说话一样描述目标和输出要求">
               <Textarea
                 value={d.prompt}
@@ -145,15 +179,15 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
             </>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="模型" className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
+            <Field label={kind === 'monitor' ? '判断用的模型' : '模型'} className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
               <Select
                 value={d.modelId ?? 'default'}
                 onChange={(v) => setD({ ...d, modelId: v === 'default' ? null : v })}
                 options={[{ value: 'default', label: '默认模型' }, ...models.map((m) => ({ value: m.id, label: m.displayName }))]}
               />
             </Field>
-            <Field label="计划">
-              <Select value={mode} onChange={setMode} options={PRESETS.map((p) => ({ value: p.value === '' ? 'none' : p.value, label: p.label }))} />
+            <Field label={kind === 'monitor' ? '检查频率' : '计划'}>
+              <Select value={mode} onChange={setMode} options={presets.map((p) => ({ value: p.value === '' ? 'none' : p.value, label: p.label }))} />
             </Field>
           </div>
           {mode === 'custom' ? (
@@ -175,6 +209,8 @@ export function TasksPage() {
   const tasks = useAsync(() => call('tasks.list'))
   const runs = useAsync(() => call('tasks.runs'))
   const [editing, setEditing] = useState<Task | 'new' | null>(null)
+  const [history, setHistory] = useState<Task | null>(null)
+  const monitors = useAsync(() => call('monitor.summary'))
   const loadModels = useModels((s) => s.load)
   const select = useChat((s) => s.select)
   const navigate = useNavigate()
@@ -184,6 +220,7 @@ export function TasksPage() {
     return on('tasks.changed', () => {
       tasks.reload()
       runs.reload()
+      monitors.reload()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -191,14 +228,14 @@ export function TasksPage() {
   const runNow = async (t: Task) => {
     try {
       await call('tasks.run', t.id)
-      toast.success(`已开始运行：${t.name}`)
+      toast.success(t.kind === 'monitor' ? `正在检查：${t.name}` : `已开始运行：${t.name}`)
     } catch (e) {
       toast.error('运行失败', { description: errorMessage(e) })
     }
   }
 
-  const openThread = (r: TaskRun) => {
-    select(r.threadId)
+  const openThread = (threadId: string) => {
+    select(threadId)
     navigate('/chat')
   }
 
@@ -248,8 +285,23 @@ export function TasksPage() {
                       </Badge>
                       {t.cron && !t.enabled ? <Badge variant="warning">已暂停</Badge> : null}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.kind === 'flow' ? '固定流程 · 直接回放，不调用模型' : t.prompt}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {t.kind === 'flow'
+                        ? '固定流程 · 直接回放，不调用模型'
+                        : t.kind === 'monitor'
+                          ? `监控 ${hostOf(t.monitor?.url)} · ${t.monitor?.condition || '有变化就提醒'}`
+                          : t.prompt}
+                    </p>
+                    {t.kind === 'monitor' && monitors.data?.[t.id]?.checks ? (
+                      <p data-testid="monitor-summary" className="mt-0.5 truncate text-xs text-subtle-foreground">
+                        已检查 {monitors.data[t.id].checks} 次 · 触发 {monitors.data[t.id].triggers} 次
+                        {monitors.data[t.id].lastSummary ? ` · 最近：${monitors.data[t.id].lastSummary}` : ''}
+                      </p>
+                    ) : null}
                   </div>
+                  {t.kind === 'monitor' && (monitors.data?.[t.id]?.failStreak ?? 0) >= 2 ? (
+                    <Badge variant="danger">连续失败 {monitors.data![t.id].failStreak} 次</Badge>
+                  ) : null}
                   {t.lastStatus ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                       <StatusDot status={STATUS[t.lastStatus].dot} />
@@ -258,9 +310,15 @@ export function TasksPage() {
                   ) : (
                     <span className="shrink-0 text-xs text-subtle-foreground">尚未运行</span>
                   )}
+                  {t.kind === 'monitor' ? (
+                    <Button variant="ghost" size="sm" onClick={() => setHistory(t)}>
+                      <History />
+                      记录
+                    </Button>
+                  ) : null}
                   <Button variant="secondary" size="sm" onClick={() => void runNow(t)}>
-                    <Play />
-                    运行
+                    {t.kind === 'monitor' ? <RefreshCw /> : <Play />}
+                    {t.kind === 'monitor' ? '检查' : '运行'}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -313,10 +371,12 @@ export function TasksPage() {
                         停止
                       </Button>
                     ) : null}
-                    <Button variant="ghost" size="sm" onClick={() => openThread(r)}>
-                      <MessageSquare />
-                      查看会话
-                    </Button>
+                    {r.threadId ? (
+                      <Button variant="ghost" size="sm" onClick={() => openThread(r.threadId)}>
+                        <MessageSquare />
+                        查看会话
+                      </Button>
+                    ) : null}
                   </div>
                 )
               })}
@@ -324,6 +384,16 @@ export function TasksPage() {
           )}
         </AsyncView>
       </Section>
+      {history ? (
+        <MonitorHistory
+          task={history}
+          onClose={() => setHistory(null)}
+          onOpenThread={(id) => {
+            setHistory(null)
+            openThread(id)
+          }}
+        />
+      ) : null}
       {editing ? <TaskDialog task={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={tasks.reload} /> : null}
     </Page>
   )

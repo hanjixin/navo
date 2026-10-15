@@ -20,6 +20,7 @@ import { connectors } from './connectors/connector-service'
 import { plugins } from './plugins/plugin-service'
 import { recorder } from './recorder/recorder-service'
 import { tasks } from './tasks/task-service'
+import { monitor } from './monitor/monitor-service'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
 import { navoMcpServer } from './mcp-server/navo-mcp-server'
@@ -183,6 +184,16 @@ export function registerHandlers(): void {
     'tasks.run': (id) => tasks.run(id),
     'tasks.runs': (taskId) => tasks.runs(taskId),
     'tasks.cancel': (runId) => tasks.cancel(runId),
+    'monitor.check': (taskId) => tasks.check(tasks.get(taskId)),
+    'monitor.checks': (taskId, limit) => monitor.checks(taskId, limit),
+    'monitor.summary': () =>
+      monitor.summaries(
+        tasks
+          .list()
+          .filter((t) => t.kind === 'monitor')
+          .map((t) => t.id),
+      ),
+    'monitor.preview': (url, selector) => monitor.read(url, selector),
 
     'settings.get': () => getSettings(),
     'settings.set': (patch) => {

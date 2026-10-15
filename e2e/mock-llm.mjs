@@ -92,6 +92,27 @@ export function startMock(port = 38999) {
       res.end('data: [DONE]\n\n')
     }
 
+    // Navo's page monitor: "低于 N" compares the first ¥price on the page; "新公告" looks for added notices
+    if (system.includes('你是 Navo 的网页监控员')) {
+      const section = (name) => new RegExp(`## ${name}\\n([\\s\\S]*?)(?=\\n## |$)`).exec(userText)?.[1].trim() ?? ''
+      const cond = section('触发条件')
+      const added = section('新出现的行')
+      const removedLines = section('消失的行')
+      const price = (t) => Number(/¥(\d+(?:\.\d+)?)/.exec(t)?.[1] ?? NaN)
+      let verdict
+      const below = /低于\s*(\d+)/.exec(cond)
+      if (below) {
+        const now = price(added)
+        verdict = Number.isFinite(now)
+          ? { triggered: now < Number(below[1]), summary: `价格从 ¥${price(removedLines)} 变为 ¥${now}` }
+          : { triggered: false, summary: '价格没有变化，只是页面其他内容变了' }
+      } else if (/公告/.test(cond)) {
+        const notice = added.split('\n').find((l) => l.includes('公告'))
+        verdict = notice ? { triggered: true, summary: `出现新公告：${notice}` } : { triggered: false, summary: '没有新公告' }
+      } else verdict = { triggered: true, summary: '内容有变化' }
+      return say([JSON.stringify(verdict)])
+    }
+
     // Navo's flow naming: name, description, and the typed order number as a parameter
     if (system.includes('你是 Navo 的流程整理员')) {
       const typed = [...userText.matchAll(/^- (.+)$/gm)].map((m) => m[1])

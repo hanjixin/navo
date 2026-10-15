@@ -39,6 +39,8 @@ import type {
   SkillSource,
   Task,
   TaskRun,
+  MonitorCheck,
+  MonitorSummary,
   Thread,
   ThreadState,
   TraceEntry,
@@ -205,6 +207,12 @@ export interface Api {
   'tasks.run': (id: string) => TaskRun
   'tasks.runs': (taskId?: string) => TaskRun[]
   'tasks.cancel': (runId: string) => void
+  /** checks a monitor task now and returns the result */
+  'monitor.check': (taskId: string) => MonitorCheck
+  'monitor.checks': (taskId: string, limit?: number) => MonitorCheck[]
+  'monitor.summary': () => Record<string, MonitorSummary>
+  /** what a monitor would read from a page (to try the address / selector before saving) */
+  'monitor.preview': (url: string, selector?: string | null) => { text: string; title: string }
 
   // settings / dev
   'settings.get': () => Settings
@@ -273,6 +281,7 @@ export interface Events {
   /** a flow ran / changed (stats and versions) */
   'macros.changed': void
   'tasks.changed': void
+  'monitor.checked': { taskId: string; triggered: boolean }
   'dev.log': string
   'navoMcp.status': McpServerStatus
   /** settings changed from anywhere (UI, onboarding, MCP) */
