@@ -2,6 +2,7 @@ import { tool } from '@langchain/core/tools'
 import type { WebContents } from 'electron'
 import { z } from 'zod'
 import { sessions } from './agent-session'
+import { trace } from '../flows/trace'
 import { memory } from '../memory/memory-service'
 import { browser } from './browser-service'
 
@@ -53,6 +54,16 @@ async function changes(wc: WebContents): Promise<string> {
   return `页面变化 ${pos}（新增/更新 ${added.length} 行，移除 ${removed} 行）：\n${shown.length > 4000 ? shown.slice(0, 4000) + '\n…' : shown}`
 }
 
+/** The element behind a ref, as a replayable target (selectors computed before acting: a click may remove it). */
+async function targetOf(wc: WebContents, ref: string): Promise<{ selectors: string[]; label: string; secret: boolean }> {
+  const r = JSON.stringify(ref)
+  try {
+    return await browser.evalIn(wc, `({ selectors: __agent.selectorsOf(${r}), label: __agent.nameOf(__agent.resolve(${r})), secret: __agent.isSecret(${r}) })`)
+  } catch {
+    return { selectors: [], label: '', secret: false }
+  }
+}
+
 function withNotices(wc: WebContents, text: string): string {
   const notes = sessions.takeNotices(wc)
   return notes.length ? `${text}\n\n[页面事件]\n${notes.map((n) => `- ${n}`).join('\n')}` : text
@@ -78,6 +89,7 @@ export function createBrowserTools(ctx: ToolCtx) {
           await browser.navigate(url, wc)
           await browser.waitForLoad(wc)
           await settle(300)
+          trace.add(ctx.threadId, { type: 'navigate', url: wc.getURL() })
           // experience remembered for this site comes along the first time the agent lands on it
           return withNotices(wc, await fullSnapshot(wc)) + memory.siteNotesOnce(ctx.threadId, wc.getURL())
         }),
@@ -96,8 +108,10 @@ export function createBrowserTools(ctx: ToolCtx) {
     tool(
       async ({ ref: r, double }) =>
         onTab(ctx, async (wc) => {
-          const { x, y } = await center(wc, r)
-          await browser.click(wc, x, y, { clickCount: double ? 2 : 1 })
+          const target = await targetOf(wc, r)
+          const at = wc.getURL()
+          await browser.clickRef(wc, r, { double })
+          trace.add(ctx.threadId, { type: 'click', selectors: target.selectors, label: target.label, url: at })
           await settle(600)
           await browser.waitForLoad(wc, 8000)
           return withNotices(wc, `已点击 ${r}。\n${await changes(wc)}`) + memory.siteNotesOnce(ctx.threadId, wc.getURL())
@@ -111,8 +125,12 @@ export function createBrowserTools(ctx: ToolCtx) {
     tool(
       async ({ ref: r, text, clear, submit }) =>
         onTab(ctx, async (wc) => {
+          const target = await targetOf(wc, r)
+          const at = wc.getURL()
           await browser.evalIn(wc, `__agent.focus(${JSON.stringify(r)}, ${clear !== false})`)
           await browser.insertText(wc, text)
+          trace.add(ctx.threadId, { type: 'type', selectors: target.selectors, label: target.label, value: text, secret: target.secret, url: at })
+          if (submit) trace.add(ctx.threadId, { type: 'press', key: 'Enter', selectors: target.selectors, url: at })
           if (submit) {
             await browser.pressKey(wc, 'Enter')
             await settle(800)
@@ -134,7 +152,9 @@ export function createBrowserTools(ctx: ToolCtx) {
     tool(
       async ({ ref: r, value }) =>
         onTab(ctx, async (wc) => {
+          const target = await targetOf(wc, r)
           await browser.evalIn(wc, `__agent.setValue(${JSON.stringify(r)}, ${JSON.stringify(value)})`)
+          trace.add(ctx.threadId, { type: 'select', selectors: target.selectors, label: target.label, value, url: wc.getURL() })
           await settle()
           return withNotices(wc, `已选择 "${value}"。\n${await changes(wc)}`)
         }),
@@ -153,6 +173,7 @@ export function createBrowserTools(ctx: ToolCtx) {
     tool(
       async ({ key }) =>
         onTab(ctx, async (wc) => {
+          trace.add(ctx.threadId, { type: 'press', key, url: wc.getURL() })
           await browser.pressKey(wc, key)
           await settle(500)
           await browser.waitForLoad(wc, 8000)

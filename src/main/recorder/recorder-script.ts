@@ -11,66 +11,7 @@ export function recorderScript(): void {
 
   const INTERACTIVE =
     'a,button,input,select,textarea,summary,label,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[onclick],[contenteditable=true]'
-  const dynamicId = (id: string) => /\d{4,}|[a-f0-9]{8,}|^[:_]|react|ember|uid/i.test(id)
-
-  function unique(sel: string, el: Element): boolean {
-    try {
-      const all = document.querySelectorAll(sel)
-      return all.length === 1 && all[0] === el
-    } catch {
-      return false
-    }
-  }
-
-  function cssPath(el: Element): string {
-    const parts: string[] = []
-    let cur: Element | null = el
-    while (cur && cur.nodeType === 1 && parts.length < 6) {
-      const tag = cur.tagName.toLowerCase()
-      if (cur.id && !dynamicId(cur.id)) {
-        parts.unshift(`#${CSS.escape(cur.id)}`)
-        break
-      }
-      const parent: Element | null = cur.parentElement
-      if (!parent) {
-        parts.unshift(tag)
-        break
-      }
-      const same = Array.from(parent.children).filter((c) => c.tagName === cur!.tagName)
-      parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(cur) + 1})` : tag)
-      const sel = parts.join(' > ')
-      if (unique(sel, el)) return sel
-      cur = parent
-    }
-    return parts.join(' > ')
-  }
-
-  function selectorsFor(el: Element): string[] {
-    const out: string[] = []
-    for (const attr of ['data-testid', 'data-test', 'data-qa', 'data-cy']) {
-      const v = el.getAttribute(attr)
-      if (v) out.push(`[${attr}="${CSS.escape(v)}"]`)
-    }
-    if (el.id && !dynamicId(el.id)) out.push(`#${CSS.escape(el.id)}`)
-    const tag = el.tagName.toLowerCase()
-    const name = el.getAttribute('name')
-    if (name) {
-      const s = `${tag}[name="${CSS.escape(name)}"]`
-      if (unique(s, el)) out.push(s)
-    }
-    const aria = el.getAttribute('aria-label')
-    if (aria) {
-      const s = `${tag}[aria-label="${CSS.escape(aria)}"]`
-      if (unique(s, el)) out.push(s)
-    }
-    const role = A.roleOf(el)
-    const accName = A.nameOf(el)
-    if (accName && accName.length < 60) out.push(`role=${role}[name="${accName}"]`)
-    const txt = A.text((el as HTMLElement).innerText, 500)
-    if (txt && txt.length < 40 && (tag === 'a' || tag === 'button' || role === 'button' || role === 'link')) out.push(`text=${txt}`)
-    out.push(cssPath(el))
-    return Array.from(new Set(out))
-  }
+  const selectorsFor = (el: Element): string[] => A.selectorsFor(el)
 
   function target(e: Event): Element | null {
     const t = e.composedPath()[0] as Element

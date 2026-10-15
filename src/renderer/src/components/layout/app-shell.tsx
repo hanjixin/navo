@@ -22,6 +22,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
 import { BrowserMini } from '@/components/browser/browser-mini'
+import { FlowDialog } from '@/components/flows/flow-dialog'
 import { BrowserPanel } from '@/components/browser/browser-panel'
 import { Logo, PRODUCT_NAME } from '@/components/brand/logo'
 import { on } from '@/lib/ipc'
@@ -237,6 +238,7 @@ export function AppShell() {
 
         <main ref={mainRef} className="relative min-w-0 flex-1 bg-background">
           <Outlet />
+          <FlowDialog />
           {!open && mini ? <BrowserMini /> : null}
         </main>
 

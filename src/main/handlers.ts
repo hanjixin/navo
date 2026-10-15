@@ -11,6 +11,7 @@ import { sessions } from './browser/agent-session'
 import { browser } from './browser/browser-service'
 import { skills } from './skills/skill-service'
 import { memory } from './memory/memory-service'
+import { flows } from './flows/flows'
 import { quick } from './quick/quick-service'
 import { skillEvolution } from './skills/evolution'
 import { skillVersions } from './skills/versions'
@@ -154,10 +155,25 @@ export function registerHandlers(): void {
     'plugins.activeForTab': () => plugins.activeForTab(),
 
     'macros.list': () => recorder.list(),
-    'macros.save': (m) => recorder.save(m),
+    'macros.save': (m) => {
+      const saved = recorder.save(m)
+      flows.recordVersion(saved, 'user', '手动编辑')
+      return saved
+    },
     'macros.delete': (id) => recorder.delete(id),
     'macros.startRecording': () => recorder.start(),
-    'macros.stopRecording': () => recorder.stop(),
+    'macros.stopRecording': async () => {
+      const m = await recorder.stop()
+      if (m) flows.recordVersion(m, 'recorded', '录制')
+      return m
+    },
+    'flows.traceInfo': (threadId) => flows.traceInfo(threadId),
+    'flows.draft': (threadId) => flows.draft(threadId),
+    'flows.save': (draft) => flows.save(draft),
+    'flows.run': (macroId, params, repair) => flows.run(macroId, params, repair),
+    'flows.stats': () => flows.stats(),
+    'flows.versions': (macroId) => flows.versions(macroId),
+    'flows.rollback': (macroId, version) => flows.rollback(macroId, version),
     'macros.run': (id, params) => recorder.run(id, params),
     'macros.toSkill': (id) => recorder.toSkill(id),
 

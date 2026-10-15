@@ -26,6 +26,10 @@ import type {
   ProviderInput,
   McpServerStatus,
   Settings,
+  FlowDraft,
+  FlowRunResult,
+  FlowStats,
+  MacroVersion,
   QuickStatus,
   Skill,
   SkillEvolved,
@@ -97,6 +101,17 @@ export interface Api {
   'skills.removeSource': (id: string) => void
   /** Copies an external skill into the local library so it can be edited */
   'skills.copyToLocal': (id: string) => Skill
+  // fixed flows (replay without the model)
+  /** browser actions the agent took in the conversation's last run (null: nothing replayable) */
+  'flows.traceInfo': (threadId: string) => { actions: number } | null
+  /** turns the conversation's last run into a flow: steps, name, parameters */
+  'flows.draft': (threadId: string) => FlowDraft
+  'flows.save': (draft: FlowDraft) => Macro
+  /** replays in a background tab; with repair, the agent takes over when a step breaks */
+  'flows.run': (macroId: string, params: Record<string, string>, repair: boolean) => FlowRunResult
+  'flows.stats': () => Record<string, FlowStats>
+  'flows.versions': (macroId: string) => MacroVersion[]
+  'flows.rollback': (macroId: string, version: number) => void
   // quick ask
   'quick.status': () => QuickStatus
   'quick.show': () => void
@@ -239,6 +254,10 @@ export interface Events {
   /** to the main window: show this conversation */
   'quick.openThread': string
   'quick.status': QuickStatus
+  /** a browser task that sounds like it will come back: offer to keep it as a fixed flow */
+  'flows.suggest': { threadId: string; actions: number }
+  /** a flow broke and was fixed by the agent */
+  'flows.repaired': { macroId: string; name: string; step: number; version: number }
   'memory.consolidated': { changed: number; conflicts: number }
   'chat.event': ChatEvent
   'threads.changed': void
@@ -251,6 +270,8 @@ export interface Events {
   'mcp.status': McpStatus[]
   'connectors.changed': void
   'macros.recording': { steps: number; last?: string }
+  /** a flow ran / changed (stats and versions) */
+  'macros.changed': void
   'tasks.changed': void
   'dev.log': string
   'navoMcp.status': McpServerStatus

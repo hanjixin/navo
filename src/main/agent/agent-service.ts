@@ -2,6 +2,8 @@ import { app, utilityProcess, type UtilityProcess } from 'electron'
 import { appFile } from '../core/app-dir'
 import type { ChatEvent, Decision, Thread, ThreadState } from '@shared/types'
 import { buildAttachmentContext } from '../files/attachments'
+import { flows } from '../flows/flows'
+import { trace } from '../flows/trace'
 import { learning } from '../learning'
 import { memory } from '../memory/memory-service'
 import { hostOf } from '../memory/recall'
@@ -241,6 +243,8 @@ class AgentService {
     const runId = newId()
     const settings = getSettings()
     sessions.begin(threadId, thread.title)
+    // the browser steps of this run, kept for turning it into a fixed flow
+    trace.start(threadId)
     const ctx = { threadId, tab: () => sessions.tabFor(threadId) }
     const entries = collectTools(ctx)
     const runState = { runId, tools: new Map(entries.map((e) => [e.tool.name, e])), usedMemoryTools: false }
@@ -291,6 +295,7 @@ class AgentService {
       this.touch(threadId)
       emit('threads.changed')
     }
+    flows.onRunEnd(threadId, input.kind === 'message' ? input.text : '', !result.error && !result.aborted && !result.interrupted)
     this.send({ type: 'run_end', threadId, runId, aborted: result.aborted, traceUrl: result.traceUrl })
     // learn from the finished exchange in the background (the agent's own memory_* calls take precedence)
     if (input.kind === 'message' && !opts.headless && !result.error && !result.aborted && !result.interrupted && !isSpawnedConversation(threadId))

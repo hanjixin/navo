@@ -15,7 +15,7 @@ import { AsyncView, EmptyState, ListSkeleton } from '@/components/ui/states'
 import { Switch } from '@/components/ui/switch'
 import { useAsync } from '@/hooks/use-async'
 import { call, on } from '@/lib/ipc'
-import { errorMessage, timeAgo } from '@/lib/utils'
+import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useModels } from '@/stores/models'
 
@@ -45,9 +45,13 @@ type Draft = Omit<Task, 'id' | 'createdAt'> & { id?: string }
 
 function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: () => void; onSaved: () => void }) {
   const models = useModels((s) => s.models) ?? []
-  const [d, setD] = useState<Draft>(task ?? { name: '', prompt: '', modelId: null, cron: null, enabled: true })
+  const [d, setD] = useState<Draft>(task ?? { name: '', prompt: '', modelId: null, cron: null, enabled: true, kind: 'agent' })
   const [mode, setMode] = useState(() => (!d.cron ? 'none' : PRESETS.some((p) => p.value === d.cron) ? d.cron : 'custom'))
   const [saving, setSaving] = useState(false)
+  const kind = d.kind ?? 'agent'
+  const flowsList = useAsync(() => call('macros.list'), [])
+  const flow = flowsList.data?.find((x) => x.id === d.macroId)
+  const ready = d.name.trim() && (kind === 'flow' ? !!d.macroId : d.prompt.trim())
 
   const save = async () => {
     setSaving(true)
@@ -73,7 +77,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
             <Button variant="ghost" onClick={onClose}>
               取消
             </Button>
-            <Button variant="primary" loading={saving} disabled={!d.name.trim() || !d.prompt.trim()} onClick={save}>
+            <Button variant="primary" loading={saving} disabled={!ready} onClick={save}>
               保存
             </Button>
           </>
@@ -83,16 +87,65 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
           <Field label="名称">
             <Input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus placeholder="每日资讯摘要" />
           </Field>
-          <Field label="任务描述" hint="像对 Agent 说话一样描述目标和输出要求">
-            <Textarea
-              value={d.prompt}
-              onChange={(e) => setD({ ...d, prompt: e.target.value })}
-              rows={5}
-              placeholder="打开 Hacker News，总结前 10 篇文章，并把摘要保存到 /workspace/daily/今天日期.md"
-            />
-          </Field>
+          <div className="flex rounded-md border border-border bg-muted p-0.5" role="tablist">
+            {(
+              [
+                ['agent', 'Agent 任务', '由模型理解并完成'],
+                ['flow', '固定流程', '按保存的步骤直接回放，不调用模型'],
+              ] as const
+            ).map(([v, label, hint]) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={kind === v}
+                title={hint}
+                onClick={() => setD({ ...d, kind: v })}
+                className={cn(
+                  'interactive h-8 flex-1 rounded-[5px] text-sm',
+                  kind === v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {kind === 'agent' ? (
+            <Field label="任务描述" hint="像对 Agent 说话一样描述目标和输出要求">
+              <Textarea
+                value={d.prompt}
+                onChange={(e) => setD({ ...d, prompt: e.target.value })}
+                rows={5}
+                placeholder="打开 Hacker News，总结前 10 篇文章，并把摘要保存到 /workspace/daily/今天日期.md"
+              />
+            </Field>
+          ) : (
+            <>
+              <Field label="固定流程" hint="按步骤直接回放、不调用模型；某一步因页面改版失效时，由 Agent 完成并自动更新流程">
+                <Select
+                  value={d.macroId ?? undefined}
+                  placeholder={flowsList.data?.length ? '选择流程' : '还没有固定流程：在对话里点「固化流程」，或在录制宏页面录制'}
+                  onChange={(v) => setD({ ...d, macroId: v, params: {} })}
+                  options={(flowsList.data ?? []).map((x) => ({ value: x.id, label: x.name }))}
+                />
+              </Field>
+              {flow?.params.length ? (
+                <div className="grid gap-2">
+                  {flow.params.map((p) => (
+                    <Field key={p.name} label={p.description || p.name}>
+                      <Input
+                        value={d.params?.[p.name] ?? ''}
+                        placeholder={p.default ? `默认：${p.default}` : ''}
+                        type={p.name === 'password' ? 'password' : 'text'}
+                        onChange={(e) => setD({ ...d, params: { ...(d.params ?? {}), [p.name]: e.target.value } })}
+                      />
+                    </Field>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="模型">
+            <Field label="模型" className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
               <Select
                 value={d.modelId ?? 'default'}
                 onChange={(v) => setD({ ...d, modelId: v === 'default' ? null : v })}
@@ -195,7 +248,7 @@ export function TasksPage() {
                       </Badge>
                       {t.cron && !t.enabled ? <Badge variant="warning">已暂停</Badge> : null}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.prompt}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{t.kind === 'flow' ? '固定流程 · 直接回放，不调用模型' : t.prompt}</p>
                   </div>
                   {t.lastStatus ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">

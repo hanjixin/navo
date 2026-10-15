@@ -2,9 +2,12 @@ import { app } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Memory } from '@shared/types'
 import { agent } from '../agent/agent-service'
+import { describeStep } from '../flows/flows-core'
+import { flows } from '../flows/flows'
 import type { LearnTurn } from '../learning/scheduler'
 import { memory } from '../memory/memory-service'
 import { resolveModel } from '../models/registry'
+import { recorder } from '../recorder/recorder-service'
 import { skillEvolution } from '../skills/evolution'
 
 /**
@@ -80,5 +83,55 @@ export async function runSkillEval(file: string): Promise<void> {
     )
   }
   writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
+  app.exit(0)
+}
+
+/**
+ * Fixed flows end to end (scripts/flow-eval.mjs): the agent does a task once with the model, it is
+ * kept as a flow, replayed without the model, then (after the site's redesign) repaired and replayed.
+ */
+export async function runFlowEval(file: string): Promise<void> {
+  const { prompt, base, password } = JSON.parse(readFileSync(file, 'utf8')) as { prompt: string; base: string; password: string }
+  const out: Record<string, unknown> = { model: resolveModel(null).model }
+  const save = () => writeFileSync(`${file}.out.json`, JSON.stringify(out, null, 2))
+  const assistantTurns = async (threadId: string) =>
+    (await agent.threadState(threadId).catch(() => null))?.messages.filter((m) => m.role === 'assistant').length ?? 0
+  try {
+    const t = agent.createThread(null, { title: 'eval: 固定流程' })
+    let started = Date.now()
+    const r = await agent.send_(t.id, prompt, [], { headless: true })
+    out.first = { ok: !r.error && !r.aborted, error: r.error, finalText: r.finalText, modelCalls: await assistantTurns(t.id), ms: Date.now() - started }
+    out.traceInfo = flows.traceInfo(t.id)
+    started = Date.now()
+    const draft = await flows.draft(t.id)
+    out.rawSteps = draft.steps
+    out.draft = {
+      name: draft.name,
+      description: draft.description,
+      startUrl: draft.startUrl,
+      params: draft.params,
+      steps: draft.steps.map(describeStep),
+      ms: Date.now() - started,
+    }
+    const m = flows.save(draft)
+    // the parameter the model made of the order number gets the new one; the password is filled in
+    const params = (no: string) =>
+      Object.fromEntries(draft.params.map((p) => [p.name, p.name === 'password' ? password : p.default === 'A-1001' ? no : (p.default ?? '')]))
+    const run = async (no: string, repair: boolean) => {
+      const s = Date.now()
+      const res = await flows.run(m.id, params(no), repair)
+      return { ...res, ms: Date.now() - s, version: flows.versions(m.id)[0]?.version, steps: recorder.get(m.id).steps.map(describeStep) }
+    }
+    out.replay = await run('B-2002', false)
+    save()
+    await fetch(`${base}/admin/v2`)
+    out.repair = await run('C-3003', true)
+    save()
+    out.replayAfterRepair = await run('D-4004', false)
+    out.stats = flows.stats()[m.id]
+  } catch (e) {
+    out.error = (e as Error).message
+  }
+  save()
   app.exit(0)
 }

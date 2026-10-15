@@ -75,10 +75,25 @@ export function pageRuntime(): void {
       if (l) return text(l.textContent)
     }
     const input = el as HTMLInputElement
+    // <input type=submit value="登录"> is named by its value
+    if (el.tagName === 'INPUT' && /^(submit|button|reset)$/.test(input.type) && input.value) return text(input.value)
+    // <label>密码 <input></label>
+    const wrap = el.closest('label')
+    if (wrap && el.tagName !== 'LABEL') {
+      const own = text(wrap.textContent)
+      if (own) return own
+    }
     if (input.placeholder) return text(input.placeholder)
     if (el.tagName === 'IMG') return text((el as HTMLImageElement).alt)
     const t = text((el as HTMLElement).innerText || el.textContent)
     if (t) return t
+    // old systems lay forms out in tables: <td>订单号</td><td><input></td>
+    if (el.matches(FORM_CONTROL)) {
+      const cell = el.closest('td,th')
+      const prev = cell?.previousElementSibling
+      const label = prev && /^T[DH]$/.test(prev.tagName) && !prev.querySelector(FORM_CONTROL) ? text(prev.textContent) : ''
+      if (label && label.length < 30) return label
+    }
     return text(el.getAttribute('title') || input.name || '')
   }
 
@@ -208,6 +223,30 @@ export function pageRuntime(): void {
     return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
   }
 
+  // Whether a click sent as mouse input reached the element. A tab that isn't on screen (a
+  // background tab, a window behind others) may not route input at all; then it is clicked in the DOM.
+  let armed: { el: Element; hit: boolean; off: () => void } | null = null
+  function armClick(ref: string): void {
+    armed?.off()
+    const el = resolve(ref)
+    const onClick = (e: Event) => {
+      if (armed && e.target instanceof Node && (el === e.target || el.contains(e.target) || (e.target as Element).contains?.(el))) armed.hit = true
+    }
+    document.addEventListener('click', onClick, true)
+    armed = { el, hit: false, off: () => document.removeEventListener('click', onClick, true) }
+  }
+  /** after the mouse click: true when it arrived; otherwise clicks the element directly */
+  function settleClick(double: boolean): boolean {
+    const a = armed
+    armed = null
+    if (!a) return true
+    a.off()
+    if (a.hit || !a.el.isConnected) return true
+    ;(a.el as HTMLElement).click()
+    if (double) a.el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }))
+    return false
+  }
+
   let overlay: HTMLDivElement | null = null
   function setControlled(on: boolean): void {
     if (on && !overlay) {
@@ -290,5 +329,98 @@ export function pageRuntime(): void {
     }
   }
 
-  w.__agent = { snapshot, resolve, refFor, center, setControlled, query, extract, setValue, focus, nameOf, roleOf, visible, text }
+  // ---------- stable selectors (recorder and replayable agent traces)
+  const dynamicId = (id: string) => /\d{4,}|[a-f0-9]{8,}|^[:_]|react|ember|uid/i.test(id)
+
+  function unique(sel: string, el: Element): boolean {
+    try {
+      const all = document.querySelectorAll(sel)
+      return all.length === 1 && all[0] === el
+    } catch {
+      return false
+    }
+  }
+
+  function cssPath(el: Element): string {
+    const parts: string[] = []
+    let cur: Element | null = el
+    while (cur && cur.nodeType === 1 && parts.length < 6) {
+      const tag = cur.tagName.toLowerCase()
+      if (cur.id && !dynamicId(cur.id)) {
+        parts.unshift(`#${CSS.escape(cur.id)}`)
+        break
+      }
+      const parent: Element | null = cur.parentElement
+      if (!parent) {
+        parts.unshift(tag)
+        break
+      }
+      const same = Array.from(parent.children).filter((c) => c.tagName === cur!.tagName)
+      parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(cur) + 1})` : tag)
+      const sel = parts.join(' > ')
+      if (unique(sel, el)) return sel
+      cur = parent
+    }
+    return parts.join(' > ')
+  }
+
+  function selectorsFor(el: Element): string[] {
+    const out: string[] = []
+    for (const attr of ['data-testid', 'data-test', 'data-qa', 'data-cy']) {
+      const v = el.getAttribute(attr)
+      if (v) out.push(`[${attr}="${CSS.escape(v)}"]`)
+    }
+    if (el.id && !dynamicId(el.id)) out.push(`#${CSS.escape(el.id)}`)
+    const tag = el.tagName.toLowerCase()
+    const name = el.getAttribute('name')
+    if (name) {
+      const s = `${tag}[name="${CSS.escape(name)}"]`
+      if (unique(s, el)) out.push(s)
+    }
+    const aria = el.getAttribute('aria-label')
+    if (aria) {
+      const s = `${tag}[aria-label="${CSS.escape(aria)}"]`
+      if (unique(s, el)) out.push(s)
+    }
+    const role = roleOf(el)
+    const accName = nameOf(el)
+    if (accName && accName.length < 60) out.push(`role=${role}[name="${accName}"]`)
+    const txt = text((el as HTMLElement).innerText, 500)
+    if (txt && txt.length < 40 && (tag === 'a' || tag === 'button' || role === 'button' || role === 'link')) out.push(`text=${txt}`)
+    out.push(cssPath(el))
+    return Array.from(new Set(out))
+  }
+
+  /** Selectors for the element behind a snapshot ref, best first (for replaying without the model). */
+  function selectorsOf(ref: string): string[] {
+    const el = resolve(ref)
+    return el ? selectorsFor(el) : []
+  }
+
+  /** A password field: what is typed into it is never recorded. */
+  function isSecret(ref: string): boolean {
+    const el = resolve(ref) as HTMLInputElement | null
+    return !!el && (el.type === 'password' || /password|passwd|otp|one-time-code/i.test(el.autocomplete || '') || /password|passwd|pwd/i.test(el.name || ''))
+  }
+
+  w.__agent = {
+    snapshot,
+    resolve,
+    refFor,
+    center,
+    armClick,
+    settleClick,
+    setControlled,
+    query,
+    extract,
+    setValue,
+    focus,
+    nameOf,
+    roleOf,
+    visible,
+    text,
+    selectorsFor,
+    selectorsOf,
+    isSecret,
+  }
 }

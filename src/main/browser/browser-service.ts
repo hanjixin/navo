@@ -55,6 +55,8 @@ class BrowserService {
   private pageSize = { width: 1280, height: 800 }
   /** Tabs currently driven by an agent run */
   private controlled = new Set<number>()
+  /** background tabs kept in the window, off-screen, so they render (see park) */
+  private parked = new Set<number>()
   /** tab an agent most recently started driving (what the mini window follows) */
   private lastControlled: number | null = null
   recording = false
@@ -143,6 +145,8 @@ class BrowserService {
       },
     })
     view.setBackgroundColor('#ffffff')
+    // a tab opened in the background still lays out at the usual size: clicks by coordinates need it
+    view.setBounds({ x: 0, y: 0, ...this.pageSize })
     const wc = view.webContents
     const id = wc.id
     this.tabs.set(id, { view, pendingUrl: normalizeUrl(url) })
@@ -203,7 +207,10 @@ class BrowserService {
 
     void wc.loadURL(normalizeUrl(url)).catch((err) => log.warn(`[browser] load failed: ${err.message}`))
     if (opts.activate !== false) this.activate(id)
-    else this.changed()
+    else {
+      this.park(id)
+      this.changed()
+    }
     return id
   }
 
@@ -245,7 +252,7 @@ class BrowserService {
     const t = this.tabs.get(id)
     if (!t) return
     this.controlled.delete(id)
-    if (this.attached && id === this.activeId) this.win?.contentView.removeChildView(t.view)
+    if ((this.attached && id === this.activeId) || this.parked.delete(id)) this.win?.contentView.removeChildView(t.view)
     t.view.webContents.close()
     this.tabs.delete(id)
     this.order = this.order.filter((x) => x !== id)
@@ -260,12 +267,34 @@ class BrowserService {
 
   activate(id: number): void {
     if (!this.tabs.has(id) || !this.win) return
-    const prev = this.activeId != null ? this.tabs.get(this.activeId) : null
-    if (prev && this.attached) this.win.contentView.removeChildView(prev.view)
-    this.attached = false
+    const prevId = this.activeId
+    const prev = prevId != null ? this.tabs.get(prevId) : null
+    const wasAttached = this.attached
     this.activeId = id
+    this.attached = false
+    this.parked.delete(id) // re-adding it in layout() brings it to the front
+    if (prev && wasAttached && prevId !== id) {
+      // an agent still working there keeps its tab rendering
+      if (this.controlled.has(prevId!)) this.park(prevId!)
+      else this.win.contentView.removeChildView(prev.view)
+    }
     this.layout()
     this.changed()
+  }
+
+  /**
+   * A tab that isn't in the window produces no frames: screenshots fail and clicks by coordinates
+   * hit nothing. Background tabs (flows replaying, agents working in parallel) stay in the window,
+   * off-screen and at the usual size, behind everything else.
+   */
+  private park(id: number): void {
+    const t = this.tabs.get(id)
+    if (!this.win || !t || id === this.activeId) return
+    if (!this.parked.has(id)) {
+      this.win.contentView.addChildView(t.view, 0)
+      this.parked.add(id)
+    }
+    t.view.setBounds({ x: this.win.getContentBounds().width + 64, y: 0, ...this.pageSize })
   }
 
   /** Renderer reports where the page area is; null hides the native view (e.g. while dialogs are open). */
@@ -466,6 +495,24 @@ class BrowserService {
       wc.debugger.on('detach', () => log.info(`[cdp] detached from ${wc.id}`))
     }
     return (await wc.debugger.sendCommand(method, params)) as T
+  }
+
+  /**
+   * Clicks an element by its snapshot ref like a person would (mouse input at its center). When the
+   * input doesn't arrive — the tab isn't being drawn, e.g. it works in the background — the element
+   * is clicked in the page instead. Navigation started by the click is not awaited here.
+   */
+  async clickRef(wc: WebContents, ref: string, opts: { double?: boolean } = {}): Promise<void> {
+    await this.evalIn(wc, `__agent.armClick(${JSON.stringify(ref)})`)
+    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
+    // input to a tab that isn't drawn waits ~5s for an acknowledgement that never comes: probe first
+    const routed = await Promise.race([
+      this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).then(() => true),
+      new Promise<boolean>((r) => setTimeout(() => r(false), 400)),
+    ])
+    if (routed) await this.click(wc, x, y, { clickCount: opts.double ? 2 : 1 })
+    // the page may already be navigating away (the click arrived): nothing left to check
+    await this.evalIn(wc, `__agent.settleClick(${opts.double ? 'true' : 'false'})`).catch(() => undefined)
   }
 
   async click(wc: WebContents, x: number, y: number, opts: { button?: 'left' | 'right'; clickCount?: number } = {}): Promise<void> {

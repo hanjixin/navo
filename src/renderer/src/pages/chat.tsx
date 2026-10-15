@@ -1,5 +1,6 @@
 import {
   Brain,
+  Workflow,
   Activity,
   Cpu,
   Globe,
@@ -35,6 +36,7 @@ import { threadsOpen, useLayout } from '@/stores/layout'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useAsync } from '@/hooks/use-async'
 import { useSettings } from '@/stores/settings'
+import { useFlowDialog } from '@/stores/flows'
 
 const SUGGESTIONS = [
   { icon: Newspaper, text: '打开 Hacker News，总结今天排名前 5 的文章' },
@@ -161,6 +163,20 @@ function ThreadList() {
   )
 }
 
+/** Shown when the conversation's last run did something in the browser that could be replayed. */
+function SaveFlowButton({ threadId, messages }: { threadId: string; messages: number }) {
+  const info = useAsync(() => call('flows.traceInfo', threadId), [threadId, messages])
+  if (!info.data) return null
+  return (
+    <Tooltip content={`把刚才的 ${info.data.actions} 步浏览器操作保存成固定流程，下次直接回放、不调用模型`}>
+      <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => useFlowDialog.getState().open(threadId)}>
+        <Workflow />
+        固化流程
+      </Button>
+    </Tooltip>
+  )
+}
+
 /** Per-conversation memory switch: off = this conversation neither reads nor learns memories. */
 function ThreadMemoryToggle({ threadId }: { threadId: string }) {
   const globalOn = useSettings((s) => s.settings?.memory.enabled ?? true)
@@ -246,6 +262,7 @@ export function ChatPage() {
               运行中
             </span>
           ) : null}
+          {thread && !view?.running ? <SaveFlowButton threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
           {thread ? <ThreadMemoryToggle threadId={thread.id} /> : null}
           {view?.traceUrl && !view.running ? (
             <Tooltip content="在 Langfuse 中查看本次运行">

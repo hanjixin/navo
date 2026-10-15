@@ -1,11 +1,12 @@
 import { Notification } from 'electron'
 import cron, { type ScheduledTask } from 'node-cron'
 import type { Task, TaskRun, TaskRunStatus } from '@shared/types'
-import { db } from '../core/db'
+import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { agent } from '../agent/agent-service'
+import { flows } from '../flows/flows'
 
 interface TaskRow {
   id: string
@@ -15,6 +16,9 @@ interface TaskRow {
   cron: string | null
   enabled: number
   created_at: number
+  kind: 'agent' | 'flow'
+  macro_id: string | null
+  params: string | null
 }
 
 interface RunRow {
@@ -54,6 +58,9 @@ class TaskService {
         modelId: r.model_id,
         cron: r.cron,
         enabled: !!r.enabled,
+        kind: r.kind ?? 'agent',
+        macroId: r.macro_id,
+        params: json.parse<Record<string, string>>(r.params),
         createdAt: r.created_at,
         lastRunAt: last?.started_at ?? null,
         lastStatus: last?.status ?? null,
@@ -68,13 +75,16 @@ class TaskService {
   }
 
   save(input: Omit<Task, 'id' | 'createdAt'> & { id?: string }): Task {
-    if (!input.name.trim() || !input.prompt.trim()) throw new Error('名称和任务描述必填')
+    const kind = input.kind ?? 'agent'
+    if (!input.name.trim()) throw new Error('名称必填')
+    if (kind === 'agent' && !input.prompt.trim()) throw new Error('任务描述必填')
+    if (kind === 'flow' && !input.macroId) throw new Error('请选择要回放的固定流程')
     if (input.cron && !cron.validate(input.cron)) throw new Error('Cron 表达式无效')
     const id = input.id ?? newId()
     db()
       .prepare(
-        `INSERT INTO tasks(id, name, prompt, model_id, cron, enabled, created_at) VALUES(@id, @name, @prompt, @modelId, @cron, @enabled, @now)
-         ON CONFLICT(id) DO UPDATE SET name=@name, prompt=@prompt, model_id=@modelId, cron=@cron, enabled=@enabled`,
+        `INSERT INTO tasks(id, name, prompt, model_id, cron, enabled, created_at, kind, macro_id, params) VALUES(@id, @name, @prompt, @modelId, @cron, @enabled, @now, @kind, @macroId, @params)
+         ON CONFLICT(id) DO UPDATE SET name=@name, prompt=@prompt, model_id=@modelId, cron=@cron, enabled=@enabled, kind=@kind, macro_id=@macroId, params=@params`,
       )
       .run({
         id,
@@ -84,6 +94,9 @@ class TaskService {
         cron: input.cron || null,
         enabled: input.enabled ? 1 : 0,
         now: Date.now(),
+        kind,
+        macroId: kind === 'flow' ? input.macroId : null,
+        params: kind === 'flow' ? json.str(input.params ?? {}) : null,
       })
     this.schedule(this.get(id))
     emit('tasks.changed')
@@ -118,6 +131,7 @@ class TaskService {
 
   run(taskId: string): TaskRun {
     const task = this.get(taskId)
+    if (task.kind === 'flow') return this.runFlow(task)
     const thread = agent.createThread(task.modelId, { title: `任务：${task.name}` })
     const run: RunRow = {
       id: newId(),
@@ -147,6 +161,43 @@ class TaskService {
             body: (res.error ?? res.finalText).slice(0, 120),
           }).show()
         }
+      },
+      (err: Error) => this.updateRun(run.id, { status: 'error', finished_at: Date.now(), error: err.message }),
+    )
+    return toRun(run)
+  }
+
+  /** A fixed flow: replayed without the model; if a step broke, the agent finished it (and fixed the flow). */
+  private runFlow(task: Task): TaskRun {
+    const run: RunRow = {
+      id: newId(),
+      task_id: task.id,
+      thread_id: '',
+      status: 'running',
+      started_at: Date.now(),
+      finished_at: null,
+      summary: null,
+      error: null,
+    }
+    db().prepare('INSERT INTO task_runs(id, task_id, thread_id, status, started_at) VALUES(@id, @task_id, @thread_id, @status, @started_at)').run(run)
+    emit('tasks.changed')
+    void flows.run(task.macroId!, task.params ?? {}, true).then(
+      (res) => {
+        const extracted = Object.entries(res.extracted)
+          .map(([k, v]) => `${k}：${v.slice(0, 200)}`)
+          .join('\n')
+        const summary = res.ok
+          ? `${res.repaired ? '回放中途页面有变化，已由 Agent 完成并更新流程' : '按固定流程回放完成，未调用模型'}${extracted ? `\n${extracted}` : ''}`
+          : null
+        this.updateRun(run.id, {
+          status: res.ok ? 'success' : 'error',
+          finished_at: Date.now(),
+          summary,
+          error: res.ok ? null : `第 ${(res.failedStep ?? 0) + 1} 步失败：${res.error ?? ''}`,
+          thread_id: res.repairThreadId ?? '',
+        })
+        if (Notification.isSupported())
+          new Notification({ title: `任务${res.ok ? '完成' : '失败'}：${task.name}`, body: (summary ?? res.error ?? '').slice(0, 120) }).show()
       },
       (err: Error) => this.updateRun(run.id, { status: 'error', finished_at: Date.now(), error: err.message }),
     )

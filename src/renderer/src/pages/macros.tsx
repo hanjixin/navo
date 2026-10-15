@@ -1,8 +1,8 @@
-import { ArrowDown, ArrowUp, Bot, Circle, Clapperboard, Play, Plus, Save, Sparkles, Square, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Circle, Clapperboard, History, Play, Plus, Save, Sparkles, Square, Trash2, Undo2, Wrench, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import type { Macro, MacroRunResult, MacroStep, MacroStepType } from '@shared/types'
+import type { FlowStats, Macro, MacroRunResult, MacroStep, MacroStepType, MacroVersion } from '@shared/types'
 import { PageHeader } from '@/components/layout/page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import { Field, Input } from '@/components/ui/input'
 import { AsyncView, EmptyState, ListSkeleton } from '@/components/ui/states'
 import { Switch } from '@/components/ui/switch'
 import { useAsync } from '@/hooks/use-async'
-import { call } from '@/lib/ipc'
+import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useBrowser } from '@/stores/browser'
 import { useChat } from '@/stores/chat'
@@ -105,6 +105,79 @@ function StepRow({
   )
 }
 
+const VERSION_SOURCE: Record<MacroVersion['source'], string> = {
+  recorded: '录制',
+  agent: '由对话整理',
+  repair: 'Agent 自动修复',
+  user: '手动编辑',
+  rollback: '回滚',
+}
+
+/** Replays, automatic repairs and versions of a flow. */
+function useFlowStats(macroId: string) {
+  const [stats, setStats] = useState<FlowStats | null>(null)
+  useEffect(() => {
+    const load = () => void call('flows.stats').then((s) => setStats(s[macroId] ?? null))
+    load()
+    return on('macros.changed', load)
+  }, [macroId])
+  return stats
+}
+
+function VersionsDialog({ macro, onClose, onRolledBack }: { macro: Macro; onClose: () => void; onRolledBack: () => void }) {
+  const versions = useAsync(() => call('flows.versions', macro.id), [macro.id])
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent title={`版本记录 · ${macro.name}`} description="每次录制、整理、修复和编辑都会记一个版本，可以回到任意一个。" className="w-[560px]">
+        <AsyncView
+          state={versions}
+          loading={<ListSkeleton rows={3} />}
+          empty={<p className="py-6 text-center text-sm text-muted-foreground">还没有版本记录</p>}
+        >
+          {(list) => (
+            <div className="grid gap-1.5">
+              {list.map((v, i) => (
+                <div key={v.version} data-testid="macro-version" className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">版本 {v.version}</span>
+                      {i === 0 ? <Badge variant="primary">当前</Badge> : null}
+                      <span className="text-xs text-muted-foreground">{VERSION_SOURCE[v.source]}</span>
+                    </div>
+                    <div className="text-xs text-subtle-foreground">
+                      {v.reason ? `${v.reason} · ` : ''}
+                      {v.steps} 步 · {timeAgo(v.at)}
+                    </div>
+                  </div>
+                  {i > 0 ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        void call('flows.rollback', macro.id, v.version).then(
+                          () => {
+                            toast.success(`已回到版本 ${v.version}`)
+                            onRolledBack()
+                            onClose()
+                          },
+                          (e) => toast.error('回滚失败', { description: errorMessage(e) }),
+                        )
+                      }
+                    >
+                      <Undo2 />
+                      回到这版
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </AsyncView>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m: Macro) => void; onDeleted: () => void }) {
   const [m, setM] = useState(macro)
   const [dirty, setDirty] = useState(false)
@@ -112,6 +185,10 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
   const [running, setRunning] = useState(false)
   const [runParams, setRunParams] = useState<Record<string, string> | null>(null)
   const [result, setResult] = useState<MacroRunResult | null>(null)
+  const [lastParams, setLastParams] = useState<Record<string, string>>({})
+  const [repairing, setRepairing] = useState(false)
+  const [versionsOpen, setVersionsOpen] = useState(false)
+  const stats = useFlowStats(macro.id)
   const navigate = useNavigate()
   const newThread = useChat((s) => s.newThread)
   const send = useChat((s) => s.send)
@@ -166,6 +243,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
     setResult(null)
     try {
       if (dirty) await call('macros.save', m)
+      setLastParams(params)
       const r = await call('macros.run', m.id, params)
       setResult(r)
       if (r.ok) toast.success('宏执行完成')
@@ -173,6 +251,24 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       setResult({ ok: false, error: errorMessage(e), extracted: {} })
     } finally {
       setRunning(false)
+    }
+  }
+
+  /** Replays again in the background; where it breaks, the agent finishes and the flow is updated. */
+  const repair = async () => {
+    setRepairing(true)
+    try {
+      const r = await call('flows.run', m.id, lastParams, true)
+      setResult(r)
+      if (r.ok) {
+        toast.success(r.repaired ? '已由 Agent 修复，流程已更新' : '这次回放成功了，无需修复')
+        const fresh = (await call('macros.list')).find((x) => x.id === m.id)
+        if (fresh) onSaved(fresh)
+      } else toast.error('修复没有完成', { description: r.error })
+    } catch (e) {
+      toast.error('修复失败', { description: errorMessage(e) })
+    } finally {
+      setRepairing(false)
     }
   }
 
@@ -190,10 +286,16 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-4 flex items-center gap-2">
-        <Input value={m.name} onChange={(e) => update({ name: e.target.value })} className="h-9 max-w-md text-base font-semibold" />
-        {dirty ? <span className="text-xs text-warning">未保存</span> : null}
-        <div className="ml-auto flex gap-1.5">
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2">
+        <div className="flex min-w-48 flex-1 items-center gap-2">
+          <Input value={m.name} onChange={(e) => update({ name: e.target.value })} className="h-9 max-w-md min-w-0 text-base font-semibold" />
+          {dirty ? <span className="shrink-0 text-xs text-warning">未保存</span> : null}
+        </div>
+        <div className="ml-auto flex flex-wrap justify-end gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
+            <History />
+            版本{stats?.version ? ` ${stats.version}` : ''}
+          </Button>
           <Button variant="ghost" size="sm" className="hover:text-danger" onClick={async () => (await call('macros.delete', m.id), onDeleted())}>
             <Trash2 />
             删除
@@ -227,6 +329,13 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
             保存
           </Button>
         </div>
+        {stats?.runs ? (
+          <p data-testid="flow-stats" className="w-full text-xs text-subtle-foreground">
+            已回放 {stats.runs} 次{stats.repaired ? ` · 自动修复 ${stats.repaired} 次` : ''}
+            {stats.failed ? ` · 失败 ${stats.failed} 次` : ''}
+            {stats.modelCalls ? ` · 修复共调用模型 ${stats.modelCalls} 次` : ' · 未调用模型'}
+          </p>
+        ) : null}
       </div>
 
       {result ? (
@@ -245,10 +354,15 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
               <span className="font-medium">第 {(result.failedStep ?? 0) + 1} 步执行失败</span>
               <p className="mt-0.5 text-xs break-words text-muted-foreground">{result.error}</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={handToAgent}>
-              <Bot />
-              交给 Agent 继续
-            </Button>
+            <div className="flex shrink-0 gap-1.5">
+              <Button variant="primary" size="sm" loading={repairing} onClick={() => void repair()}>
+                {!repairing ? <Wrench /> : null}让 Agent 修复并更新流程
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handToAgent}>
+                <Bot />
+                交给 Agent 继续
+              </Button>
+            </div>
           </div>
         )
       ) : null}
@@ -368,6 +482,18 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
           </DialogContent>
         ) : null}
       </Dialog>
+      {versionsOpen ? (
+        <VersionsDialog
+          macro={m}
+          onClose={() => setVersionsOpen(false)}
+          onRolledBack={() =>
+            void call('macros.list').then((l) => {
+              const f = l.find((x) => x.id === m.id)
+              if (f) onSaved(f)
+            })
+          }
+        />
+      ) : null}
     </div>
   )
 }
@@ -448,7 +574,8 @@ export function MacrosPage() {
         </div>
         {macro ? (
           <MacroEditor
-            key={macro.id}
+            // remount on outside changes (a repair or rollback rewrote the steps)
+            key={`${macro.id}:${macro.updatedAt}`}
             macro={macro}
             onSaved={(saved) => list.setData((prev) => (prev ?? []).map((x) => (x.id === saved.id ? saved : x)))}
             onDeleted={() => {

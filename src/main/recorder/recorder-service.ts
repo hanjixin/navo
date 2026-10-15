@@ -156,8 +156,7 @@ class RecorderService {
         return
       case 'click': {
         const ref = await this.find(wc, s.selectors ?? [], timeout)
-        const { x, y } = await browser.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
-        await browser.click(wc, x, y)
+        await browser.clickRef(wc, ref)
         await sleep(300)
         await browser.waitForLoad(wc)
         return

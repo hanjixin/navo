@@ -89,6 +89,24 @@ const MIGRATIONS: string[] = [
     reason TEXT, evidence TEXT, thread_id TEXT, status TEXT NOT NULL DEFAULT 'pending', at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE run_traces (
+    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, at INTEGER NOT NULL, user_text TEXT, steps TEXT NOT NULL, ok INTEGER NOT NULL
+  );
+  CREATE INDEX run_traces_thread ON run_traces(thread_id, at);
+  CREATE TABLE macro_versions (
+    id TEXT PRIMARY KEY, macro_id TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL, at INTEGER NOT NULL, source TEXT NOT NULL, reason TEXT
+  );
+  CREATE INDEX macro_versions_macro ON macro_versions(macro_id, version);
+  CREATE TABLE macro_runs (
+    id TEXT PRIMARY KEY, macro_id TEXT NOT NULL, at INTEGER NOT NULL, ok INTEGER NOT NULL, failed_step INTEGER, error TEXT,
+    repaired INTEGER NOT NULL DEFAULT 0, model_calls INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX macro_runs_macro ON macro_runs(macro_id, at);
+  ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent';
+  ALTER TABLE tasks ADD COLUMN macro_id TEXT;
+  ALTER TABLE tasks ADD COLUMN params TEXT;
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

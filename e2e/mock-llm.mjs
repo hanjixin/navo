@@ -92,6 +92,50 @@ export function startMock(port = 38999) {
       res.end('data: [DONE]\n\n')
     }
 
+    // Navo's flow naming: name, description, and the typed order number as a parameter
+    if (system.includes('你是 Navo 的流程整理员')) {
+      const typed = [...userText.matchAll(/^- (.+)$/gm)].map((m) => m[1])
+      const order = typed.find((v) => /^[A-Z]-\d+$/.test(v))
+      return say([
+        JSON.stringify({
+          name: '导出订单',
+          description: '在 ERP 里按单号查询并导出订单',
+          params: order ? [{ name: 'order_no', description: '订单号', value: order }] : [],
+        }),
+      ])
+    }
+    // [legacy:NO] / flow repair: operate the test ERP by the labels in the latest page state
+    const legacy = /\[legacy:([\w-]+)\]/.exec(userText)
+    const repairing = userText.includes('回放到第') && /本次参数：order_no=([\w-]+)/.exec(userText)
+    if (legacy || repairing) {
+      const no = legacy ? legacy[1] : repairing[1]
+      const lastTool = text(toolMsgs.at(-1)?.content ?? '')
+      const refOf = (role, names) => {
+        for (const n of names) {
+          const m = new RegExp(`\\[(e\\d+)\\] ${role} "${n}"`).exec(lastTool)
+          if (m) return m[1]
+        }
+        return null
+      }
+      const step = toolMsgs.length
+      if (legacy) {
+        if (step === 0) return call('browser_navigate', { url: 'http://127.0.0.1:38992/orders' })
+        if (step === 1) return call('browser_type', { ref: refOf('textbox', ['订单号']), text: no })
+        if (step === 2) return call('browser_snapshot', {})
+        if (step === 3) return call('browser_click', { ref: refOf('button', ['查询']) })
+        if (step === 4) return call('browser_snapshot', {})
+        if (step === 5) return call('browser_click', { ref: refOf('button', ['导出']) })
+        return say([`已导出订单 ${no}。`])
+      }
+      // repair: the page is the new version, already open where the flow stopped
+      if (step === 0) return call('browser_snapshot', {})
+      if (step === 1) return call('browser_type', { ref: refOf('textbox', ['单号查询', '订单号']), text: no })
+      if (step === 2) return call('browser_snapshot', {})
+      if (step === 3) return call('browser_click', { ref: refOf('button', ['搜索', '查询']) })
+      if (step === 4) return call('browser_snapshot', {})
+      if (step === 5) return call('browser_click', { ref: refOf('button', ['导出']) })
+      return say([`已完成：导出了订单 ${no}。`])
+    }
     // Navo's skill coach: scripted by markers in the conversation it is shown
     if (system.includes('你是 Navo 的 Skill 教练')) {
       const skill = /### Skill id=(\S+)/.exec(userText)?.[1]

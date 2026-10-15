@@ -9,6 +9,7 @@ import { useSettings } from '@/stores/settings'
 import { wireChatEvents } from '@/stores/chat'
 import { wireMemoryEvents } from '@/stores/memory'
 import { wireSkillEvents } from '@/stores/skills'
+import { wireFlowEvents } from '@/stores/flows'
 import { wireBrowserEvents } from '@/stores/browser'
 import { ChatPage } from '@/pages/chat'
 import { TasksPage } from '@/pages/tasks'
@@ -39,6 +40,7 @@ export function App() {
     wireBrowserEvents()
     wireMemoryEvents()
     wireSkillEvents()
+    wireFlowEvents()
   }, [load])
 
   return (

@@ -187,6 +187,46 @@ export interface DiscoveredMcp {
   imported: boolean
 }
 
+// ---------- Fixed flows ----------
+
+/** A flow worked out from what the agent did in a conversation, before it is saved. */
+export interface FlowDraft {
+  threadId: string
+  name: string
+  description: string
+  startUrl?: string
+  /** values that change between runs; `value` is what was used this time */
+  params: (MacroParam & { value: string })[]
+  steps: MacroStep[]
+}
+
+export interface FlowStats {
+  runs: number
+  ok: number
+  /** replays that failed and were finished (and the flow fixed) by the agent */
+  repaired: number
+  failed: number
+  /** model calls spent on this flow's replays (0 when everything replays as recorded) */
+  modelCalls: number
+  lastRepairAt: number | null
+  version: number
+}
+
+export interface MacroVersion {
+  version: number
+  at: number
+  /** recorded / created from a conversation / repaired by the agent / edited / rolled back */
+  source: 'recorded' | 'agent' | 'repair' | 'user' | 'rollback'
+  reason: string
+  steps: number
+}
+
+export interface FlowRunResult extends MacroRunResult {
+  /** the flow broke and the agent finished the job (the flow was updated) */
+  repaired?: boolean
+  repairThreadId?: string
+}
+
 // ---------- Quick ask ----------
 
 export interface QuickSettings {
@@ -482,6 +522,11 @@ export interface MacroRunResult {
 export interface Task {
   id: string
   name: string
+  /** agent: the prompt runs through the model · flow: a fixed flow replays without the model */
+  kind?: 'agent' | 'flow'
+  /** flow tasks: the flow (macro) to replay and its parameter values */
+  macroId?: string | null
+  params?: Record<string, string> | null
   prompt: string
   modelId?: string | null
   cron?: string | null

@@ -6,7 +6,7 @@ import { log } from './core/logger'
 import { db } from './core/db'
 import { applyTracingEnv, getSettings, setSettings } from './core/settings'
 import { providers } from './models/registry'
-import { runAgentEval, runMemoryEval, runSkillEval } from './dev/evals'
+import { runAgentEval, runFlowEval, runMemoryEval, runSkillEval } from './dev/evals'
 import { registerHandlers } from './handlers'
 import { browser } from './browser/browser-service'
 import { plugins } from './plugins/plugin-service'
@@ -125,6 +125,8 @@ app.whenReady().then(async () => {
   learning.resume()
   // scripts/agent-eval.mjs: browser tasks against the real model, then quit
   if (process.env.NAVO_AGENT_EVAL) void runAgentEval(process.env.NAVO_AGENT_EVAL)
+  // scripts/flow-eval.mjs: fixed flows (learn once, replay, repair) against the real model
+  if (process.env.NAVO_FLOW_EVAL) void runFlowEval(process.env.NAVO_FLOW_EVAL)
 
   // global shortcuts, quick window, menu bar
   quick.init(() => mainWin)
