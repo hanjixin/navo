@@ -94,6 +94,12 @@ class AgentSessions {
     return wc && !wc.isDestroyed() ? wc : browser.tab(browser.activeId_() ?? -1)
   }
 
+  /** The conversation driving a tab, if any. */
+  threadOfTab(tabId: number): string | null {
+    for (const [threadId, id] of this.tabOf) if (id === tabId) return threadId
+    return null
+  }
+
   /** Switches which tab a conversation drives (browser_tabs switch/new). */
   assign(threadId: string, tabId: number): void {
     const prev = this.tabOf.get(threadId)

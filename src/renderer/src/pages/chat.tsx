@@ -7,6 +7,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Newspaper,
+  PackageOpen,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -28,7 +29,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/states'
-import { call } from '@/lib/ipc'
+import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useModels } from '@/stores/models'
@@ -37,6 +38,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { useAsync } from '@/hooks/use-async'
 import { useSettings } from '@/stores/settings'
 import { useFlowDialog } from '@/stores/flows'
+import { OutputsDialog } from '@/components/outputs/outputs-dialog'
 
 const SUGGESTIONS = [
   { icon: Newspaper, text: '打开 Hacker News，总结今天排名前 5 的文章' },
@@ -177,6 +179,33 @@ function SaveFlowButton({ threadId, messages }: { threadId: string; messages: nu
   )
 }
 
+/** The files this conversation produced (written by the agent, or downloaded): preview and export. */
+function OutputsButton({ threadId, messages }: { threadId: string; messages: number }) {
+  const list = useAsync(() => call('outputs.list', threadId), [threadId, messages])
+  const [open, setOpen] = useState(false)
+  useEffect(
+    () =>
+      on('outputs.changed', (e) => {
+        if (e.threadId === threadId) list.reload()
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [threadId],
+  )
+  const n = list.data?.length ?? 0
+  if (!n) return null
+  return (
+    <>
+      <Tooltip content="这个对话产出的文件：预览、导出为 Word / PDF / Excel">
+        <Button data-testid="outputs-button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
+          <PackageOpen />
+          产出 {n}
+        </Button>
+      </Tooltip>
+      {open ? <OutputsDialog threadId={threadId} onClose={() => setOpen(false)} /> : null}
+    </>
+  )
+}
+
 /** Per-conversation memory switch: off = this conversation neither reads nor learns memories. */
 function ThreadMemoryToggle({ threadId }: { threadId: string }) {
   const globalOn = useSettings((s) => s.settings?.memory.enabled ?? true)
@@ -262,6 +291,7 @@ export function ChatPage() {
               运行中
             </span>
           ) : null}
+          {thread ? <OutputsButton threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
           {thread && !view?.running ? <SaveFlowButton threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
           {thread ? <ThreadMemoryToggle threadId={thread.id} /> : null}
           {view?.traceUrl && !view.running ? (

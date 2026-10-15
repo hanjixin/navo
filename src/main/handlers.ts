@@ -22,6 +22,7 @@ import { recorder } from './recorder/recorder-service'
 import { tasks } from './tasks/task-service'
 import { monitor } from './monitor/monitor-service'
 import { usage } from './usage/usage-service'
+import { outputs } from './outputs/outputs-service'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
 import { navoMcpServer } from './mcp-server/navo-mcp-server'
@@ -185,6 +186,13 @@ export function registerHandlers(): void {
     'tasks.run': (id) => tasks.run(id),
     'tasks.runs': (taskId) => tasks.runs(taskId),
     'tasks.cancel': (runId) => tasks.cancel(runId),
+    'outputs.list': (threadId) => outputs.list(threadId),
+    'outputs.counts': () => outputs.counts(),
+    'outputs.preview': (id) => outputs.preview(id),
+    'outputs.export': (id, format, dest) => outputs.export(id, format, dest),
+    'outputs.saveAs': (id) => outputs.saveAs(id),
+    'outputs.reveal': (id) => outputs.reveal(id),
+    'outputs.open': (id) => outputs.open(id),
     'usage.report': (days) => usage.report(days),
     'models.setPricing': (id, pricing) => models.setPricing(id, pricing),
     'monitor.check': (taskId) => tasks.check(tasks.get(taskId)),
@@ -244,6 +252,7 @@ export function registerHandlers(): void {
       }
     },
     'dev.logs': () => log.lines(),
+    'app.showItemInFolder': (path) => shell.showItemInFolder(path),
     'app.openExternal': (url) => {
       if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     },

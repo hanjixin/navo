@@ -163,8 +163,7 @@ class RecorderService {
       }
       case 'type': {
         const ref = await this.find(wc, s.selectors ?? [], timeout)
-        await browser.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, true)`)
-        await browser.insertText(wc, fillTemplate(s.value, values))
+        await browser.typeRef(wc, ref, fillTemplate(s.value, values))
         return
       }
       case 'select': {
@@ -173,11 +172,13 @@ class RecorderService {
         return
       }
       case 'press':
-        if (s.selectors?.length) {
-          const ref = await this.find(wc, s.selectors, timeout).catch(() => null)
+        {
+          const ref = s.selectors?.length ? await this.find(wc, s.selectors, timeout).catch(() => null) : null
           if (ref) await browser.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, false)`)
+          // Enter in a field also works when the tab isn't drawn (replaying in the background)
+          if (ref && (s.key ?? 'Enter') === 'Enter') await browser.submitRef(wc, ref)
+          else await browser.pressKey(wc, s.key ?? 'Enter')
         }
-        await browser.pressKey(wc, s.key ?? 'Enter')
         await sleep(400)
         await browser.waitForLoad(wc)
         return

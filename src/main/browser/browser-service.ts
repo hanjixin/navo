@@ -505,14 +505,35 @@ class BrowserService {
   async clickRef(wc: WebContents, ref: string, opts: { double?: boolean } = {}): Promise<void> {
     await this.evalIn(wc, `__agent.armClick(${JSON.stringify(ref)})`)
     const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
-    // input to a tab that isn't drawn waits ~5s for an acknowledgement that never comes: probe first
-    const routed = await Promise.race([
+    if (await this.routed(wc, x, y)) await this.click(wc, x, y, { clickCount: opts.double ? 2 : 1 })
+    // the page may already be navigating away (the click arrived): nothing left to check
+    await this.evalIn(wc, `__agent.settleClick(${opts.double ? 'true' : 'false'})`).catch(() => undefined)
+  }
+
+  /**
+   * Input to a tab that isn't drawn (in the background, or the window is covered) waits ~5s for an
+   * acknowledgement that never comes, and is dropped. A harmless mouse move tells quickly.
+   */
+  private routed(wc: WebContents, x: number, y: number): Promise<boolean> {
+    return Promise.race([
       this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).then(() => true),
       new Promise<boolean>((r) => setTimeout(() => r(false), 400)),
     ])
-    if (routed) await this.click(wc, x, y, { clickCount: opts.double ? 2 : 1 })
-    // the page may already be navigating away (the click arrived): nothing left to check
-    await this.evalIn(wc, `__agent.settleClick(${opts.double ? 'true' : 'false'})`).catch(() => undefined)
+  }
+
+  /** Types into an element like a person would; when input can't reach the tab, sets the text in the page. */
+  async typeRef(wc: WebContents, ref: string, text: string, clear = true): Promise<void> {
+    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
+    await this.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, ${clear})`)
+    if (await this.routed(wc, x, y)) await this.insertText(wc, text)
+    else await this.evalIn(wc, `__agent.typeInto(${JSON.stringify(ref)}, ${JSON.stringify(text)}, ${clear})`)
+  }
+
+  /** Enter in a field (submits its form); falls back to submitting in the page when input can't reach it. */
+  async submitRef(wc: WebContents, ref: string): Promise<void> {
+    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
+    if (await this.routed(wc, x, y)) await this.pressKey(wc, 'Enter')
+    else await this.evalIn(wc, `__agent.submit(${JSON.stringify(ref)})`)
   }
 
   async click(wc: WebContents, x: number, y: number, opts: { button?: 'left' | 'right'; clickCount?: number } = {}): Promise<void> {

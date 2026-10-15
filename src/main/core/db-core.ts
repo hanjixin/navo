@@ -126,6 +126,13 @@ const MIGRATIONS: string[] = [
   CREATE INDEX usage_thread ON usage(thread_id);
   ALTER TABLE models ADD COLUMN pricing TEXT;
   `,
+  `
+  CREATE TABLE outputs (
+    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, path TEXT NOT NULL, source TEXT NOT NULL, size INTEGER NOT NULL, at INTEGER NOT NULL,
+    UNIQUE(thread_id, path)
+  );
+  CREATE INDEX outputs_thread ON outputs(thread_id, at);
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

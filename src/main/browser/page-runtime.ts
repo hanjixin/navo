@@ -318,6 +318,32 @@ export function pageRuntime(): void {
     el.dispatchEvent(new Event('change', { bubbles: true }))
   }
 
+  /** typing without input events (the tab isn't drawn): the value is set as the page's own handlers expect */
+  function typeInto(ref: string, text: string, clear: boolean): void {
+    const el = resolve(ref) as HTMLInputElement
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      const proto = Object.getPrototypeOf(el)
+      Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, clear ? text : el.value + text)
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    } else {
+      el.focus()
+      if (clear) document.execCommand('selectAll')
+      document.execCommand('insertText', false, text)
+    }
+  }
+
+  /** Enter without input events: the key events, then the form's submit unless a handler took it */
+  function submit(ref: string): void {
+    const el = resolve(ref) as HTMLInputElement
+    const init = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }
+    const down = new KeyboardEvent('keydown', init)
+    el.dispatchEvent(down)
+    el.dispatchEvent(new KeyboardEvent('keypress', init))
+    el.dispatchEvent(new KeyboardEvent('keyup', init))
+    if (!down.defaultPrevented && el.form) el.form.requestSubmit()
+  }
+
   function focus(ref: string, clear: boolean): void {
     const el = resolve(ref) as HTMLInputElement
     scrollIntoView(el)
@@ -410,6 +436,8 @@ export function pageRuntime(): void {
     center,
     armClick,
     settleClick,
+    typeInto,
+    submit,
     setControlled,
     query,
     extract,

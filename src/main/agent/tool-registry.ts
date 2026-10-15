@@ -10,6 +10,7 @@ import { connectors } from '../connectors/connector-service'
 import type { ToolDescriptor, ToolSource } from '../agent-host/protocol'
 import { isSpawnedConversation, NAVO_TOOLS } from '../mcp-server/tools'
 import { memory } from '../memory/memory-service'
+import { outputs } from '../outputs/outputs-service'
 
 export interface ToolEntry {
   tool: StructuredToolInterface
@@ -48,7 +49,21 @@ export function collectTools(ctx: ToolCtx): ToolEntry[] {
     ...mcp.tools().map((tool) => ({ tool, source: 'mcp' as const })),
     ...connectors.tools().map((tool) => ({ tool, source: 'connector' as const })),
     ...navoTools(ctx.threadId),
+    ...(ctx.threadId ? [{ source: 'navo' as const, tool: exportFileTool(ctx.threadId) }] : []),
   ]
+}
+
+/** Lets the agent hand over Word / PDF / Excel versions of what it wrote under /workspace/. */
+function exportFileTool(threadId: string): StructuredToolInterface {
+  return tool(async ({ path, format }) => `已导出：${await outputs.exportWorkspaceFile(threadId, path, format)}`, {
+    name: 'export_file',
+    description:
+      '把 /workspace/ 下的文件转换成用户常用的格式，保存在同一目录：Markdown/文本 → Word（docx）或 PDF；HTML → PDF；CSV、JSON 记录列表或含表格的 Markdown → Excel（xlsx）。用户要 Word、PDF、Excel 时，先用 write_file 写好 Markdown / CSV，再调用它。',
+    schema: z.object({
+      path: z.string().describe('要转换的文件，如 /workspace/周报.md'),
+      format: z.enum(['docx', 'pdf', 'xlsx']).describe('目标格式'),
+    }),
+  }) as unknown as StructuredToolInterface
 }
 
 export function toJsonSchema(schema: unknown): Record<string, unknown> {

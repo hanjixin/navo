@@ -13,6 +13,7 @@ import { plugins } from './plugins/plugin-service'
 import { recorder } from './recorder/recorder-service'
 import { learning } from './learning'
 import { quick } from './quick/quick-service'
+import { outputs } from './outputs/outputs-service'
 import { memory } from './memory/memory-service'
 import { mcp } from './mcp/mcp-service'
 import { connectors } from './connectors/connector-service'
@@ -113,6 +114,8 @@ app.whenReady().then(async () => {
   browser.init(win)
   sessions.init()
   browser.onDownload((d) => (d.state !== 'progressing' || d.received === 0 ? emit('browser.download', d) : undefined))
+  // a file downloaded in a conversation's tab is one of its outputs
+  browser.onDownload((d) => outputs.onDownload(d, d.tabId != null ? sessions.threadOfTab(d.tabId) : null))
   plugins.init()
   recorder.init()
   tasks.init()

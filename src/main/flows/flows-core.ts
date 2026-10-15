@@ -155,6 +155,17 @@ export function parseFlowMeta(
   return { name: meta?.name?.trim() || fallbackName, description: meta?.description?.trim() ?? '', params }
 }
 
+/**
+ * When the model proposes no parameters (or couldn't be asked): values typed during the run that the
+ * user gave in the request itself — an order number, a date, a keyword — are the ones that change.
+ */
+export function fallbackParams(userText: string, steps: MacroStep[]): (MacroParam & { value: string })[] {
+  return typedValues(steps)
+    .filter((v) => v.length >= 2 && userText.includes(v))
+    .slice(0, 5)
+    .map((v, i) => ({ name: `value_${i + 1}`, description: `本次输入的「${v.slice(0, 20)}」`, default: v, value: v }))
+}
+
 const REPEAT = /每天|每周|每月|每次|以后|今后|定期|经常|又要|再帮我|批量|每个|每一|老规矩|照旧|daily|weekly|every|again|routine/i
 /** The user's words suggest this will be done again: worth offering to keep it as a fixed flow. */
 export const soundsRepeated = (text: string) => REPEAT.test(text)

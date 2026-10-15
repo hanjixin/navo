@@ -43,6 +43,11 @@ export function decodeText(buf: Buffer): { text: string; encoding: string } {
   const guess = chardet.detect(buf.subarray(0, 64 * 1024)) ?? 'GB18030'
   // GB2312/GBK are subsets of GB18030; decoding with the superset avoids losing rare characters
   const enc = /^(GB2312|GBK|GB18030|x-gbk)$/i.test(guess) ? 'GB18030' : iconv.encodingExists(guess) ? guess : 'GB18030'
+  // short GBK files are often guessed as a Western code page; when they read cleanly as Chinese, they are
+  if (/^(ISO-8859|windows-125)/i.test(enc)) {
+    const gb = iconv.decode(buf, 'GB18030')
+    if (!gb.includes('\uFFFD') && /[\u4e00-\u9fff]/.test(gb)) return { text: gb, encoding: 'GB18030' }
+  }
   return { text: iconv.decode(buf, enc), encoding: enc }
 }
 

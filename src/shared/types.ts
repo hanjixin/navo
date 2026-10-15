@@ -46,6 +46,35 @@ export interface ModelPricing {
 
 export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing'> & { id?: string; isDefault?: boolean }
 
+// ---------- Outputs ----------
+export type OutputKind = 'markdown' | 'html' | 'table' | 'json' | 'image' | 'pdf' | 'document' | 'text' | 'other'
+export type ExportFormat = 'docx' | 'pdf' | 'xlsx'
+
+/** A file a conversation produced: written by the agent under /workspace/, or downloaded in its tab. */
+export interface OutputFile {
+  id: string
+  threadId: string
+  name: string
+  /** /workspace/… for the agent's files, the full path for downloads */
+  path: string
+  source: 'agent' | 'download'
+  kind: OutputKind
+  size: number
+  at: number
+  /** gone since (deleted or moved) */
+  missing: boolean
+  /** what it can be exported to */
+  exports: ExportFormat[]
+}
+
+export type OutputPreview =
+  | { kind: 'markdown' | 'text' | 'json'; text: string; truncated: boolean }
+  | { kind: 'html'; html: string }
+  | { kind: 'table'; rows: string[][]; sheets?: string[]; truncated: boolean }
+  | { kind: 'image'; dataUrl: string }
+  | { kind: 'document' | 'pdf'; markdown: string }
+  | { kind: 'other'; message: string }
+
 // ---------- Usage ----------
 /** what a model call was for: the conversation itself, or one of Navo's background passes */
 export type UsagePurpose = 'chat' | 'memory' | 'memory-tidy' | 'skill' | 'flow' | 'monitor' | 'test' | 'other'

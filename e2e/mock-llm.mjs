@@ -350,6 +350,15 @@ export function startMock(port = 38999) {
       if (!toolMsgs.length) return call('browser_screenshot', {})
       return say(['截好了'])
     }
+    // [outputs:TAG] writes a report and a table under /workspace/, then hands over a Word version
+    const outTag = /\[outputs:(\w+)\]/.exec(userText)?.[1]
+    if (outTag) {
+      const report = `# 竞品周报 ${outTag}\n\n本周 **三家** 竞品有动作。\n\n| 产品 | 价格 |\n| --- | ---: |\n| A | 1599 |\n| B | 2999 |\n\n- 结论一\n- 结论二\n`
+      if (toolMsgs.length === 0) return call('write_file', { file_path: `/workspace/周报-${outTag}.md`, content: report })
+      if (toolMsgs.length === 1) return call('write_file', { file_path: `/workspace/价格-${outTag}.csv`, content: '产品,价格\nA,1599\nB,2999\n' })
+      if (toolMsgs.length === 2) return call('export_file', { path: `/workspace/周报-${outTag}.md`, format: 'docx' })
+      return say([`周报已写好，Word 版：${text(toolMsgs.at(-1).content)}`])
+    }
     // [loop] keeps calling the same tool with the same args; the loop guard must refuse it
     if (userText.includes('[loop]')) {
       if (toolMsgs.length < 4) return call('browser_navigate', { url: PAGE })

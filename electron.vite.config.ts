@@ -20,8 +20,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         output: {
-          // some bundled CommonJS libraries (turndown) call require() at load time; give the ESM output one
-          banner: "import { createRequire as __navoCreateRequire } from 'node:module'; const require = __navoCreateRequire(import.meta.url);",
+          // some bundled CommonJS libraries (turndown) call require() at load time; give the ESM output one.
+          // A global fallback, not a `const`: chunks shared between entries (xlsx) already get electron-vite's own.
+          banner: "import { createRequire as __navoCreateRequire } from 'node:module'; globalThis.require ??= __navoCreateRequire(import.meta.url);",
         },
         input: {
           index: resolve('src/main/index.ts'),

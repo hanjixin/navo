@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { actionCount, applyParams, describeStep, parseFlowMeta, soundsRepeated, splice, traceToSteps, typedValues } from '../src/main/flows/flows-core'
+import {
+  actionCount,
+  applyParams,
+  describeStep,
+  parseFlowMeta,
+  soundsRepeated,
+  splice,
+  traceToSteps,
+  typedValues,
+  fallbackParams,
+} from '../src/main/flows/flows-core'
 import type { TraceStep } from '../src/main/flows/trace'
 
 let t = 1000
@@ -91,5 +101,19 @@ describe('generic selectors', () => {
     )
     expect(r.steps).toHaveLength(1)
     expect(r.steps[0].selectors).toEqual(['role=button[name="导出"]'])
+  })
+})
+
+describe('fallback parameters', () => {
+  it('values the user gave in the request become parameters when the model proposes none', () => {
+    const steps = traceToSteps([
+      step({ type: 'navigate', url: 'http://erp.local/' }),
+      step({ type: 'type', selectors: ['#user'], label: '用户名', value: 'admin' }),
+      step({ type: 'type', selectors: ['#order'], label: '单号', value: 'A-1001' }),
+      step({ type: 'click', selectors: ['#q'], label: '查询' }),
+    ]).steps
+    const params = fallbackParams('查询订单 A-1001 并导出', steps)
+    expect(params).toEqual([{ name: 'value_1', description: '本次输入的「A-1001」', default: 'A-1001', value: 'A-1001' }])
+    expect(applyParams({ steps }, params).steps.find((s) => s.label === '单号')?.value).toBe('{{value_1}}')
   })
 })

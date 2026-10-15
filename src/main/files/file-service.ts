@@ -263,6 +263,19 @@ class FileService {
     }
   }
 
+  /** Text of any supported file as Markdown, without keeping it (previews of files the agent produced). */
+  async markdownOf(path: string, name: string): Promise<string> {
+    const res = await this.host().call<ParseResult>('parse', {
+      jobId: `preview-${newId()}`,
+      path,
+      name,
+      engine: 'builtin',
+      shellPath: shellPath(),
+      options: { pdfAssetsDir: pdfAssetsDir(), ocrCacheDir: paths.ocrCache, ocrLangDir: ocrLangDir(), ocr: false },
+    })
+    return res.markdown
+  }
+
   private async parse(id: string, engine: FileEngine): Promise<void> {
     let r: Row
     try {

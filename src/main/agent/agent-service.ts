@@ -19,6 +19,7 @@ import { resolveModel } from '../models/registry'
 import { skills } from '../skills/skill-service'
 import type { RpcMessage, RunRequest, RunResult, ToolCallRequest, UsageEvent } from '../agent-host/protocol'
 import { usage } from '../usage/usage-service'
+import { outputs } from '../outputs/outputs-service'
 import { Rpc } from '../agent-host/rpc'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
@@ -144,6 +145,7 @@ class AgentService {
   }
 
   async deleteThread(id: string): Promise<void> {
+    outputs.forget(id)
     this.stop(id)
     db().prepare('DELETE FROM threads WHERE id = ?').run(id)
     kv.set(`thread.allow.${id}`, [])
@@ -250,6 +252,7 @@ class AgentService {
     sessions.begin(threadId, thread.title)
     // the browser steps of this run, kept for turning it into a fixed flow
     trace.start(threadId)
+    outputs.onRunStart(threadId)
     const ctx = { threadId, tab: () => sessions.tabFor(threadId) }
     const entries = collectTools(ctx)
     const runState = { runId, tools: new Map(entries.map((e) => [e.tool.name, e])), usedMemoryTools: false }
@@ -300,6 +303,7 @@ class AgentService {
       this.touch(threadId)
       emit('threads.changed')
     }
+    outputs.onRunEnd(threadId)
     flows.onRunEnd(threadId, input.kind === 'message' ? input.text : '', !result.error && !result.aborted && !result.interrupted)
     this.send({ type: 'run_end', threadId, runId, aborted: result.aborted, traceUrl: result.traceUrl })
     // learn from the finished exchange in the background (the agent's own memory_* calls take precedence)

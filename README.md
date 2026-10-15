@@ -83,6 +83,10 @@ agentPlugin.register('list_stories', async ({ limit = 30 } = {}) =>
 
 浏览器工具栏或「录制宏」页点击录制 → 在右侧浏览器操作 → 停止。步骤可编辑、重排；在值中写 `{{name}}` 即成为参数。开启「作为 Agent 工具」后以 `macro_*` 暴露；回放失败可一键交给 Agent 继续；也可导出为 Skill。
 
+## 产出物
+
+Agent 在 `/workspace/` 写下的文件、在对话标签页里下载的文件，都归到这个对话的「产出」里（对话顶部的「产出 N」）。可以直接预览 Markdown、HTML、CSV / Excel 表格、图片、PDF 与 Office 文档，并导出：Markdown → Word / PDF，CSV、JSON 记录或 Markdown 里的表格 → Excel；也可以另存、在访达中显示。Agent 也能用 `export_file` 工具直接交付 Word / PDF / Excel。
+
 ## 用量与费用
 
 每次调用模型（对话及子 Agent、记忆提取与整理、Skill 复盘、流程整理、网页监控的判断）都会记录 token 用量和用途。在「模型」页给模型设置单价（常见模型有参考价），「用量」页按天、按用途、按模型、按对话展示 token 和估算费用。可以设每日预算：用完时提醒，并可选择暂停后台调用（对话不受影响）。

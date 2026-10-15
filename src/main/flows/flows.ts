@@ -8,7 +8,18 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { trackedModel } from '../usage/usage-service'
 import { recorder } from '../recorder/recorder-service'
-import { actionCount, applyParams, describeStep, flowMessages, MIN_FLOW_ACTIONS, parseFlowMeta, soundsRepeated, splice, traceToSteps } from './flows-core'
+import {
+  actionCount,
+  applyParams,
+  describeStep,
+  fallbackParams,
+  flowMessages,
+  MIN_FLOW_ACTIONS,
+  parseFlowMeta,
+  soundsRepeated,
+  splice,
+  traceToSteps,
+} from './flows-core'
 import { trace, type TraceStep } from './trace'
 
 /** a browser task with at least this many actions that sounds recurring gets the "keep as a flow" offer */
@@ -77,6 +88,7 @@ class Flows {
       log.warn(`[flows] naming failed: ${(err as Error).message}`)
     }
     const meta = parseFlowMeta(text, flow.steps, thread?.title.slice(0, 20) || '固定流程')
+    if (!meta.params.length) meta.params = fallbackParams(row.user_text ?? '', flow.steps)
     // passwords were never kept: they are asked for when the flow runs
     if (flow.steps.some((s) => s.value === '{{password}}') && !meta.params.some((p) => p.name === 'password'))
       meta.params.push({ name: 'password', description: '登录密码（不保存，运行时填写）', value: '' })

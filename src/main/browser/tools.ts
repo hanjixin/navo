@@ -127,12 +127,11 @@ export function createBrowserTools(ctx: ToolCtx) {
         onTab(ctx, async (wc) => {
           const target = await targetOf(wc, r)
           const at = wc.getURL()
-          await browser.evalIn(wc, `__agent.focus(${JSON.stringify(r)}, ${clear !== false})`)
-          await browser.insertText(wc, text)
+          await browser.typeRef(wc, r, text, clear !== false)
           trace.add(ctx.threadId, { type: 'type', selectors: target.selectors, label: target.label, value: text, secret: target.secret, url: at })
           if (submit) trace.add(ctx.threadId, { type: 'press', key: 'Enter', selectors: target.selectors, url: at })
           if (submit) {
-            await browser.pressKey(wc, 'Enter')
+            await browser.submitRef(wc, r)
             await settle(800)
             await browser.waitForLoad(wc)
           }

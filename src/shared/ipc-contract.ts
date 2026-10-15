@@ -43,6 +43,9 @@ import type {
   MonitorSummary,
   ModelPricing,
   UsageReport,
+  OutputFile,
+  OutputPreview,
+  ExportFormat,
   Thread,
   ThreadState,
   TraceEntry,
@@ -210,6 +213,14 @@ export interface Api {
   'tasks.runs': (taskId?: string) => TaskRun[]
   'tasks.cancel': (runId: string) => void
   /** checks a monitor task now and returns the result */
+  'outputs.list': (threadId: string) => OutputFile[]
+  'outputs.counts': () => Record<string, number>
+  'outputs.preview': (id: string) => OutputPreview
+  /** asks where to save unless `dest` is given; null when cancelled */
+  'outputs.export': (id: string, format: ExportFormat, dest?: string) => string | null
+  'outputs.saveAs': (id: string) => string | null
+  'outputs.reveal': (id: string) => void
+  'outputs.open': (id: string) => void
   'usage.report': (days?: number) => UsageReport
   'models.setPricing': (id: string, pricing: ModelPricing | null) => void
   'monitor.check': (taskId: string) => MonitorCheck
@@ -249,6 +260,7 @@ export interface Api {
   'dev.invokeTool': (name: string, args: Record<string, unknown>) => unknown
   'dev.logs': () => string[]
   'app.openExternal': (url: string) => void
+  'app.showItemInFolder': (path: string) => void
   'app.showItem': (path: string) => void
   'browser.downloads': () => DownloadInfo[]
   'app.paths': () => { userData: string; skills: string; plugins: string }
@@ -287,6 +299,7 @@ export interface Events {
   'tasks.changed': void
   'monitor.checked': { taskId: string; triggered: boolean }
   'usage.changed': void
+  'outputs.changed': { threadId: string }
   'dev.log': string
   'navoMcp.status': McpServerStatus
   /** settings changed from anywhere (UI, onboarding, MCP) */
