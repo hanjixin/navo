@@ -6,7 +6,7 @@ import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
-import { createChatModel } from '../models/registry'
+import { trackedModel } from '../usage/usage-service'
 import { recorder } from '../recorder/recorder-service'
 import { actionCount, applyParams, describeStep, flowMessages, MIN_FLOW_ACTIONS, parseFlowMeta, soundsRepeated, splice, traceToSteps } from './flows-core'
 import { trace, type TraceStep } from './trace'
@@ -71,7 +71,7 @@ class Flows {
     const thread = agent.getThread(threadId)
     let text = ''
     try {
-      const res = await createChatModel(thread?.modelId ?? null).invoke(flowMessages(row.user_text ?? '', flow.steps))
+      const res = await trackedModel(thread?.modelId ?? null, 'flow', threadId).invoke(flowMessages(row.user_text ?? '', flow.steps))
       text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
     } catch (err) {
       log.warn(`[flows] naming failed: ${(err as Error).message}`)

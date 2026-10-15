@@ -6,7 +6,8 @@ import { log } from '../core/logger'
 import { getSettings } from '../core/settings'
 import type { LearnTurn } from '../learning/scheduler'
 import { hostOf, similarity } from '../memory/recall'
-import { createChatModel, models } from '../models/registry'
+import { models } from '../models/registry'
+import { trackedModel } from '../usage/usage-service'
 import {
   applyPatch,
   classify,
@@ -78,7 +79,7 @@ class SkillEvolution {
     try {
       const mem = getSettings().memory
       const model = mem.modelId && models.get(mem.modelId) ? mem.modelId : modelId
-      const res = await createChatModel(model).invoke(
+      const res = await trackedModel(model, 'skill', threadId).invoke(
         reflectionMessages(
           used.map((id) => ({ id, content: skills.read(id) })),
           turns,
@@ -352,7 +353,7 @@ class SkillEvolution {
 
   /** Development / evaluation: the coach's decision for a stretch, and what the gate would do with it. */
   async dryRun(used: { id: string; content: string }[], turns: LearnTurn[], modelId: string | null = null) {
-    const res = await createChatModel(modelId).invoke(reflectionMessages(used, turns))
+    const res = await trackedModel(modelId, 'skill').invoke(reflectionMessages(used, turns))
     const raw = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
     const r = parseReflection(raw)
     let gate: Gate | null = null

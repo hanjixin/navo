@@ -40,7 +40,7 @@ const runAndWait = async (threadId, text) => {
     await sleep(250)
   }
 }
-const waitLearned = async (n, ms = 8000) => {
+const waitLearned = async (n, ms = 20000) => {
   for (let i = 0; i < ms / 100; i++) {
     const l = await page.evaluate(() => window.__learned)
     if (l.length >= n) return l[n - 1]

@@ -1,5 +1,5 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import type { ModelConfig, ModelInput, Provider, ProviderInput, ProviderType } from '@shared/types'
+import type { ModelConfig, ModelInput, ModelPricing, Provider, ProviderInput, ProviderType } from '@shared/types'
 import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { secrets } from '../core/secrets'
@@ -26,6 +26,7 @@ interface ModelRow {
   max_tokens: number | null
   reasoning_effort: ModelConfig['reasoningEffort']
   is_default: number
+  pricing: string | null
 }
 
 const keyOf = (providerId: string) => `provider:${providerId}`
@@ -55,6 +56,7 @@ function toModel(r: ModelRow): ModelConfig {
     maxTokens: r.max_tokens,
     reasoningEffort: r.reasoning_effort,
     isDefault: !!r.is_default,
+    pricing: json.parse<ModelPricing>(r.pricing),
   }
 }
 
@@ -175,6 +177,13 @@ export const models = {
   delete(id: string): void {
     db().prepare('DELETE FROM models WHERE id = ?').run(id)
   },
+  setPricing(id: string, pricing: ModelPricing | null): void {
+    if (pricing && ![pricing.input, pricing.output, pricing.cachedInput ?? 0].every((n) => Number.isFinite(n) && n >= 0))
+      throw new Error('价格必须是不小于 0 的数字')
+    db()
+      .prepare('UPDATE models SET pricing = ? WHERE id = ?')
+      .run(pricing ? json.str(pricing) : null, id)
+  },
   setDefault(id: string): void {
     db().transaction(() => {
       db().prepare('UPDATE models SET is_default = 0').run()
@@ -189,6 +198,7 @@ export function resolveModel(modelId?: string | null): ResolvedModel {
   if (!cfg) throw new Error('尚未配置模型，请先在「模型」页面添加提供方和模型')
   const p = providers.get(cfg.providerId)
   return {
+    id: cfg.id,
     providerType: p.type,
     model: cfg.model,
     apiKey: providers.apiKey(p.id) ?? undefined,

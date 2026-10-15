@@ -41,6 +41,8 @@ import type {
   TaskRun,
   MonitorCheck,
   MonitorSummary,
+  ModelPricing,
+  UsageReport,
   Thread,
   ThreadState,
   TraceEntry,
@@ -208,6 +210,8 @@ export interface Api {
   'tasks.runs': (taskId?: string) => TaskRun[]
   'tasks.cancel': (runId: string) => void
   /** checks a monitor task now and returns the result */
+  'usage.report': (days?: number) => UsageReport
+  'models.setPricing': (id: string, pricing: ModelPricing | null) => void
   'monitor.check': (taskId: string) => MonitorCheck
   'monitor.checks': (taskId: string, limit?: number) => MonitorCheck[]
   'monitor.summary': () => Record<string, MonitorSummary>
@@ -282,6 +286,7 @@ export interface Events {
   'macros.changed': void
   'tasks.changed': void
   'monitor.checked': { taskId: string; triggered: boolean }
+  'usage.changed': void
   'dev.log': string
   'navoMcp.status': McpServerStatus
   /** settings changed from anywhere (UI, onboarding, MCP) */

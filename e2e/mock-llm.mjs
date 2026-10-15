@@ -45,6 +45,12 @@ export function startMock(port = 38999) {
     const stream = json.stream !== false
     res.writeHead(200, { 'Content-Type': stream ? 'text/event-stream' : 'application/json' })
 
+    // token usage like OpenAI reports it (deterministic: from the request size)
+    const usage = { prompt_tokens: Math.ceil(body.length / 4), completion_tokens: 12, total_tokens: Math.ceil(body.length / 4) + 12 }
+    const done = () => {
+      res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: 0, model: json.model, choices: [], usage })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    }
     const chunk = (delta, finish = null) =>
       res.write(
         `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: 0, model: json.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`,
@@ -55,6 +61,7 @@ export function startMock(port = 38999) {
           JSON.stringify({
             id,
             object: 'chat.completion',
+            usage,
             choices: [
               {
                 index: 0,
@@ -71,7 +78,7 @@ export function startMock(port = 38999) {
       chunk({ role: 'assistant', content: null, tool_calls: [{ index: 0, id: `call_${id}`, type: 'function', function: { name, arguments: '' } }] })
       chunk({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] })
       chunk({}, 'tool_calls')
-      res.end('data: [DONE]\n\n')
+      done()
     }
     const say = async (words, delay = 0) => {
       if (!stream)
@@ -79,6 +86,7 @@ export function startMock(port = 38999) {
           JSON.stringify({
             id,
             object: 'chat.completion',
+            usage,
             choices: [{ index: 0, message: { role: 'assistant', content: words.join('') }, finish_reason: 'stop' }],
           }),
         )
@@ -89,7 +97,7 @@ export function startMock(port = 38999) {
         if (delay) await sleep(delay)
       }
       chunk({}, 'stop')
-      res.end('data: [DONE]\n\n')
+      done()
     }
 
     // Navo's page monitor: "低于 N" compares the first ¥price on the page; "新公告" looks for added notices
@@ -353,7 +361,7 @@ export function startMock(port = 38999) {
       for (const r of ['先分析问题，', '再给出答案。']) chunk({ content: null, reasoning_content: r })
       for (const w of ['答案', '是 42']) chunk({ content: w })
       chunk({}, 'stop')
-      return res.end('data: [DONE]\n\n')
+      return done()
     }
     // [navhold:X] opens a page tagged X and keeps the run going for ~8s (mini browser window)
     const nh = /\[navhold:(\w+)\]/.exec(userText)

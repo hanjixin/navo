@@ -13,6 +13,7 @@ import { wireFlowEvents } from '@/stores/flows'
 import { wireBrowserEvents } from '@/stores/browser'
 import { ChatPage } from '@/pages/chat'
 import { TasksPage } from '@/pages/tasks'
+import { UsagePage } from '@/pages/usage'
 import { FilesPage } from '@/pages/files'
 import { SkillsPage } from '@/pages/skills'
 import { ConnectorsPage } from '@/pages/connectors'
@@ -67,6 +68,7 @@ export function App() {
               <Route path="/plugins" element={<PluginsPage />} />
               <Route path="/macros" element={<MacrosPage />} />
               <Route path="/models" element={<ModelsPage />} />
+              <Route path="/usage" element={<UsagePage />} />
               <Route path="/dev" element={<DevPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

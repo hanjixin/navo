@@ -32,9 +32,45 @@ export interface ModelConfig {
   maxTokens?: number | null
   reasoningEffort?: 'low' | 'medium' | 'high' | null
   isDefault: boolean
+  /** price per million tokens, for the usage page (set with models.setPricing) */
+  pricing?: ModelPricing | null
 }
 
-export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault'> & { id?: string; isDefault?: boolean }
+export interface ModelPricing {
+  input: number
+  output: number
+  /** cache hits, when the provider bills them lower */
+  cachedInput?: number | null
+  currency: 'CNY' | 'USD'
+}
+
+export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing'> & { id?: string; isDefault?: boolean }
+
+// ---------- Usage ----------
+/** what a model call was for: the conversation itself, or one of Navo's background passes */
+export type UsagePurpose = 'chat' | 'memory' | 'memory-tidy' | 'skill' | 'flow' | 'monitor' | 'test' | 'other'
+
+export interface UsageTotals {
+  calls: number
+  input: number
+  output: number
+  cached: number
+  /** estimated, per currency; calls of models without a price are not included */
+  cost: Partial<Record<ModelPricing['currency'], number>>
+  /** tokens of models without a price */
+  unpriced: number
+}
+
+export interface UsageReport {
+  days: number
+  today: UsageTotals
+  total: UsageTotals
+  daily: ({ day: string } & UsageTotals)[]
+  byPurpose: ({ purpose: UsagePurpose } & UsageTotals)[]
+  byModel: ({ modelId: string | null; name: string } & UsageTotals)[]
+  topThreads: ({ threadId: string; title: string } & UsageTotals)[]
+  budget: { daily: number | null; currency: ModelPricing['currency']; spentToday: number; paused: boolean }
+}
 
 export interface Thread {
   id: string
@@ -625,6 +661,15 @@ export interface Settings {
   memory: MemorySettings
   skills: SkillSettings
   quick: QuickSettings
+  usage: UsageSettings
+}
+
+export interface UsageSettings {
+  /** daily budget in `currency`; null = none */
+  dailyBudget: number | null
+  currency: ModelPricing['currency']
+  /** once the budget is used up, Navo's background passes (memory, skill coach, monitors) wait for tomorrow */
+  pauseBackground: boolean
 }
 
 export interface LangfuseSettings {

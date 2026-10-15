@@ -1,8 +1,10 @@
-import { CheckCircle2, Cpu, Download, ExternalLink, KeyRound, MoreHorizontal, Pencil, Plus, Star, Trash2, Zap } from 'lucide-react'
+import { CheckCircle2, Coins, Cpu, Download, ExternalLink, KeyRound, MoreHorizontal, Pencil, Plus, Star, Trash2, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { ModelConfig, ModelInput, Provider, ProviderInput, ProviderType } from '@shared/types'
+import { CURRENCY_SYMBOL } from '@shared/pricing'
 import { Page, PageHeader } from '@/components/layout/page'
+import { PricingDialog } from '@/components/models/pricing-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -350,6 +352,7 @@ function ModelDialog({
 function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; reload: () => void }) {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null)
+  const [pricing, setPricing] = useState(false)
 
   const test = async () => {
     setTesting(true)
@@ -378,6 +381,13 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           {m.supportsVision ? <Badge variant="outline">视觉</Badge> : null}
           {!m.supportsTools ? <Badge variant="warning">无工具调用</Badge> : null}
           {m.reasoningEffort ? <Badge variant="outline">推理 · {m.reasoningEffort}</Badge> : null}
+          {m.pricing ? (
+            <Badge variant="outline" title="每百万 token：输入 / 输出">
+              {CURRENCY_SYMBOL[m.pricing.currency]}
+              {m.pricing.input} / {CURRENCY_SYMBOL[m.pricing.currency]}
+              {m.pricing.output}
+            </Badge>
+          ) : null}
         </div>
         <div className="truncate font-mono text-xs text-muted-foreground">{m.model}</div>
       </div>
@@ -414,6 +424,10 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
             <Pencil />
             编辑
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setPricing(true)}>
+            <Coins />
+            设置价格
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem danger onSelect={async () => (await call('models.delete', m.id), reload())}>
             <Trash2 />
@@ -421,6 +435,7 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {pricing ? <PricingDialog model={m} onClose={() => setPricing(false)} onSaved={reload} /> : null}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Clapperboard,
   Code2,
+  BarChart3,
   Cpu,
   ListChecks,
   MessageSquare,
@@ -68,6 +69,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '系统',
     items: [
       { to: '/models', label: '模型', icon: Cpu },
+      { to: '/usage', label: '用量', icon: BarChart3 },
       { to: '/dev', label: '开发者', icon: Code2, dev: true },
       { to: '/settings', label: '设置', icon: Settings },
     ],

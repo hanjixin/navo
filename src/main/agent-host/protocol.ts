@@ -65,6 +65,14 @@ export interface RunResult {
   traceUrl?: string
 }
 
+/** a model call's tokens, reported from the agent process */
+export interface UsageEvent {
+  threadId: string
+  modelId?: string
+  model: string
+  usage: { input: number; output: number; cached: number }
+}
+
 export interface ToolCallRequest {
   runId: string
   threadId: string

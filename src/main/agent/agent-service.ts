@@ -17,7 +17,8 @@ import { getSettings, langfuseConfig } from '../core/settings'
 import { sessions } from '../browser/agent-session'
 import { resolveModel } from '../models/registry'
 import { skills } from '../skills/skill-service'
-import type { RpcMessage, RunRequest, RunResult, ToolCallRequest } from '../agent-host/protocol'
+import type { RpcMessage, RunRequest, RunResult, ToolCallRequest, UsageEvent } from '../agent-host/protocol'
+import { usage } from '../usage/usage-service'
 import { Rpc } from '../agent-host/rpc'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
@@ -69,6 +70,10 @@ class AgentService {
       { 'tool.call': (req: ToolCallRequest) => this.callTool(req) },
       (name, payload) => {
         if (name === 'chat.event') this.send(payload as ChatEvent)
+        if (name === 'usage') {
+          const e = payload as UsageEvent
+          usage.record({ modelId: e.modelId, model: e.model, purpose: 'chat', threadId: e.threadId, usage: e.usage })
+        }
       },
     )
     child.on('exit', (code) => {

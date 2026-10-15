@@ -5,7 +5,7 @@ import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
-import { createChatModel } from '../models/registry'
+import { trackedModel } from '../usage/usage-service'
 import { diffLines, FAIL_ALERT, hashText, judgeMessages, normalize, parseJudge } from './monitor-core'
 
 interface CheckRow {
@@ -167,7 +167,7 @@ class MonitorService {
       if (!added.length && !removed.length) {
         return this.insert({ ...base, hash, text })
       }
-      const res = await createChatModel(task.modelId ?? null).invoke(
+      const res = await trackedModel(task.modelId ?? null, 'monitor').invoke(
         judgeMessages({ url: cfg.url, focus: cfg.focus, condition: cfg.condition, prev: prevText, cur: text, added, removed }),
       )
       const out = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')

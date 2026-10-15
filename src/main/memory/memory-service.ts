@@ -7,7 +7,8 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { paths } from '../core/paths'
 import { getSettings } from '../core/settings'
-import { createChatModel, models } from '../models/registry'
+import { models } from '../models/registry'
+import { trackedModel } from '../usage/usage-service'
 import { consolidationDue, mergeTarget, parsePlan, planMessages, reviewGroups, type PlanOp } from './consolidate'
 import { extractionMessages, parseJournal, parseOps, userTexts, type Exchange } from './extract'
 import { findDuplicate, findSecret, hostOf, KIND_LABEL, MemoryIndex, memoryPrompt, normalizeScope, quotedFrom, siteMatches } from './recall'
@@ -337,7 +338,7 @@ class MemoryService {
       const todayLog = this.dayEntry(today, threadId)?.text ?? null
       // a cheaper model can be set for this pass; fall back to the conversation's if it was removed
       const model = s.modelId && models.get(s.modelId) ? s.modelId : modelId
-      const res = await createChatModel(model).invoke(extractionMessages(wantOps ? related : [], { ...ex, todayLog }))
+      const res = await trackedModel(model, 'memory', threadId).invoke(extractionMessages(wantOps ? related : [], { ...ex, todayLog }))
       const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       const journal = s.daily ? parseJournal(text) : null
       if (journal && !findSecret(journal)) this.writeDay(today, threadId, threadTitle, journal)
@@ -433,7 +434,7 @@ class MemoryService {
       if (!groups.length) return { changed: 0, conflicts: 0 }
       const s = getSettings().memory
       const model = s.modelId && models.get(s.modelId) ? s.modelId : modelId
-      const res = await createChatModel(model).invoke(planMessages(groups))
+      const res = await trackedModel(model, 'memory-tidy').invoke(planMessages(groups))
       const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       const result = this.applyPlan(parsePlan(text, groups.flat()))
       if (result.changed || result.conflicts) {
@@ -450,7 +451,7 @@ class MemoryService {
   async dryPlan(memories: Memory[], modelId: string | null = null) {
     const groups = reviewGroups(memories)
     if (!groups.length) return { raw: '', ops: [] as PlanOp[] }
-    const res = await createChatModel(modelId).invoke(planMessages(groups))
+    const res = await trackedModel(modelId, 'memory-tidy').invoke(planMessages(groups))
     const raw = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
     return { raw, ops: parsePlan(raw, groups.flat()) }
   }
@@ -592,7 +593,7 @@ class MemoryService {
    * of existing memories, without touching the store.
    */
   async dryRun(ex: Exchange, existing: Memory[], modelId: string | null = null) {
-    const res = await createChatModel(modelId).invoke(extractionMessages(existing, ex))
+    const res = await trackedModel(modelId, 'memory').invoke(extractionMessages(existing, ex))
     const raw = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
     const ops = parseOps(raw, new Set(existing.map((m) => m.id))).map((op) => {
       const kind = op.op === 'add' ? op.kind : existing.find((m) => m.id === op.id)?.kind

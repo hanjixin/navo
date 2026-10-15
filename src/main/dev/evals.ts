@@ -7,7 +7,8 @@ import { flows } from '../flows/flows'
 import type { LearnTurn } from '../learning/scheduler'
 import { memory } from '../memory/memory-service'
 import { diffLines, judgeMessages, normalize, parseJudge } from '../monitor/monitor-core'
-import { createChatModel, resolveModel } from '../models/registry'
+import { resolveModel } from '../models/registry'
+import { trackedModel, usage } from '../usage/usage-service'
 import { recorder } from '../recorder/recorder-service'
 import { skillEvolution } from '../skills/evolution'
 
@@ -66,7 +67,7 @@ export async function runAgentEval(file: string): Promise<void> {
     // partial results, so a long run can be followed (and survives a crash)
     writeFileSync(`${file}.progress.json`, JSON.stringify(results, null, 2))
   }
-  writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results }, null, 2))
+  writeFileSync(`${file}.out.json`, JSON.stringify({ model: resolveModel(null).model, results, usage: usage.report(1).total }, null, 2))
   app.exit(0)
 }
 
@@ -149,7 +150,7 @@ export async function runMonitorEval(file: string): Promise<void> {
     const cur = normalize(c.cur)
     const { added, removed } = diffLines(prev, cur)
     try {
-      const res = await createChatModel(null).invoke(judgeMessages({ ...c, prev, cur, added, removed }))
+      const res = await trackedModel(null, 'other').invoke(judgeMessages({ ...c, prev, cur, added, removed }))
       const text = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       results.push({ verdict: parseJudge(text), raw: text.slice(0, 300), ms: Date.now() - started })
     } catch (e) {

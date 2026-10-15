@@ -132,7 +132,7 @@ try {
   const killer = setTimeout(() => child.kill(), 45 * 60_000)
   await new Promise((resolve) => child.on('exit', resolve))
   clearTimeout(killer)
-  const { model, results } = JSON.parse(readFileSync(`${casesFile}.out.json`, 'utf8'))
+  const { model, results, usage } = JSON.parse(readFileSync(`${casesFile}.out.json`, 'utf8'))
   console.log(`model: ${model}\n`)
   let pass = 0
   let totalMs = 0
@@ -153,6 +153,7 @@ try {
   console.log(
     `\n${pass}/${CASES.length} tasks pass · avg ${(totalMs / CASES.length / 1000).toFixed(1)}s · avg ${(totalCalls / CASES.length).toFixed(1)} tool calls`,
   )
+  if (usage) console.log(`tokens: ${usage.calls} model calls · ${usage.input} in (${usage.cached} cached) · ${usage.output} out`)
   if (pass < CASES.length) process.exitCode = 1
 } finally {
   site.close()

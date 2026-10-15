@@ -9,9 +9,10 @@ import type { ChatEvent, ThreadState, Todo, UIMessage } from '@shared/types'
 import { reasoningOf, textOf, toPendingInterrupt, toTodos, toUIMessage } from '../agent/messages'
 import { TraceHandler } from '../dev/trace'
 import { buildChatModel } from '../models/factory'
+import { UsageHandler } from '../models/usage-callback'
 import { ScopedSkillBackend } from '../skills/scoped-backend'
 import { startTracing } from './langfuse'
-import type { RunRequest, RunResult, ToolCallRequest, ToolDescriptor } from './protocol'
+import type { RunRequest, RunResult, ToolCallRequest, ToolDescriptor, UsageEvent } from './protocol'
 
 /** Returned by forkPoint when the branch starts from an empty conversation. */
 export const RESET = '__reset__'
@@ -21,6 +22,8 @@ export interface RunnerDeps {
   checkpointsPath: string
   emit: (e: ChatEvent) => void
   callTool: (req: ToolCallRequest) => Promise<unknown>
+  /** token usage of each model call (the conversation and its subagents) */
+  usage: (e: UsageEvent) => void
 }
 
 /** Tools that legitimately repeat with identical arguments (the page may have changed in between). */
@@ -123,7 +126,9 @@ export class Runner {
   }
 
   private build(req: RunRequest) {
-    const model = buildChatModel(req.model)
+    const model = buildChatModel(req.model, [
+      new UsageHandler((usage) => this.deps.usage({ threadId: req.threadId, modelId: req.model.id, model: req.model.model, usage })),
+    ])
     const tools = this.proxyTools(req)
     const interruptOn = req.interruptOn.length
       ? Object.fromEntries(req.interruptOn.map((n) => [n, { allowedDecisions: ['approve', 'edit', 'reject'] as ('approve' | 'edit' | 'reject')[] }]))

@@ -117,6 +117,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX monitor_checks_task ON monitor_checks(task_id, at);
   `,
+  `
+  CREATE TABLE usage (
+    id TEXT PRIMARY KEY, at INTEGER NOT NULL, model_id TEXT, model TEXT NOT NULL, purpose TEXT NOT NULL, thread_id TEXT,
+    input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cached_tokens INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX usage_at ON usage(at);
+  CREATE INDEX usage_thread ON usage(thread_id);
+  ALTER TABLE models ADD COLUMN pricing TEXT;
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */
