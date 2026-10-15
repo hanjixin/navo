@@ -17,16 +17,17 @@ import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useBrowser } from '@/stores/browser'
 import { useChat } from '@/stores/chat'
+import { t } from '@shared/i18n'
 
 const STEP_LABEL: Record<MacroStepType, string> = {
-  navigate: '打开',
-  click: '点击',
-  type: '输入',
-  select: '选择',
-  press: '按键',
-  wait: '等待',
-  scroll: '滚动',
-  extract: '提取',
+  navigate: t('打开'),
+  click: t('点击'),
+  type: t('输入'),
+  select: t('选择'),
+  press: t('按键'),
+  wait: t('等待'),
+  scroll: t('滚动'),
+  extract: t('提取'),
 }
 
 function StepRow({
@@ -72,11 +73,16 @@ function StepRow({
         ) : null}
         {step.type === 'extract' ? (
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <Input value={step.label ?? ''} onChange={(e) => onChange({ ...step, label: e.target.value })} placeholder="结果名称" className="h-7 text-xs" />
+            <Input
+              value={step.label ?? ''}
+              onChange={(e) => onChange({ ...step, label: e.target.value })}
+              placeholder={t('结果名称')}
+              className="h-7 text-xs"
+            />
             <Input
               value={step.selectors?.[0] ?? ''}
               onChange={(e) => onChange({ ...step, selectors: e.target.value ? [e.target.value] : [] })}
-              placeholder="CSS 选择器（留空为全文）"
+              placeholder={t('CSS 选择器（留空为全文）')}
               className="h-7 font-mono text-xs"
             />
           </div>
@@ -85,19 +91,19 @@ function StepRow({
           <Input
             value={step.value ?? ''}
             onChange={(e) => onChange({ ...step, value: e.target.value })}
-            placeholder={step.type === 'wait' ? '毫秒，或填写选择器等待元素' : step.type === 'scroll' ? '像素' : '值，可用 {{参数名}}'}
+            placeholder={step.type === 'wait' ? t('毫秒，或填写选择器等待元素') : step.type === 'scroll' ? t('像素') : t('值，可用 {{参数名}}')}
             className="mt-2 h-7 font-mono text-xs"
           />
         ) : null}
       </div>
       <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-        <Button variant="ghost" size="icon-sm" disabled={index === 0} onClick={() => onMove(-1)} aria-label="上移">
+        <Button variant="ghost" size="icon-sm" disabled={index === 0} onClick={() => onMove(-1)} aria-label={t('上移')}>
           <ArrowUp />
         </Button>
-        <Button variant="ghost" size="icon-sm" disabled={index === total - 1} onClick={() => onMove(1)} aria-label="下移">
+        <Button variant="ghost" size="icon-sm" disabled={index === total - 1} onClick={() => onMove(1)} aria-label={t('下移')}>
           <ArrowDown />
         </Button>
-        <Button variant="ghost" size="icon-sm" className="hover:text-danger" onClick={onDelete} aria-label="删除步骤">
+        <Button variant="ghost" size="icon-sm" className="hover:text-danger" onClick={onDelete} aria-label={t('删除步骤')}>
           <X />
         </Button>
       </div>
@@ -106,11 +112,11 @@ function StepRow({
 }
 
 const VERSION_SOURCE: Record<MacroVersion['source'], string> = {
-  recorded: '录制',
-  agent: '由对话整理',
-  repair: 'Agent 自动修复',
-  user: '手动编辑',
-  rollback: '回滚',
+  recorded: t('录制'),
+  agent: t('由对话整理'),
+  repair: t('Agent 自动修复'),
+  user: t('手动编辑'),
+  rollback: t('回滚'),
 }
 
 /** Replays, automatic repairs and versions of a flow. */
@@ -128,11 +134,15 @@ function VersionsDialog({ macro, onClose, onRolledBack }: { macro: Macro; onClos
   const versions = useAsync(() => call('flows.versions', macro.id), [macro.id])
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title={`版本记录 · ${macro.name}`} description="每次录制、整理、修复和编辑都会记一个版本，可以回到任意一个。" className="w-[560px]">
+      <DialogContent
+        title={t('版本记录 · {{v0}}', { v0: macro.name })}
+        description={t('每次录制、整理、修复和编辑都会记一个版本，可以回到任意一个。')}
+        className="w-[560px]"
+      >
         <AsyncView
           state={versions}
           loading={<ListSkeleton rows={3} />}
-          empty={<p className="py-6 text-center text-sm text-muted-foreground">还没有版本记录</p>}
+          empty={<p className="py-6 text-center text-sm text-muted-foreground">{t('还没有版本记录')}</p>}
         >
           {(list) => (
             <div className="grid gap-1.5">
@@ -140,13 +150,13 @@ function VersionsDialog({ macro, onClose, onRolledBack }: { macro: Macro; onClos
                 <div key={v.version} data-testid="macro-version" className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">版本 {v.version}</span>
-                      {i === 0 ? <Badge variant="primary">当前</Badge> : null}
+                      <span className="font-medium">{t('版本 {{v0}}', { v0: v.version })}</span>
+                      {i === 0 ? <Badge variant="primary">{t('当前')}</Badge> : null}
                       <span className="text-xs text-muted-foreground">{VERSION_SOURCE[v.source]}</span>
                     </div>
                     <div className="text-xs text-subtle-foreground">
                       {v.reason ? `${v.reason} · ` : ''}
-                      {v.steps} 步 · {timeAgo(v.at)}
+                      {t('{{v0}} 步 · {{v1}}', { v0: v.steps, v1: timeAgo(v.at) })}
                     </div>
                   </div>
                   {i > 0 ? (
@@ -156,16 +166,16 @@ function VersionsDialog({ macro, onClose, onRolledBack }: { macro: Macro; onClos
                       onClick={() =>
                         void call('flows.rollback', macro.id, v.version).then(
                           () => {
-                            toast.success(`已回到版本 ${v.version}`)
+                            toast.success(t('已回到版本 {{v0}}', { v0: v.version }))
                             onRolledBack()
                             onClose()
                           },
-                          (e) => toast.error('回滚失败', { description: errorMessage(e) }),
+                          (e) => toast.error(t('回滚失败'), { description: errorMessage(e) }),
                         )
                       }
                     >
                       <Undo2 />
-                      回到这版
+                      {t('回到这版')}
                     </Button>
                   ) : null}
                 </div>
@@ -217,7 +227,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
           id: `s${Date.now().toString(36)}`,
           type,
           value: type === 'wait' ? '1000' : type === 'scroll' ? '600' : undefined,
-          label: type === 'extract' ? `结果${m.steps.length + 1}` : undefined,
+          label: type === 'extract' ? t('结果{{v0}}', { v0: m.steps.length + 1 }) : undefined,
         },
       ],
     })
@@ -229,9 +239,9 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       setM(saved)
       setDirty(false)
       onSaved(saved)
-      toast.success('宏已保存')
+      toast.success(t('宏已保存'))
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -246,7 +256,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       setLastParams(params)
       const r = await call('macros.run', m.id, params)
       setResult(r)
-      if (r.ok) toast.success('宏执行完成')
+      if (r.ok) toast.success(t('宏执行完成'))
     } catch (e) {
       setResult({ ok: false, error: errorMessage(e), extracted: {} })
     } finally {
@@ -261,12 +271,12 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       const r = await call('flows.run', m.id, lastParams, true)
       setResult(r)
       if (r.ok) {
-        toast.success(r.repaired ? '已由 Agent 修复，流程已更新' : '这次回放成功了，无需修复')
+        toast.success(r.repaired ? t('已由 Agent 修复，流程已更新') : t('这次回放成功了，无需修复'))
         const fresh = (await call('macros.list')).find((x) => x.id === m.id)
         if (fresh) onSaved(fresh)
-      } else toast.error('修复没有完成', { description: r.error })
+      } else toast.error(t('修复没有完成'), { description: r.error })
     } catch (e) {
-      toast.error('修复失败', { description: errorMessage(e) })
+      toast.error(t('修复失败'), { description: errorMessage(e) })
     } finally {
       setRepairing(false)
     }
@@ -278,9 +288,16 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
     await newThread()
     navigate('/chat')
     void send(
-      `我在运行录制宏「${m.name}」时，第 ${(result.failedStep ?? 0) + 1} 步失败：${result.error}\n失败步骤：${JSON.stringify(step)}\n\n全部步骤：\n${m.steps
-        .map((s, i) => `${i + 1}. ${STEP_LABEL[s.type]} ${s.url ?? s.label ?? ''} ${s.value ? `值=${s.value}` : ''}`)
-        .join('\n')}\n\n请基于当前浏览器页面，从失败的步骤开始继续完成剩余操作。`,
+      t(
+        '我在运行录制宏「{{v0}}」时，第 {{v1}} 步失败：{{v2}}\n失败步骤：{{v3}}\n\n全部步骤：\n{{v4}}\n\n请基于当前浏览器页面，从失败的步骤开始继续完成剩余操作。',
+        {
+          v0: m.name,
+          v1: (result.failedStep ?? 0) + 1,
+          v2: result.error,
+          v3: JSON.stringify(step),
+          v4: m.steps.map((s, i) => `${i + 1}. ${STEP_LABEL[s.type]} ${s.url ?? s.label ?? ''} ${s.value ? t('值={{v0}}', { v0: s.value }) : ''}`).join('\n'),
+        },
+      ),
     )
   }
 
@@ -289,16 +306,17 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2">
         <div className="flex min-w-48 flex-1 items-center gap-2">
           <Input value={m.name} onChange={(e) => update({ name: e.target.value })} className="h-9 max-w-md min-w-0 text-base font-semibold" />
-          {dirty ? <span className="shrink-0 text-xs text-warning">未保存</span> : null}
+          {dirty ? <span className="shrink-0 text-xs text-warning">{t('未保存')}</span> : null}
         </div>
         <div className="ml-auto flex flex-wrap justify-end gap-1.5">
           <Button variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
             <History />
-            版本{stats?.version ? ` ${stats.version}` : ''}
+            {t('版本')}
+            {stats?.version ? ` ${stats.version}` : ''}
           </Button>
           <Button variant="ghost" size="sm" className="hover:text-danger" onClick={async () => (await call('macros.delete', m.id), onDeleted())}>
             <Trash2 />
-            删除
+            {t('删除')}
           </Button>
           <Button
             variant="ghost"
@@ -306,14 +324,14 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
             onClick={async () => {
               try {
                 const name = await call('macros.toSkill', m.id)
-                toast.success(`已生成 Skill：${name}`, { action: { label: '查看', onClick: () => navigate('/skills') } })
+                toast.success(t('已生成 Skill：{{v0}}', { v0: name }), { action: { label: t('查看'), onClick: () => navigate('/skills') } })
               } catch (e) {
-                toast.error('生成失败', { description: errorMessage(e) })
+                toast.error(t('生成失败'), { description: errorMessage(e) })
               }
             }}
           >
             <Sparkles />
-            生成 Skill
+            {t('生成 Skill')}
           </Button>
           <Button
             variant="secondary"
@@ -322,18 +340,19 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
             onClick={() => (m.params.length ? setRunParams(Object.fromEntries(m.params.map((p) => [p.name, p.default ?? '']))) : void run({}))}
           >
             {!running ? <Play /> : null}
-            运行
+            {t('运行')}
           </Button>
           <Button variant="primary" size="sm" loading={saving} disabled={!dirty} onClick={save}>
             {!saving ? <Save /> : null}
-            保存
+            {t('保存')}
           </Button>
         </div>
         {stats?.runs ? (
           <p data-testid="flow-stats" className="w-full text-xs text-subtle-foreground">
-            已回放 {stats.runs} 次{stats.repaired ? ` · 自动修复 ${stats.repaired} 次` : ''}
-            {stats.failed ? ` · 失败 ${stats.failed} 次` : ''}
-            {stats.modelCalls ? ` · 修复共调用模型 ${stats.modelCalls} 次` : ' · 未调用模型'}
+            {t('已回放 {{v0}} 次', { v0: stats.runs })}
+            {stats.repaired ? t(' · 自动修复 {{v0}} 次', { v0: stats.repaired }) : ''}
+            {stats.failed ? t(' · 失败 {{v0}} 次', { v0: stats.failed }) : ''}
+            {stats.modelCalls ? t(' · 修复共调用模型 {{v0}} 次', { v0: stats.modelCalls }) : t(' · 未调用模型')}
           </p>
         ) : null}
       </div>
@@ -341,7 +360,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       {result ? (
         result.ok ? (
           <div className="mb-4 animate-fade-in rounded-lg border border-l-2 border-border border-l-success bg-success-soft px-4 py-3 text-sm">
-            <span className="font-medium">执行成功</span>
+            <span className="font-medium">{t('执行成功')}</span>
             {Object.keys(result.extracted).length ? (
               <pre className="selectable mt-2 max-h-40 overflow-auto font-mono text-xs whitespace-pre-wrap text-muted-foreground">
                 {JSON.stringify(result.extracted, null, 2)}
@@ -351,16 +370,17 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
         ) : (
           <div className="mb-4 flex animate-fade-in items-start gap-3 rounded-lg border border-l-2 border-border border-l-danger bg-danger-soft px-4 py-3">
             <div className="min-w-0 flex-1 text-sm">
-              <span className="font-medium">第 {(result.failedStep ?? 0) + 1} 步执行失败</span>
+              <span className="font-medium">{t('第 {{v0}} 步执行失败', { v0: (result.failedStep ?? 0) + 1 })}</span>
               <p className="mt-0.5 text-xs break-words text-muted-foreground">{result.error}</p>
             </div>
             <div className="flex shrink-0 gap-1.5">
               <Button variant="primary" size="sm" loading={repairing} onClick={() => void repair()}>
-                {!repairing ? <Wrench /> : null}让 Agent 修复并更新流程
+                {!repairing ? <Wrench /> : null}
+                {t('让 Agent 修复并更新流程')}
               </Button>
               <Button variant="secondary" size="sm" onClick={handToAgent}>
                 <Bot />
-                交给 Agent 继续
+                {t('交给 Agent 继续')}
               </Button>
             </div>
           </div>
@@ -370,12 +390,12 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto @5xl:grid-cols-[1fr_280px] @5xl:overflow-visible">
         <Card className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-            <span className="text-sm font-medium">步骤 · {m.steps.length}</span>
+            <span className="text-sm font-medium">{t('步骤 · {{v0}}', { v0: m.steps.length })}</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm">
                   <Plus />
-                  添加步骤
+                  {t('添加步骤')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -390,7 +410,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {m.startUrl ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">
-                起始页面 <span className="font-mono">{m.startUrl}</span>
+                {t('起始页面')} <span className="font-mono">{m.startUrl}</span>
               </div>
             ) : null}
             {m.steps.map((s, i) => (
@@ -410,24 +430,24 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
 
         <div className="grid content-start gap-4 overflow-y-auto">
           <Card className="grid gap-4 p-4">
-            <Field label="描述" hint="作为工具描述提供给 Agent">
-              <Input value={m.description} onChange={(e) => update({ description: e.target.value })} placeholder="这个宏做什么" />
+            <Field label={t('描述')} hint={t('作为工具描述提供给 Agent')}>
+              <Input value={m.description} onChange={(e) => update({ description: e.target.value })} placeholder={t('这个宏做什么')} />
             </Field>
-            <Field label="起始网址" hint="留空则在当前页运行">
+            <Field label={t('起始网址')} hint={t('留空则在当前页运行')}>
               <Input value={m.startUrl ?? ''} onChange={(e) => update({ startUrl: e.target.value })} className="font-mono text-xs" />
             </Field>
             <label className="flex items-center justify-between gap-3 text-sm">
               <span>
-                作为 Agent 工具
-                <span className="block text-xs text-muted-foreground">对话中可直接调用</span>
+                {t('作为 Agent 工具')}
+                <span className="block text-xs text-muted-foreground">{t('对话中可直接调用')}</span>
               </span>
               <Switch checked={m.exposeAsTool} onCheckedChange={(v) => update({ exposeAsTool: v })} />
             </label>
           </Card>
           <Card className="p-4">
-            <div className="text-sm font-medium">参数</div>
+            <div className="text-sm font-medium">{t('参数')}</div>
             <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
-              在步骤的值中使用 <code className="font-mono">{'{{name}}'}</code> 即可声明参数，保存后自动出现。
+              {t('在步骤的值中使用')} <code className="font-mono">{'{{name}}'}</code> {t('即可声明参数，保存后自动出现。')}
             </p>
             {m.params.length ? (
               <div className="grid gap-3">
@@ -436,13 +456,13 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
                     <code className="font-mono text-xs font-medium">{p.name}</code>
                     <Input
                       value={p.default ?? ''}
-                      placeholder="默认值"
+                      placeholder={t('默认值')}
                       className="h-7 text-xs"
                       onChange={(e) => update({ params: m.params.map((x, j) => (j === i ? { ...x, default: e.target.value } : x)) })}
                     />
                     <Input
                       value={p.description ?? ''}
-                      placeholder="说明（给 Agent 看）"
+                      placeholder={t('说明（给 Agent 看）')}
                       className="h-7 text-xs"
                       onChange={(e) => update({ params: m.params.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)) })}
                     />
@@ -450,7 +470,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-subtle-foreground">暂无参数</p>
+              <p className="text-xs text-subtle-foreground">{t('暂无参数')}</p>
             )}
           </Card>
         </div>
@@ -459,15 +479,15 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
       <Dialog open={!!runParams} onOpenChange={(o) => !o && setRunParams(null)}>
         {runParams ? (
           <DialogContent
-            title="运行参数"
+            title={t('运行参数')}
             className="w-[440px]"
             footer={
               <>
                 <Button variant="ghost" onClick={() => setRunParams(null)}>
-                  取消
+                  {t('取消')}
                 </Button>
                 <Button variant="primary" onClick={() => void run(runParams)}>
-                  运行
+                  {t('运行')}
                 </Button>
               </>
             }
@@ -521,26 +541,26 @@ export function MacrosPage() {
         const m = await call('macros.stopRecording')
         list.reload()
         if (m) setParams({ id: m.id })
-        else toast('未录制到任何操作')
+        else toast(t('未录制到任何操作'))
       } else {
         setOpen(true)
         await call('macros.startRecording')
-        toast('开始录制', { description: '在右侧浏览器中操作，完成后点击停止' })
+        toast(t('开始录制'), { description: t('在右侧浏览器中操作，完成后点击停止') })
       }
     } catch (e) {
-      toast.error('录制失败', { description: errorMessage(e) })
+      toast.error(t('录制失败'), { description: errorMessage(e) })
     }
   }
 
   return (
     <div className="@container flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8">
       <PageHeader
-        title="录制宏"
-        description="录制你在浏览器中的操作，回放或作为工具交给 Agent 调用。值中可用 {{参数}} 实现参数化。"
+        title={t('录制宏')}
+        description={t('录制你在浏览器中的操作，回放或作为工具交给 Agent 调用。值中可用 {{参数}} 实现参数化。')}
         actions={
           <Button variant={state.recording ? 'danger' : 'primary'} onClick={toggleRecording}>
             {state.recording ? <Square className="size-3 fill-current" /> : <Circle />}
-            {state.recording ? `停止录制（${recordingSteps} 步）` : '开始录制'}
+            {state.recording ? t('停止录制（{{v0}} 步）', { v0: recordingSteps }) : t('开始录制')}
           </Button>
         }
       />
@@ -549,7 +569,7 @@ export function MacrosPage() {
           <AsyncView
             state={list}
             loading={<ListSkeleton rows={3} />}
-            empty={<EmptyState icon={Clapperboard} title="还没有录制宏" description="点击「开始录制」，然后在右侧浏览器中完成一遍操作。" />}
+            empty={<EmptyState icon={Clapperboard} title={t('还没有录制宏')} description={t('点击「开始录制」，然后在右侧浏览器中完成一遍操作。')} />}
           >
             {(macros) => (
               <div className="grid gap-px">
@@ -561,11 +581,9 @@ export function MacrosPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
-                      {m.exposeAsTool ? <Badge variant="primary">工具</Badge> : null}
+                      {m.exposeAsTool ? <Badge variant="primary">{t('工具')}</Badge> : null}
                     </div>
-                    <div className="mt-0.5 text-xs text-subtle-foreground">
-                      {m.steps.length} 步 · {timeAgo(m.updatedAt)}
-                    </div>
+                    <div className="mt-0.5 text-xs text-subtle-foreground">{t('{{v0}} 步 · {{v1}}', { v0: m.steps.length, v1: timeAgo(m.updatedAt) })}</div>
                   </button>
                 ))}
               </div>

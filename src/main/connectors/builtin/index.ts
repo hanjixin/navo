@@ -4,14 +4,15 @@ import type { BuiltinConnector } from '@shared/types'
 import { checkWebhook, sendBot, type BotKind, type BotMessage } from './bots'
 import { createEvent, listEvents, verifyCalDav, type CalDavConfig } from './caldav'
 import { listEmail, readEmail, sendEmail, verifyEmail, type EmailConfig } from './email'
+import { t, tk } from '@shared/i18n'
 
 /** Tools that send something on the user's behalf: they pause for approval like other outward actions. */
 export const BUILTIN_SEND_TOOLS = ['wecom_send_message', 'dingtalk_bot_send_message', 'feishu_bot_send_message', 'email_send', 'calendar_create_event']
 
 const BOT_NAME: Record<BotKind, { prefix: string; label: string }> = {
-  'wecom-bot': { prefix: 'wecom', label: '企业微信群' },
-  'dingtalk-bot': { prefix: 'dingtalk_bot', label: '钉钉群' },
-  'feishu-bot': { prefix: 'feishu_bot', label: '飞书群' },
+  'wecom-bot': { prefix: 'wecom', label: tk('企业微信群') },
+  'dingtalk-bot': { prefix: 'dingtalk_bot', label: tk('钉钉群') },
+  'feishu-bot': { prefix: 'feishu_bot', label: tk('飞书群') },
 }
 
 type Values = Record<string, string>
@@ -28,20 +29,20 @@ export async function verifyBuiltin(kind: BuiltinConnector, v: Values): Promise<
 /** Sends an alert (a monitor's, or a test message): to the group, or by email to yourself. */
 export async function notifyBuiltin(kind: BuiltinConnector, v: Values, msg: BotMessage): Promise<void> {
   if (kind === 'email') {
-    await sendEmail(v as unknown as EmailConfig, { to: v.address, subject: msg.title || 'Navo 提醒', body: msg.text })
+    await sendEmail(v as unknown as EmailConfig, { to: v.address, subject: msg.title || tk('Navo 提醒'), body: msg.text })
     return
   }
-  if (kind === 'caldav') throw new Error('日历不能接收消息')
+  if (kind === 'caldav') throw new Error(t('日历不能接收消息'))
   await sendBot(kind, bot(v), msg)
 }
 
 export function builtinTools(kind: BuiltinConnector, v: Values, label: string): StructuredToolInterface[] {
-  const t = <S extends z.ZodObject>(name: string, description: string, schema: S, fn: (a: z.infer<S>) => Promise<string>) =>
+  const defineTool = <S extends z.ZodObject>(name: string, description: string, schema: S, fn: (a: z.infer<S>) => Promise<string>) =>
     tool(async (a) => fn(a as z.infer<S>), { name, description, schema }) as unknown as StructuredToolInterface
   if (kind === 'email') {
     const c = v as unknown as EmailConfig
     return [
-      t(
+      defineTool(
         'email_list',
         `列出邮箱 ${c.address} 的最新邮件（可只看未读、按关键词 / 发件人 / 日期筛选）。每行带 uid，用 email_read 读正文。`,
         z.object({
@@ -54,8 +55,10 @@ export function builtinTools(kind: BuiltinConnector, v: Values, label: string): 
         }),
         (a) => listEmail(c, a),
       ),
-      t('email_read', '读一封邮件的正文和附件名。', z.object({ uid: z.number().int(), folder: z.string().optional() }), (a) => readEmail(c, a.uid, a.folder)),
-      t(
+      defineTool('email_read', '读一封邮件的正文和附件名。', z.object({ uid: z.number().int(), folder: z.string().optional() }), (a) =>
+        readEmail(c, a.uid, a.folder),
+      ),
+      defineTool(
         'email_send',
         `用 ${c.address} 发送邮件（正文用 Markdown，会转成格式化邮件）。发送前会请用户确认。`,
         z.object({
@@ -71,13 +74,13 @@ export function builtinTools(kind: BuiltinConnector, v: Values, label: string): 
   if (kind === 'caldav') {
     const c = v as unknown as CalDavConfig
     return [
-      t(
+      defineTool(
         'calendar_list_events',
         '查看日历里一段时间的日程。时间用 2026-10-15 或 2026-10-15T09:00（本地时间）。',
         z.object({ from: z.string(), to: z.string(), calendar: z.string().optional().describe('日历名称，默认全部') }),
         (a) => listEvents(c, a),
       ),
-      t(
+      defineTool(
         'calendar_create_event',
         '在日历里创建日程（不写结束时间则为 1 小时）。创建前会请用户确认。',
         z.object({
@@ -94,13 +97,13 @@ export function builtinTools(kind: BuiltinConnector, v: Values, label: string): 
   }
   const b = BOT_NAME[kind]
   return [
-    t(
+    defineTool(
       `${b.prefix}_send_message`,
-      `通过群机器人往${label || b.label}发一条消息（Markdown）。适合通知、日报、提醒。发送前会请用户确认。`,
+      `通过群机器人往${label || t(b.label)}发一条消息（Markdown）。适合通知、日报、提醒。发送前会请用户确认。`,
       z.object({ title: z.string().optional(), text: z.string().describe('消息内容，Markdown') }),
       async (a) => {
         await sendBot(kind, bot(v), a)
-        return `已发送到${label || b.label}`
+        return `已发送到${label || t(b.label)}`
       },
     ),
   ]

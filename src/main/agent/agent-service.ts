@@ -25,6 +25,7 @@ import { connectors } from '../connectors/connector-service'
 import { Rpc } from '../agent-host/rpc'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
+import { t } from '@shared/i18n'
 
 interface ThreadRow {
   id: string
@@ -188,7 +189,7 @@ class AgentService {
 
   async send_(threadId: string, text: string, images: string[] = [], opts: { headless?: boolean } = {}, fileIds: string[] = []): Promise<RunResult> {
     const thread = this.getThread(threadId)
-    if (!thread) throw new Error('会话不存在')
+    if (!thread) throw new Error(t('会话不存在'))
     const firstFile = fileIds.length ? files.get(fileIds[0]).name : ''
     if (thread.title === '新对话' && (text.trim() || firstFile))
       this.renameThread(threadId, (text.trim() || `文件：${firstFile}`).replace(/\s+/g, ' ').slice(0, 40))
@@ -228,9 +229,9 @@ class AgentService {
   async regenerate(threadId: string, messageId: string, text?: string): Promise<RunResult> {
     const state = await this.threadState(threadId)
     const original = state.messages.find((m) => m.id === messageId && m.role === 'user')
-    if (!original) throw new Error('只能从用户消息重新生成')
+    if (!original) throw new Error(t('只能从用户消息重新生成'))
     const fork = await this.host().call<string | null>('thread.forkPoint', { threadId, messageId })
-    if (!fork) throw new Error('找不到可回溯的历史节点')
+    if (!fork) throw new Error(t('找不到可回溯的历史节点'))
     if (fork === RESET) await this.host().call('thread.delete', { threadId })
     const content = text ?? original.content
     const id = newId()
@@ -247,7 +248,7 @@ class AgentService {
   }
 
   private async run(threadId: string, input: RunRequest['input'], opts: { headless?: boolean } = {}, fromCheckpointId?: string): Promise<RunResult> {
-    if (this.runs.has(threadId)) throw new Error('该会话正在运行中')
+    if (this.runs.has(threadId)) throw new Error(t('该会话正在运行中'))
     const thread = this.getThread(threadId)!
     const runId = newId()
     const settings = getSettings()
@@ -358,10 +359,10 @@ class AgentService {
   /** Executes a tool the agent process asked for, on the conversation's tab. */
   private async callTool(req: ToolCallRequest): Promise<unknown> {
     const run = this.runs.get(req.threadId)
-    if (!run || run.runId !== req.runId) throw new Error('运行已结束')
+    if (!run || run.runId !== req.runId) throw new Error(t('运行已结束'))
     if (req.name === 'memory_save' || req.name === 'memory_update' || req.name === 'memory_delete') run.usedMemoryTools = true
     const entry = run.tools.get(req.name)
-    if (!entry) throw new Error(`工具不存在: ${req.name}`)
+    if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: req.name }))
     const out = await entry.tool.invoke(req.args)
     // MCP tools may return message objects / content blocks; keep them plain for the RPC
     const content = (out as { content?: unknown })?.content ?? out

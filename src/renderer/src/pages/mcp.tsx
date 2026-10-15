@@ -17,6 +17,7 @@ import { NavoMcpPanel } from '@/components/mcp/navo-mcp-panel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 type Draft = Omit<McpServer, 'id'> & { id?: string }
 
@@ -59,11 +60,11 @@ function ServerDialog({ server, onClose, onSaved }: { server: McpServer | null; 
         env: env.trim() ? textToKv(env) : null,
         headers: headers.trim() ? textToKv(headers, ':') : null,
       })
-      toast.success('已保存，正在连接…')
+      toast.success(t('已保存，正在连接…'))
       onSaved()
       onClose()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -72,29 +73,29 @@ function ServerDialog({ server, onClose, onSaved }: { server: McpServer | null; 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={server ? '编辑 MCP 服务器' : '添加 MCP 服务器'}
+        title={server ? t('编辑 MCP 服务器') : t('添加 MCP 服务器')}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" loading={saving} onClick={save}>
-              保存并连接
+              {t('保存并连接')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4">
           <div className="grid grid-cols-[1fr_180px] gap-3">
-            <Field label="名称">
+            <Field label={t('名称')}>
               <Input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} placeholder="filesystem" autoFocus />
             </Field>
-            <Field label="传输方式">
+            <Field label={t('传输方式')}>
               <Select
                 value={d.transport}
                 onChange={(v) => setD({ ...d, transport: v as McpTransport })}
                 options={[
-                  { value: 'stdio', label: 'stdio（本地进程）' },
+                  { value: 'stdio', label: t('stdio（本地进程）') },
                   { value: 'http', label: 'Streamable HTTP' },
                   { value: 'sse', label: 'SSE' },
                 ]}
@@ -103,10 +104,10 @@ function ServerDialog({ server, onClose, onSaved }: { server: McpServer | null; 
           </div>
           {d.transport === 'stdio' ? (
             <>
-              <Field label="命令">
+              <Field label={t('命令')}>
                 <Input value={d.command ?? ''} onChange={(e) => setD({ ...d, command: e.target.value })} className="font-mono text-xs" placeholder="npx" />
               </Field>
-              <Field label="参数" hint="每行一个">
+              <Field label={t('参数')} hint={t('每行一个')}>
                 <Textarea
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
@@ -115,7 +116,7 @@ function ServerDialog({ server, onClose, onSaved }: { server: McpServer | null; 
                   placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/Users/me/Documents'}
                 />
               </Field>
-              <Field label="环境变量" hint="每行 KEY=VALUE">
+              <Field label={t('环境变量')} hint={t('每行 KEY=VALUE')}>
                 <Textarea value={env} onChange={(e) => setEnv(e.target.value)} rows={2} className="font-mono text-xs" />
               </Field>
             </>
@@ -129,7 +130,7 @@ function ServerDialog({ server, onClose, onSaved }: { server: McpServer | null; 
                   placeholder="https://example.com/mcp"
                 />
               </Field>
-              <Field label="请求头" hint="每行 Header: value，例如 Authorization: Bearer xxx">
+              <Field label={t('请求头')} hint={t('每行 Header: value，例如 Authorization: Bearer xxx')}>
                 <Textarea value={headers} onChange={(e) => setHeaders(e.target.value)} rows={2} className="font-mono text-xs" />
               </Field>
             </>
@@ -147,12 +148,12 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="从 JSON 导入"
-        description="兼容 Claude Desktop / Cursor 的 mcpServers 配置格式。"
+        title={t('从 JSON 导入')}
+        description={t('兼容 Claude Desktop / Cursor 的 mcpServers 配置格式。')}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -161,7 +162,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 setSaving(true)
                 try {
                   const list = await call('mcp.importJson', json)
-                  toast.success(`已导入 ${list.length} 个服务器`)
+                  toast.success(t('已导入 {{v0}} 个服务器', { v0: list.length }))
                   onDone()
                   onClose()
                 } catch (e) {
@@ -171,7 +172,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 }
               }}
             >
-              导入
+              {t('导入')}
             </Button>
           </>
         }
@@ -217,13 +218,13 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="扫描本机 MCP 配置"
-        description="读取 ~/.agents/mcp.json、Claude Code、Claude Desktop、Cursor、Codex、Gemini CLI 与 VS Code 的配置。只会读取，不会修改它们。"
+        title={t('扫描本机 MCP 配置')}
+        description={t('读取 ~/.agents/mcp.json、Claude Code、Claude Desktop、Cursor、Codex、Gemini CLI 与 VS Code 的配置。只会读取，不会修改它们。')}
         className="w-[640px]"
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -233,17 +234,17 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
                 setSaving(true)
                 try {
                   const list = await call('mcp.importDiscovered', [...picked])
-                  toast.success(`已导入 ${list.length} 个服务器，正在连接…`)
+                  toast.success(t('已导入 {{v0}} 个服务器，正在连接…', { v0: list.length }))
                   onDone()
                   onClose()
                 } catch (e) {
-                  toast.error('导入失败', { description: errorMessage(e) })
+                  toast.error(t('导入失败'), { description: errorMessage(e) })
                 } finally {
                   setSaving(false)
                 }
               }}
             >
-              导入所选（{picked.size}）
+              {t('导入所选（{{v0}}）', { v0: picked.size })}
             </Button>
           </>
         }
@@ -251,7 +252,7 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
         <AsyncView
           state={found}
           loading={<ListSkeleton rows={3} />}
-          empty={<EmptyState icon={Radar} title="没有发现 MCP 配置" description="本机其他 Agent 工具中没有配置 MCP 服务器。" />}
+          empty={<EmptyState icon={Radar} title={t('没有发现 MCP 配置')} description={t('本机其他 Agent 工具中没有配置 MCP 服务器。')} />}
         >
           {() => (
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
@@ -262,7 +263,7 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
                     size="sm"
                     onClick={() => setPicked(picked.size === importable.length ? new Set() : new Set(importable.map((d) => d.key)))}
                   >
-                    {picked.size === importable.length ? '取消全选' : '全选可导入项'}
+                    {picked.size === importable.length ? t('取消全选') : t('全选可导入项')}
                   </Button>
                 </div>
               ) : null}
@@ -296,22 +297,22 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
                             {d.imported ? (
                               <Badge variant="success">
                                 <Check />
-                                已导入
+                                {t('已导入')}
                               </Badge>
                             ) : null}
                             {d.connectorId ? (
                               <Badge variant="primary">
                                 <Plug />
-                                有对应连接器
+                                {t('有对应连接器')}
                               </Badge>
                             ) : null}
                           </div>
                           <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{describeEndpoint(d)}</div>
                           {d.env || d.headers ? (
                             <div className="mt-1 truncate text-[11px] text-subtle-foreground">
-                              {d.env ? `环境变量: ${Object.keys(d.env).join(', ')}` : ''}
+                              {d.env ? t('环境变量: {{v0}}', { v0: Object.keys(d.env).join(', ') }) : ''}
                               {d.env && d.headers ? ' · ' : ''}
-                              {d.headers ? `请求头: ${Object.keys(d.headers).join(', ')}` : ''}
+                              {d.headers ? t('请求头: {{v0}}', { v0: Object.keys(d.headers).join(', ') }) : ''}
                             </div>
                           ) : null}
                         </div>
@@ -331,13 +332,13 @@ function DiscoverDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
 function stateInfo(s?: McpStatus): { dot: 'success' | 'danger' | 'neutral' | 'running'; label: string } {
   switch (s?.state) {
     case 'connected':
-      return { dot: 'success', label: `已连接 · ${s.tools.length} 个工具` }
+      return { dot: 'success', label: t('已连接 · {{v0}} 个工具', { v0: s.tools.length }) }
     case 'connecting':
-      return { dot: 'running', label: '连接中…' }
+      return { dot: 'running', label: t('连接中…') }
     case 'error':
-      return { dot: 'danger', label: '连接失败' }
+      return { dot: 'danger', label: t('连接失败') }
     default:
-      return { dot: 'neutral', label: '未连接' }
+      return { dot: 'neutral', label: t('未连接') }
   }
 }
 
@@ -361,7 +362,7 @@ export function McpPage() {
       await call('mcp.save', { ...s, enabled })
       servers.reload()
     } catch (e) {
-      toast.error('操作失败', { description: errorMessage(e) })
+      toast.error(t('操作失败'), { description: errorMessage(e) })
     }
   }
 
@@ -369,21 +370,21 @@ export function McpPage() {
     <Page>
       <PageHeader
         title="MCP"
-        description="连接 MCP 服务器为 Navo 扩展工具；也可以把 Navo 自身作为 MCP 服务提供给其他 Agent。"
+        description={t('连接 MCP 服务器为 Navo 扩展工具；也可以把 Navo 自身作为 MCP 服务提供给其他 Agent。')}
         actions={
           tab === 'servers' && servers.data?.length ? (
             <>
               <Button variant="secondary" onClick={() => setDiscovering(true)}>
                 <Radar />
-                扫描本机
+                {t('扫描本机')}
               </Button>
               <Button variant="secondary" onClick={() => setImporting(true)}>
                 <FileJson />
-                导入 JSON
+                {t('导入 JSON')}
               </Button>
               <Button variant="primary" onClick={() => setEditing('new')}>
                 <Plus />
-                添加服务器
+                {t('添加服务器')}
               </Button>
             </>
           ) : null
@@ -393,11 +394,11 @@ export function McpPage() {
         <TabsList className="mb-4 w-full">
           <TabsTrigger value="servers">
             <Server />
-            Navo 使用的服务器
+            {t('Navo 使用的服务器')}
           </TabsTrigger>
           <TabsTrigger value="expose">
             <Share2 />
-            对外提供给其他 Agent
+            {t('对外提供给其他 Agent')}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="servers">
@@ -408,16 +409,16 @@ export function McpPage() {
               <Card>
                 <EmptyState
                   icon={Server}
-                  title="还没有 MCP 服务器"
-                  description="从 .agents、Claude Code、Cursor、Codex 等工具的配置中一键导入，或手动添加本地 stdio / 远程 HTTP 服务器。"
+                  title={t('还没有 MCP 服务器')}
+                  description={t('从 .agents、Claude Code、Cursor、Codex 等工具的配置中一键导入，或手动添加本地 stdio / 远程 HTTP 服务器。')}
                   action={
                     <div className="flex gap-2">
                       <Button variant="primary" onClick={() => setDiscovering(true)}>
                         <Radar />
-                        扫描本机
+                        {t('扫描本机')}
                       </Button>
                       <Button variant="secondary" onClick={() => setEditing('new')}>
-                        手动添加
+                        {t('手动添加')}
                       </Button>
                     </div>
                   }
@@ -437,7 +438,7 @@ export function McpPage() {
                         <button
                           onClick={() => setExpanded(open ? null : s.id)}
                           className="interactive -ml-1 rounded-sm p-1 text-subtle-foreground hover:text-foreground"
-                          aria-label="展开"
+                          aria-label={t('展开')}
                           disabled={!st?.tools.length}
                         >
                           <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
@@ -455,26 +456,26 @@ export function McpPage() {
                           <StatusDot status={info.dot} />
                           {info.label}
                         </span>
-                        <Switch checked={s.enabled} onCheckedChange={(v) => void toggle(s, v)} aria-label="启用" />
+                        <Switch checked={s.enabled} onCheckedChange={(v) => void toggle(s, v)} aria-label={t('启用')} />
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon-sm" aria-label="更多">
+                            <Button variant="ghost" size="icon-sm" aria-label={t('更多')}>
                               <MoreHorizontal />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onSelect={() => void call('mcp.reconnect', s.id)}>
                               <RotateCw />
-                              重新连接
+                              {t('重新连接')}
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => setEditing(s)}>
                               <Pencil />
-                              编辑
+                              {t('编辑')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem danger onSelect={async () => (await call('mcp.delete', s.id), servers.reload())}>
                               <Trash2 />
-                              删除
+                              {t('删除')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

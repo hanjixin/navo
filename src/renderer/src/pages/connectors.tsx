@@ -34,6 +34,7 @@ import { useAsync } from '@/hooks/use-async'
 import { Tooltip } from '@/components/ui/tooltip'
 import { call, on } from '@/lib/ipc'
 import { errorMessage, timeAgo } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 const ICONS: Record<string, LucideIcon> = {
   github: GitBranch,
@@ -58,12 +59,12 @@ function TokenDialog({ def, onClose, onDone }: { def: ConnectorDef; onClose: () 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={`连接 ${def.name}`}
+        title={t('连接 {{v0}}', { v0: def.name })}
         className="w-[460px]"
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -74,7 +75,7 @@ function TokenDialog({ def, onClose, onDone }: { def: ConnectorDef; onClose: () 
                 setError(null)
                 try {
                   await call('connectors.connect', def.id, token.trim())
-                  toast.success(`已连接 ${def.name}`)
+                  toast.success(t('已连接 {{v0}}', { v0: def.name }))
                   onDone()
                   onClose()
                 } catch (e) {
@@ -84,7 +85,7 @@ function TokenDialog({ def, onClose, onDone }: { def: ConnectorDef; onClose: () 
                 }
               }}
             >
-              连接
+              {t('连接')}
             </Button>
           </>
         }
@@ -95,7 +96,7 @@ function TokenDialog({ def, onClose, onDone }: { def: ConnectorDef; onClose: () 
           hint={
             def.tokenHelp ? (
               <Button variant="link" size="sm" className="text-xs" onClick={() => void call('app.openExternal', def.tokenHelp!)}>
-                获取 Token
+                {t('获取 Token')}
                 <ExternalLink className="size-3" />
               </Button>
             ) : undefined
@@ -117,12 +118,12 @@ function CustomDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="添加自定义连接器"
-        description="连接任何支持 MCP 的远程服务。OAuth 使用 MCP 授权规范（自动注册客户端）。"
+        title={t('添加自定义连接器')}
+        description={t('连接任何支持 MCP 的远程服务。OAuth 使用 MCP 授权规范（自动注册客户端）。')}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -135,35 +136,35 @@ function CustomDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                   onDone()
                   onClose()
                 } catch (e) {
-                  toast.error('添加失败', { description: errorMessage(e) })
+                  toast.error(t('添加失败'), { description: errorMessage(e) })
                 } finally {
                   setPending(false)
                 }
               }}
             >
-              添加
+              {t('添加')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4">
-          <Field label="名称">
+          <Field label={t('名称')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </Field>
-          <Field label="说明">
+          <Field label={t('说明')}>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
-          <Field label="MCP 地址">
+          <Field label={t('MCP 地址')}>
             <Input value={mcpUrl} onChange={(e) => setUrl(e.target.value)} className="font-mono text-xs" placeholder="https://example.com/mcp" />
           </Field>
-          <Field label="认证方式">
+          <Field label={t('认证方式')}>
             <Select
               value={auth}
               onChange={(v) => setAuth(v as ConnectorDef['auth'])}
               options={[
                 { value: 'oauth', label: 'OAuth' },
                 { value: 'token', label: 'Bearer Token' },
-                { value: 'none', label: '无需认证' },
+                { value: 'none', label: t('无需认证') },
               ]}
             />
           </Field>
@@ -196,9 +197,9 @@ function ConnectorCard({
     setTesting(true)
     try {
       await call('connectors.testNotify', def.id)
-      toast.success('测试消息已发送')
+      toast.success(t('测试消息已发送'))
     } catch (e) {
-      toast.error('发送失败', { description: errorMessage(e) })
+      toast.error(t('发送失败'), { description: errorMessage(e) })
     } finally {
       setTesting(false)
     }
@@ -208,12 +209,12 @@ function ConnectorCard({
     if (def.auth === 'fields') return onFields()
     if (def.auth === 'token') return onToken()
     setPending(true)
-    if (def.auth === 'oauth') toast('已在浏览器中打开授权页面', { description: '完成授权后会自动返回' })
+    if (def.auth === 'oauth') toast(t('已在浏览器中打开授权页面'), { description: t('完成授权后会自动返回') })
     try {
       await call('connectors.connect', def.id)
-      toast.success(`已连接 ${def.name}`)
+      toast.success(t('已连接 {{v0}}', { v0: def.name }))
     } catch (e) {
-      toast.error(`连接 ${def.name} 失败`, { description: errorMessage(e) })
+      toast.error(t('连接 {{v0}} 失败', { v0: def.name }), { description: errorMessage(e) })
     } finally {
       setPending(false)
       reload()
@@ -229,12 +230,12 @@ function ConnectorCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium">{def.name}</span>
-            {def.custom ? <Badge variant="outline">自定义</Badge> : null}
+            {def.custom ? <Badge variant="outline">{t('自定义')}</Badge> : null}
             {usedIn?.length && !state?.connected ? (
-              <Tooltip content={`已在 ${usedIn.join('、')} 中配置`}>
+              <Tooltip content={t('已在 {{v0}} 中配置', { v0: usedIn.join('、') })}>
                 <Badge variant="primary">
                   <Radar />
-                  本机已在用
+                  {t('本机已在用')}
                 </Badge>
               </Tooltip>
             ) : null}
@@ -242,7 +243,7 @@ function ConnectorCard({
           <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{def.description}</p>
         </div>
         {state?.connected ? (
-          <Switch checked={state.enabled} onCheckedChange={async (v) => (await call('connectors.setEnabled', def.id, v), reload())} aria-label="启用" />
+          <Switch checked={state.enabled} onCheckedChange={async (v) => (await call('connectors.setEnabled', def.id, v), reload())} aria-label={t('启用')} />
         ) : null}
       </div>
       {state?.error && !pending ? (
@@ -255,22 +256,22 @@ function ConnectorCard({
           <>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <StatusDot status={state.enabled ? 'success' : 'neutral'} />
-              {state.enabled ? '已连接' : '已暂停'}
+              {state.enabled ? t('已连接') : t('已暂停')}
               {state.connectedAt ? ` · ${timeAgo(state.connectedAt)}` : ''}
             </span>
             <span className="ml-auto flex gap-1">
               {def.canNotify ? (
                 <Button variant="ghost" size="sm" loading={testing} onClick={() => void test()}>
-                  测试
+                  {t('测试')}
                 </Button>
               ) : null}
               {def.auth === 'fields' ? (
                 <Button variant="ghost" size="sm" onClick={onFields}>
-                  修改
+                  {t('修改')}
                 </Button>
               ) : null}
               <Button variant="ghost" size="sm" onClick={async () => (await call('connectors.disconnect', def.id), reload())}>
-                断开
+                {t('断开')}
               </Button>
             </span>
           </>
@@ -278,17 +279,17 @@ function ConnectorCard({
           <>
             <span className="text-xs text-subtle-foreground">
               {def.auth === 'oauth'
-                ? 'OAuth 授权'
+                ? t('OAuth 授权')
                 : def.auth === 'token'
-                  ? '需要 Token'
+                  ? t('需要 Token')
                   : def.auth === 'fields'
                     ? def.kind === 'stdio'
-                      ? '官方 MCP · 填写应用凭证'
-                      : '填写配置'
-                    : '无需认证'}
+                      ? t('官方 MCP · 填写应用凭证')
+                      : t('填写配置')
+                    : t('无需认证')}
             </span>
             <Button variant="secondary" size="sm" className="ml-auto" loading={pending} onClick={connect}>
-              {pending && def.auth === 'oauth' ? '等待授权…' : '连接'}
+              {pending && def.auth === 'oauth' ? t('等待授权…') : t('连接')}
             </Button>
           </>
         )}
@@ -324,15 +325,15 @@ export function ConnectorsPage() {
     try {
       const def = await call('connectors.addCustom', {
         name: d.name,
-        description: `从 ${d.sourceLabel} 发现`,
+        description: t('从 {{v0}} 发现', { v0: d.sourceLabel }),
         mcpUrl: d.url!,
         auth: bearer ? 'token' : 'none',
         tokenLabel: 'Bearer Token',
       })
       await call('connectors.connect', def.id, bearer)
-      toast.success(`已添加并连接 ${d.name}`)
+      toast.success(t('已添加并连接 {{v0}}', { v0: d.name }))
     } catch (e) {
-      toast.error(`添加 ${d.name} 失败`, { description: errorMessage(e) })
+      toast.error(t('添加 {{v0}} 失败', { v0: d.name }), { description: errorMessage(e) })
     } finally {
       data.reload()
     }
@@ -357,12 +358,12 @@ export function ConnectorsPage() {
   return (
     <Page wide>
       <PageHeader
-        title="连接器"
-        description="把常用服务接入 Agent：远程 MCP、官方本地 MCP，以及群机器人、邮箱、日历。凭据加密保存在本机。"
+        title={t('连接器')}
+        description={t('把常用服务接入 Agent：远程 MCP、官方本地 MCP，以及群机器人、邮箱、日历。凭据加密保存在本机。')}
         actions={
           <Button variant="primary" onClick={() => setCustom(true)}>
             <Plus />
-            自定义连接器
+            {t('自定义连接器')}
           </Button>
         }
       />
@@ -386,7 +387,7 @@ export function ConnectorsPage() {
       ) : (
         <>
           {connected.length ? (
-            <Section title="已连接" description={`${connected.length} 个连接器的工具已提供给 Agent`}>
+            <Section title={t('已连接')} description={t('{{v0}} 个连接器的工具已提供给 Agent', { v0: connected.length })}>
               <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
                 {connected.map((d) => (
                   <ConnectorCard
@@ -403,7 +404,7 @@ export function ConnectorsPage() {
             </Section>
           ) : null}
           {unmatched.length ? (
-            <Section title="在本机发现" description="其他 Agent 工具（.agents、Claude Code、Cursor 等）中配置的远程 MCP 服务，可直接添加为连接器">
+            <Section title={t('在本机发现')} description={t('其他 Agent 工具（.agents、Claude Code、Cursor 等）中配置的远程 MCP 服务，可直接添加为连接器')}>
               <Card className="divide-y divide-border">
                 {unmatched.map((d) => (
                   <div key={d.key} className="flex items-center gap-3 px-4 py-3">
@@ -418,7 +419,7 @@ export function ConnectorsPage() {
                       <div className="truncate font-mono text-xs text-muted-foreground">{d.url}</div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={() => void addDiscovered(d)}>
-                      添加
+                      {t('添加')}
                     </Button>
                   </div>
                 ))}
@@ -426,11 +427,11 @@ export function ConnectorsPage() {
             </Section>
           ) : null}
           {office.length ? (
-            <Section title="国内办公" description="飞书、钉钉的官方 MCP，群机器人、邮箱和日历">
+            <Section title={t('国内办公')} description={t('飞书、钉钉的官方 MCP，群机器人、邮箱和日历')}>
               <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">{office.map(card)}</div>
             </Section>
           ) : null}
-          <Section title="可用连接器">
+          <Section title={t('可用连接器')}>
             <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">{others.map(card)}</div>
           </Section>
         </>

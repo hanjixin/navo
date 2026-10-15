@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { createWorker, type Worker } from 'tesseract.js'
 import { tidyCjkSpacing } from './text-utils'
 import type { ParseOptions } from './types'
+import { t } from '@shared/i18n'
 
 const LANGS = ['chi_sim', 'eng']
 
@@ -21,7 +22,7 @@ async function getWorker(opts: Pick<ParseOptions, 'ocrCacheDir' | 'ocrLangDir' |
     opts.onProgress?.(bundled ? '正在启动 OCR…' : '正在准备 OCR（首次使用需下载中文语言包）…')
     worker = createWorker(LANGS.join('+'), 1, { cachePath: opts.ocrCacheDir, ...(bundled ? { langPath: opts.ocrLangDir, gzip: true } : {}) }).catch((err) => {
       worker = null
-      throw new Error(`OCR 引擎初始化失败${bundled ? '' : '（需要联网下载语言包）'}：${(err as Error).message ?? err}`)
+      throw new Error(t('OCR 引擎初始化失败{{v0}}：{{v1}}', { v0: bundled ? '' : t('（需要联网下载语言包）'), v1: (err as Error).message ?? err }))
     })
   }
   return worker

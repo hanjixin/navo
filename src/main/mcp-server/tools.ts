@@ -9,6 +9,7 @@ import { models, providers, testModel } from '../models/registry'
 import { skillEvolution } from '../skills/evolution'
 import { skills } from '../skills/skill-service'
 import { skillVersions } from '../skills/versions'
+import { t } from '@shared/i18n'
 
 /**
  * Navo's management surface: conversations, models, skills, MCP servers and connectors.
@@ -40,7 +41,7 @@ const spawned = new Set<string>()
 export const isSpawnedConversation = (threadId: string) => spawned.has(threadId)
 
 function notSelf(ctx: NavoToolCtx, conversationId: unknown, what: string): void {
-  if (ctx.threadId && conversationId === ctx.threadId) throw new Error(`不能${what}当前所在的对话`)
+  if (ctx.threadId && conversationId === ctx.threadId) throw new Error(t('不能{{v0}}当前所在的对话', { v0: what }))
 }
 
 /**
@@ -55,7 +56,7 @@ async function backedByUser(ctx: NavoToolCtx, kind: string, evidence: string | u
 /** Memory by full id or the 8-character prefix shown in the system prompt. */
 function resolveMemory(id: string) {
   const m = memory.get(id) ?? (id.length >= 6 ? memory.list().find((x) => x.id.startsWith(id)) : undefined)
-  if (!m) throw new Error('记忆不存在')
+  if (!m) throw new Error(t('记忆不存在'))
   return m
 }
 
@@ -84,7 +85,13 @@ export const NAVO_TOOLS: ToolDef[] = [
       agent
         .listThreads()
         .slice(0, (limit as number) ?? 50)
-        .map((t) => ({ id: t.id, title: t.title, modelId: t.modelId, updatedAt: new Date(t.updatedAt).toISOString(), running: agent.isRunning(t.id) })),
+        .map((conv) => ({
+          id: conv.id,
+          title: conv.title,
+          modelId: conv.modelId,
+          updatedAt: new Date(conv.updatedAt).toISOString(),
+          running: agent.isRunning(conv.id),
+        })),
   },
   {
     name: 'navo_get_conversation',
@@ -92,12 +99,12 @@ export const NAVO_TOOLS: ToolDef[] = [
     access: 'read',
     input: { conversationId: z.string(), lastMessages: z.number().int().min(1).max(200).optional() },
     run: async ({ conversationId, lastMessages }) => {
-      const t = agent.getThread(conversationId as string)
-      if (!t) throw new Error('会话不存在')
-      const st = await agent.threadState(t.id)
+      const conv = agent.getThread(conversationId as string)
+      if (!conv) throw new Error(t('会话不存在'))
+      const st = await agent.threadState(conv.id)
       return {
-        id: t.id,
-        title: t.title,
+        id: conv.id,
+        title: conv.title,
         running: st.running,
         pendingApproval: st.interrupt ? st.interrupt.actionRequests.map((a) => a.name) : null,
         todos: st.todos,
@@ -118,11 +125,11 @@ export const NAVO_TOOLS: ToolDef[] = [
     },
     run: async ({ text, conversationId, modelId, waitSeconds }, ctx) => {
       notSelf(ctx, conversationId, '给')
-      if (ctx.threadId && isSpawnedConversation(ctx.threadId)) throw new Error('由 Agent 派生的对话不能再继续派发任务')
+      if (ctx.threadId && isSpawnedConversation(ctx.threadId)) throw new Error(t('由 Agent 派生的对话不能再继续派发任务'))
       const thread = conversationId ? agent.getThread(conversationId as string) : agent.createThread((modelId as string) ?? null)
-      if (!thread) throw new Error('会话不存在')
+      if (!thread) throw new Error(t('会话不存在'))
       if (modelId && conversationId) agent.setThreadModel(thread.id, modelId as string)
-      if (agent.isRunning(thread.id)) throw new Error('该会话正在运行中，请稍后再试或调用 navo_stop')
+      if (agent.isRunning(thread.id)) throw new Error(t('该会话正在运行中，请稍后再试或调用 navo_stop'))
       if (ctx.threadId) spawned.add(thread.id)
       const run = agent.send_(thread.id, text as string)
       const wait = ((waitSeconds as number) ?? 300) * 1000
@@ -203,7 +210,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     access: 'write',
     input: { modelId: z.string() },
     run: ({ modelId }) => {
-      if (!models.get(modelId as string)) throw new Error('模型不存在')
+      if (!models.get(modelId as string)) throw new Error(t('模型不存在'))
       models.setDefault(modelId as string)
       return { ok: true }
     },
@@ -232,7 +239,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     input: { name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), content: z.string().min(1), reason: z.string().optional().describe('why, one sentence') },
     run: async ({ name, content, reason }, ctx) => {
       // inside a conversation, only the user's own request saves directly
-      const asked = !ctx.threadId || (await agent.recentUserTexts(ctx.threadId)).some((t) => /skill|技能/i.test(t))
+      const asked = !ctx.threadId || (await agent.recentUserTexts(ctx.threadId)).some((conv) => /skill|技能/i.test(conv))
       if (asked) {
         skills.save(name as string, content as string, {
           source: ctx.threadId ? 'user' : 'import',
@@ -331,7 +338,7 @@ export const NAVO_TOOLS: ToolDef[] = [
         headerKeys: Object.keys(s.headers ?? {}),
         state: status.get(s.id)?.state ?? 'disconnected',
         error: status.get(s.id)?.error,
-        tools: status.get(s.id)?.tools.map((t) => t.name) ?? [],
+        tools: status.get(s.id)?.tools.map((conv) => conv.name) ?? [],
       }))
     },
   },
@@ -369,7 +376,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     input: { serverId: z.string(), enabled: z.boolean() },
     run: async ({ serverId, enabled }) => {
       const s = mcp.get(serverId as string)
-      if (!s) throw new Error('MCP 服务器不存在')
+      if (!s) throw new Error(t('MCP 服务器不存在'))
       await mcp.save({ ...s, enabled: enabled as boolean })
       return { ok: true }
     },
@@ -467,13 +474,13 @@ export const NAVO_TOOLS: ToolDef[] = [
       site: z.string().optional().describe('domain for kind=site, e.g. taobao.com'),
     },
     run: async ({ kind, title, content, evidence, site }, ctx) => {
-      const t = ctx.threadId ? agent.getThread(ctx.threadId) : null
+      const conv = ctx.threadId ? agent.getThread(ctx.threadId) : null
       const ok = await backedByUser(ctx, kind as string, evidence as string | undefined)
       const r = memory.save(
         { kind: kind as never, title: title as string, content: content as string, scope: (site as string) ?? null },
-        { source: t ? { threadId: t.id, title: t.title } : null, status: ok ? 'active' : 'pending', keepExisting: !ok },
+        { source: conv ? { threadId: conv.id, title: conv.title } : null, status: ok ? 'active' : 'pending', keepExisting: !ok },
       )
-      if (!ok && t && r.op !== 'none') memory.announcePending(t.id, r.memory)
+      if (!ok && conv && r.op !== 'none') memory.announcePending(conv.id, r.memory)
       if (kind === 'site') skillEvolution.syncSiteSkills(memory.list())
       if (r.op === 'none') return { ok: true, id: r.memory.id, action: 'already remembered; unchanged' }
       if (!ok) return { ok: true, id: r.memory.id, action: "held for the user's confirmation: the evidence was not found in the user's own messages" }
@@ -492,7 +499,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     },
     run: ({ date, days, query }) => {
       const d = date === 'today' ? localDay() : date === 'yesterday' ? localDay(-1) : (date as string | undefined)
-      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error('date 需为 YYYY-MM-DD、today 或 yesterday')
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error(t('date 需为 YYYY-MM-DD、today 或 yesterday'))
       const list = memory.days(d ? { from: d, to: d } : { from: localDay(-((days as number) ?? 7) + 1) })
       const q = (query as string | undefined)?.trim().toLowerCase()
       const hits = q ? list.filter((e) => `${e.threadTitle} ${e.text}`.toLowerCase().includes(q)) : list
@@ -513,7 +520,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     run: async ({ id, title, content, evidence }, ctx) => {
       const m = resolveMemory(id as string)
       if (!(await backedByUser(ctx, m.kind, evidence as string | undefined)))
-        throw new Error('修改关于用户的记忆需要用户本人的要求：evidence 中请原样引用用户的话')
+        throw new Error(t('修改关于用户的记忆需要用户本人的要求：evidence 中请原样引用用户的话'))
       memory.save({ id: m.id, kind: m.kind, title: (title as string) || m.title, content: (content as string) || m.content, scope: m.scope })
       return { ok: true }
     },
@@ -526,7 +533,7 @@ export const NAVO_TOOLS: ToolDef[] = [
     run: async ({ id, evidence }, ctx) => {
       const m = resolveMemory(id as string)
       if (!(await backedByUser(ctx, m.kind, evidence as string | undefined)))
-        throw new Error('删除关于用户的记忆需要用户本人的要求：evidence 中请原样引用用户的话')
+        throw new Error(t('删除关于用户的记忆需要用户本人的要求：evidence 中请原样引用用户的话'))
       memory.delete(m.id)
       return { ok: true, forgot: m.title }
     },

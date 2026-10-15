@@ -6,6 +6,7 @@ import { secrets } from './secrets'
 
 const DEFAULTS: Settings = {
   theme: 'system',
+  language: 'system',
   devMode: false,
   systemPrompt: '',
   langsmithProject: 'navo',
@@ -27,6 +28,12 @@ const DEFAULTS: Settings = {
     includeScreenshots: false,
     projectId: null,
   },
+}
+
+let languageHook: (() => void) | null = null
+/** set by core/language (avoids an import cycle): runs when the language setting changes */
+export function onLanguageChange(fn: () => void): void {
+  languageHook = fn
 }
 
 export function getSettings(): Settings {
@@ -68,6 +75,7 @@ export function setSettings(patch: Partial<Settings> & { langsmithApiKey?: strin
     langfuse.projectId = null
   kv.set('settings', { ...current, ...rest, langfuse })
   if (rest.theme) nativeTheme.themeSource = rest.theme
+  if (rest.language) languageHook?.()
   applyTracingEnv()
   const next = getSettings()
   emit('settings.changed', next)

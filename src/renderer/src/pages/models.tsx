@@ -18,12 +18,13 @@ import { call } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 import { useModels } from '@/stores/models'
 import { guessVision, PRESETS, presetFor, type Preset } from '@/lib/providers'
+import { t } from '@shared/i18n'
 
 const TYPES: { value: ProviderType; label: string; hint: string; baseURL: string }[] = [
-  { value: 'anthropic', label: 'Anthropic', hint: 'Claude 系列，Messages API', baseURL: 'https://api.anthropic.com' },
+  { value: 'anthropic', label: 'Anthropic', hint: t('Claude 系列，Messages API'), baseURL: 'https://api.anthropic.com' },
   { value: 'openai', label: 'OpenAI · Chat Completions', hint: '/v1/chat/completions', baseURL: 'https://api.openai.com/v1' },
-  { value: 'openai-responses', label: 'OpenAI · Responses', hint: '/v1/responses，支持推理与内置工具', baseURL: 'https://api.openai.com/v1' },
-  { value: 'openai-compatible', label: 'OpenAI 兼容接口', hint: 'DeepSeek、通义千问、Ollama、vLLM 等', baseURL: 'http://localhost:11434/v1' },
+  { value: 'openai-responses', label: 'OpenAI · Responses', hint: t('/v1/responses，支持推理与内置工具'), baseURL: 'https://api.openai.com/v1' },
+  { value: 'openai-compatible', label: t('OpenAI 兼容接口'), hint: t('DeepSeek、通义千问、Ollama、vLLM 等'), baseURL: 'http://localhost:11434/v1' },
 ]
 const typeLabel = (t: ProviderType) => TYPES.find((x) => x.value === t)?.label ?? t
 
@@ -53,11 +54,11 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
       try {
         parsedHeaders = JSON.parse(headers)
       } catch {
-        errs.headers = '必须是 JSON 对象'
+        errs.headers = t('必须是 JSON 对象')
       }
     }
-    if (type === 'openai-compatible' && !baseURL.trim()) errs.baseURL = '兼容接口需要填写 Base URL'
-    if (!editing && !apiKey && type !== 'openai-compatible') errs.apiKey = '请填写 API Key'
+    if (type === 'openai-compatible' && !baseURL.trim()) errs.baseURL = t('兼容接口需要填写 Base URL')
+    if (!editing && !apiKey && type !== 'openai-compatible') errs.apiKey = t('请填写 API Key')
     setErrors(errs)
     if (Object.keys(errs).length) return
     setSaving(true)
@@ -71,11 +72,11 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
         apiKey: apiKey ? apiKey : editing ? undefined : '',
       }
       const saved = await call('providers.save', input)
-      toast.success(editing ? '已保存提供方' : '已添加提供方')
+      toast.success(editing ? t('已保存提供方') : t('已添加提供方'))
       onClose()
       onSaved(saved, !editing)
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -84,15 +85,15 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={editing ? '编辑提供方' : '添加提供方'}
-        description="API Key 使用系统钥匙串加密保存在本机。"
+        title={editing ? t('编辑提供方') : t('添加提供方')}
+        description={t('API Key 使用系统钥匙串加密保存在本机。')}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" loading={saving} onClick={save}>
-              保存
+              {t('保存')}
             </Button>
           </>
         }
@@ -100,7 +101,7 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
         <div className="grid gap-4">
           {!editing ? (
             <div>
-              <div className="mb-1.5 text-sm font-medium">快速选择</div>
+              <div className="mb-1.5 text-sm font-medium">{t('快速选择')}</div>
               <div className="flex flex-wrap gap-1.5">
                 {PRESETS.map((x) => (
                   <button
@@ -119,15 +120,15 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
               </div>
             </div>
           ) : null}
-          <Field label="接口类型" hint={meta.hint}>
+          <Field label={t('接口类型')} hint={meta.hint}>
             <Select value={type} onChange={(v) => setType(v as ProviderType)} options={TYPES.map((t) => ({ value: t.value, label: t.label }))} />
           </Field>
-          <Field label="名称">
+          <Field label={t('名称')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={meta.label} />
           </Field>
           <Field
             label="Base URL"
-            hint={type === 'openai-compatible' ? '兼容接口必填，例如 https://api.deepseek.com/v1' : `留空使用默认值 ${meta.baseURL}`}
+            hint={type === 'openai-compatible' ? t('兼容接口必填，例如 https://api.deepseek.com/v1') : t('留空使用默认值 {{v0}}', { v0: meta.baseURL })}
             error={errors.baseURL}
           >
             <Input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder={meta.baseURL} className="font-mono text-xs" />
@@ -136,14 +137,14 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
             label="API Key"
             hint={
               editing?.hasKey ? (
-                '已保存，留空表示不修改'
+                t('已保存，留空表示不修改')
               ) : preset?.keyUrl ? (
                 <Button variant="link" size="sm" className="text-xs" onClick={() => void call('app.openExternal', preset.keyUrl!)}>
-                  获取 {preset.name} API Key
+                  {t('获取 {{v0}} API Key', { v0: preset.name })}
                   <ExternalLink className="size-3" />
                 </Button>
               ) : preset?.id === 'ollama' ? (
-                '本地 Ollama 无需密钥'
+                t('本地 Ollama 无需密钥')
               ) : undefined
             }
             error={errors.apiKey}
@@ -156,7 +157,7 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
               className="font-mono text-xs"
             />
           </Field>
-          <Field label="自定义请求头（可选）" hint='JSON，例如 {"X-Org": "team"}' error={errors.headers}>
+          <Field label={t('自定义请求头（可选）')} hint={t('JSON，例如 {"X-Org": "team"}')} error={errors.headers}>
             <Textarea value={headers} onChange={(e) => setHeaders(e.target.value)} rows={3} className="font-mono text-xs" />
           </Field>
         </div>
@@ -210,7 +211,7 @@ function ModelDialog({
       if (!form.model && list.length) set('model', suggestions.find((x) => list.includes(x)) ?? list[0])
     } catch (e) {
       setFetchError(errorMessage(e).split('\n')[0])
-      if (!quiet) toast.error('获取模型列表失败', { description: errorMessage(e).split('\n')[0] })
+      if (!quiet) toast.error(t('获取模型列表失败'), { description: errorMessage(e).split('\n')[0] })
       if (!form.model && suggestions[0]) set('model', suggestions[0])
     } finally {
       setFetching(false)
@@ -223,15 +224,15 @@ function ModelDialog({
   }, [])
 
   const save = async () => {
-    if (!form.model.trim()) return setError('请填写模型 ID')
+    if (!form.model.trim()) return setError(t('请填写模型 ID'))
     setSaving(true)
     try {
       await call('models.save', { ...form, model: form.model.trim(), displayName: form.displayName.trim() || form.model.trim() })
-      toast.success('已保存模型')
+      toast.success(t('已保存模型'))
       onSaved()
       onClose()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -242,26 +243,26 @@ function ModelDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={model ? '编辑模型' : `添加模型 · ${provider.name}`}
+        title={model ? t('编辑模型') : t('添加模型 · {{v0}}', { v0: provider.name })}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" loading={saving} onClick={save}>
-              保存
+              {t('保存')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4">
           <Field
-            label="模型 ID"
+            label={t('模型 ID')}
             error={error ?? undefined}
             hint={
               <Button variant="link" size="sm" className="text-xs" loading={fetching} onClick={() => void fetchRemote()}>
                 <Download className="size-3" />
-                从接口拉取可用模型
+                {t('从接口拉取可用模型')}
               </Button>
             }
           >
@@ -281,10 +282,10 @@ function ModelDialog({
               ))}
             </datalist>
           </Field>
-          {remote ? <p className="-mt-2 text-xs text-muted-foreground">已获取 {remote.length} 个模型，输入时可下拉选择。</p> : null}
+          {remote ? <p className="-mt-2 text-xs text-muted-foreground">{t('已获取 {{v0}} 个模型，输入时可下拉选择。', { v0: remote.length })}</p> : null}
           {fetchError && suggestions.length ? (
             <div className="-mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              未能自动获取，常用模型：
+              {t('未能自动获取，常用模型：')}
               {suggestions.map((m) => (
                 <button
                   key={m}
@@ -296,27 +297,27 @@ function ModelDialog({
               ))}
             </div>
           ) : null}
-          <Field label="显示名称">
-            <Input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} placeholder={form.model || '例如 Claude Sonnet'} />
+          <Field label={t('显示名称')}>
+            <Input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} placeholder={form.model || t('例如 Claude Sonnet')} />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Temperature" hint="留空使用默认">
+            <Field label="Temperature" hint={t('留空使用默认')}>
               <Input type="number" step="0.1" min={0} max={2} value={form.temperature ?? ''} onChange={(e) => set('temperature', num(e.target.value))} />
             </Field>
-            <Field label="最大输出 Token" hint="留空使用默认">
+            <Field label={t('最大输出 Token')} hint={t('留空使用默认')}>
               <Input type="number" min={1} value={form.maxTokens ?? ''} onChange={(e) => set('maxTokens', num(e.target.value))} />
             </Field>
           </div>
           {provider.type === 'openai-responses' || provider.type === 'openai' ? (
-            <Field label="推理强度" hint="仅推理模型生效">
+            <Field label={t('推理强度')} hint={t('仅推理模型生效')}>
               <Select
                 value={form.reasoningEffort ?? 'none'}
                 onChange={(v) => set('reasoningEffort', v === 'none' ? null : (v as 'low' | 'medium' | 'high'))}
                 options={[
-                  { value: 'none', label: '默认' },
-                  { value: 'low', label: '低' },
-                  { value: 'medium', label: '中' },
-                  { value: 'high', label: '高' },
+                  { value: 'none', label: t('默认') },
+                  { value: 'low', label: t('低') },
+                  { value: 'medium', label: t('中') },
+                  { value: 'high', label: t('高') },
                 ]}
               />
             </Field>
@@ -324,15 +325,15 @@ function ModelDialog({
           <div className="grid gap-3 rounded-md border border-border p-3">
             <label className="flex items-center justify-between gap-4 text-sm">
               <span>
-                支持工具调用
-                <span className="block text-xs text-muted-foreground">Agent 需要工具调用能力才能操作浏览器</span>
+                {t('支持工具调用')}
+                <span className="block text-xs text-muted-foreground">{t('Agent 需要工具调用能力才能操作浏览器')}</span>
               </span>
               <Switch checked={form.supportsTools} onCheckedChange={(v) => set('supportsTools', v)} />
             </label>
             <label className="flex items-center justify-between gap-4 text-sm">
               <span>
-                支持图像输入
-                <span className="block text-xs text-muted-foreground">开启后截图、图片附件和扫描件页面会直接发给模型看图；关闭则只发送 OCR 文字</span>
+                {t('支持图像输入')}
+                <span className="block text-xs text-muted-foreground">{t('开启后截图、图片附件和扫描件页面会直接发给模型看图；关闭则只发送 OCR 文字')}</span>
               </span>
               <Switch
                 checked={form.supportsVision}
@@ -360,8 +361,8 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
     try {
       const r = await call('models.test', m.id)
       setResult(r)
-      if (r.ok) toast.success(`${m.displayName} 连接正常`, { description: `${r.latencyMs} ms` })
-      else toast.error(`${m.displayName} 连接失败`, { description: r.error })
+      if (r.ok) toast.success(t('{{v0}} 连接正常', { v0: m.displayName }), { description: `${r.latencyMs} ms` })
+      else toast.error(t('{{v0}} 连接失败', { v0: m.displayName }), { description: r.error })
     } finally {
       setTesting(false)
     }
@@ -375,14 +376,14 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           {m.isDefault ? (
             <Badge variant="primary">
               <Star className="fill-current" />
-              默认
+              {t('默认')}
             </Badge>
           ) : null}
-          {m.supportsVision ? <Badge variant="outline">视觉</Badge> : null}
-          {!m.supportsTools ? <Badge variant="warning">无工具调用</Badge> : null}
-          {m.reasoningEffort ? <Badge variant="outline">推理 · {m.reasoningEffort}</Badge> : null}
+          {m.supportsVision ? <Badge variant="outline">{t('视觉')}</Badge> : null}
+          {!m.supportsTools ? <Badge variant="warning">{t('无工具调用')}</Badge> : null}
+          {m.reasoningEffort ? <Badge variant="outline">{t('推理 · {{v0}}', { v0: m.reasoningEffort })}</Badge> : null}
           {m.pricing ? (
-            <Badge variant="outline" title="每百万 token：输入 / 输出">
+            <Badge variant="outline" title={t('每百万 token：输入 / 输出')}>
               {CURRENCY_SYMBOL[m.pricing.currency]}
               {m.pricing.input} / {CURRENCY_SYMBOL[m.pricing.currency]}
               {m.pricing.output}
@@ -405,11 +406,11 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
       ) : null}
       <Button variant="ghost" size="sm" loading={testing} onClick={test}>
         {!testing ? <Zap /> : null}
-        测试
+        {t('测试')}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label="更多">
+          <Button variant="ghost" size="icon-sm" aria-label={t('更多')}>
             <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
@@ -417,21 +418,21 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           {!m.isDefault ? (
             <DropdownMenuItem onSelect={async () => (await call('models.setDefault', m.id), reload())}>
               <Star />
-              设为默认
+              {t('设为默认')}
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onSelect={onEdit}>
             <Pencil />
-            编辑
+            {t('编辑')}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setPricing(true)}>
             <Coins />
-            设置价格
+            {t('设置价格')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem danger onSelect={async () => (await call('models.delete', m.id), reload())}>
             <Trash2 />
-            删除
+            {t('删除')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -452,23 +453,23 @@ export function ModelsPage() {
   const removeProvider = async (p: Provider) => {
     try {
       await call('providers.delete', p.id)
-      toast.success(`已删除 ${p.name}`)
+      toast.success(t('已删除 {{v0}}', { v0: p.name }))
       void load()
     } catch (e) {
-      toast.error('删除失败', { description: errorMessage(e) })
+      toast.error(t('删除失败'), { description: errorMessage(e) })
     }
   }
 
   return (
     <Page>
       <PageHeader
-        title="模型"
-        description="管理模型提供方与可用模型。对话中可随时切换，新对话使用默认模型。"
+        title={t('模型')}
+        description={t('管理模型提供方与可用模型。对话中可随时切换，新对话使用默认模型。')}
         actions={
           providers?.length ? (
             <Button variant="primary" onClick={() => setProviderDialog('new')}>
               <Plus />
-              添加提供方
+              {t('添加提供方')}
             </Button>
           ) : null
         }
@@ -481,12 +482,12 @@ export function ModelsPage() {
         <Card>
           <EmptyState
             icon={Cpu}
-            title="添加第一个模型提供方"
-            description="支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 以及任何兼容 OpenAI 的接口。"
+            title={t('添加第一个模型提供方')}
+            description={t('支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 以及任何兼容 OpenAI 的接口。')}
             action={
               <Button variant="primary" onClick={() => setProviderDialog('new')}>
                 <Plus />
-                添加提供方
+                {t('添加提供方')}
               </Button>
             }
           />
@@ -505,33 +506,33 @@ export function ModelsPage() {
                       {p.hasKey ? (
                         <Badge variant="success">
                           <KeyRound />
-                          已配置密钥
+                          {t('已配置密钥')}
                         </Badge>
                       ) : p.type !== 'openai-compatible' ? (
-                        <Badge variant="warning">缺少密钥</Badge>
+                        <Badge variant="warning">{t('缺少密钥')}</Badge>
                       ) : null}
                     </div>
                     <div className="truncate font-mono text-xs text-muted-foreground">{p.baseURL || TYPES.find((t) => t.value === p.type)?.baseURL}</div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => setModelDialog({ provider: p, model: null })}>
                     <Plus />
-                    添加模型
+                    {t('添加模型')}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-sm" aria-label="更多">
+                      <Button variant="ghost" size="icon-sm" aria-label={t('更多')}>
                         <MoreHorizontal />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => setProviderDialog(p)}>
                         <Pencil />
-                        编辑提供方
+                        {t('编辑提供方')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem danger onSelect={() => void removeProvider(p)}>
                         <Trash2 />
-                        删除提供方
+                        {t('删除提供方')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -544,9 +545,9 @@ export function ModelsPage() {
                   </div>
                 ) : (
                   <p className="px-4 py-5 text-sm text-muted-foreground">
-                    该提供方还没有模型。
+                    {t('该提供方还没有模型。')}
                     <Button variant="link" size="sm" onClick={() => setModelDialog({ provider: p, model: null })}>
-                      添加模型
+                      {t('添加模型')}
                     </Button>
                   </p>
                 )}

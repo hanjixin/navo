@@ -14,14 +14,15 @@ import { useAsync } from '@/hooks/use-async'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 const APPROVAL_OPTIONS = [
-  { name: 'browser_eval', label: '执行页面脚本' },
-  { name: 'browser_upload_file', label: '上传文件' },
-  { name: 'browser_click', label: '点击网页元素' },
-  { name: 'browser_type', label: '在网页中输入' },
-  { name: 'write_file', label: '写入文件' },
-  { name: 'edit_file', label: '编辑文件' },
+  { name: 'browser_eval', label: t('执行页面脚本') },
+  { name: 'browser_upload_file', label: t('上传文件') },
+  { name: 'browser_click', label: t('点击网页元素') },
+  { name: 'browser_type', label: t('在网页中输入') },
+  { name: 'write_file', label: t('写入文件') },
+  { name: 'edit_file', label: t('编辑文件') },
 ]
 
 function Row({ title, description, children, className }: { title: string; description?: ReactNode; children: ReactNode; className?: string }) {
@@ -48,28 +49,32 @@ function QuickSection({ settings, patch }: { settings: Settings; patch: (p: Part
   const failed = (acc: string) => cfg.enabled && status.failed.includes(acc)
   return (
     <>
-      <h2 className="mb-2 text-sm font-semibold">快问</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('快问')}</h2>
       <Card className="mb-8 divide-y divide-border">
-        <Row title="全局快捷键" description="在任何应用里按快捷键，弹出小窗直接问 Navo；刚复制过内容时可以一键带上">
+        <Row title={t('全局快捷键')} description={t('在任何应用里按快捷键，弹出小窗直接问 Navo；刚复制过内容时可以一键带上')}>
           <Switch checked={cfg.enabled} onCheckedChange={(v) => set({ enabled: v })} />
         </Row>
         <Row
-          title="打开快问"
-          description={failed(cfg.shortcut) ? <span className="text-danger">这个快捷键被其他应用占用了，换一个试试</span> : '点击后按下新的组合键'}
+          title={t('打开快问')}
+          description={failed(cfg.shortcut) ? <span className="text-danger">{t('这个快捷键被其他应用占用了，换一个试试')}</span> : t('点击后按下新的组合键')}
           className={cn(!cfg.enabled && 'opacity-60')}
         >
           <ShortcutInput value={cfg.shortcut} onChange={(v) => set({ shortcut: v })} invalid={failed(cfg.shortcut)} />
         </Row>
         <Row
-          title="截图提问"
+          title={t('截图提问')}
           description={
-            failed(cfg.screenshotShortcut) ? <span className="text-danger">这个快捷键被其他应用占用了，换一个试试</span> : '框选屏幕上的一块区域，带着截图提问'
+            failed(cfg.screenshotShortcut) ? (
+              <span className="text-danger">{t('这个快捷键被其他应用占用了，换一个试试')}</span>
+            ) : (
+              t('框选屏幕上的一块区域，带着截图提问')
+            )
           }
           className={cn(!cfg.enabled && 'opacity-60')}
         >
           <ShortcutInput value={cfg.screenshotShortcut} onChange={(v) => set({ screenshotShortcut: v })} invalid={failed(cfg.screenshotShortcut)} />
         </Row>
-        <Row title="关闭窗口后留在菜单栏" description="关掉主窗口后 Navo 继续在后台运行：快捷键可用、任务照常执行，菜单栏图标显示正在运行的任务">
+        <Row title={t('关闭窗口后留在菜单栏')} description={t('关掉主窗口后 Navo 继续在后台运行：快捷键可用、任务照常执行，菜单栏图标显示正在运行的任务')}>
           <Switch checked={cfg.keepInTray} onCheckedChange={(v) => set({ keepInTray: v })} />
         </Row>
       </Card>
@@ -97,14 +102,14 @@ function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: Part
   const set = (p: Partial<typeof cfg>) => void patch({ voice: { ...cfg, ...p } })
   return (
     <>
-      <h2 className="mb-2 text-sm font-semibold">语音输入</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('语音输入')}</h2>
       <Card className="mb-8 divide-y divide-border" data-testid="voice-settings">
         <Row
-          title="识别方式"
+          title={t('识别方式')}
           description={
             status.data ? (
               status.data.ready ? (
-                <span>当前：{status.data.label}。输入框里按住麦克风说话，或按 ⌘⇧M</span>
+                <span>{t('当前：{{v0}}。输入框里按住麦克风说话，或按 ⌘⇧M', { v0: status.data.label })}</span>
               ) : (
                 <span className="text-warning">{status.data.reason}</span>
               )
@@ -116,29 +121,29 @@ function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: Part
               value={cfg.engine}
               onChange={(v) => set({ engine: v as typeof cfg.engine })}
               options={[
-                { value: 'provider', label: '服务商识别（OpenAI 兼容）' },
-                { value: 'local', label: '本机识别（faster-whisper）' },
+                { value: 'provider', label: t('服务商识别（OpenAI 兼容）') },
+                { value: 'local', label: t('本机识别（faster-whisper）') },
               ]}
             />
           </div>
         </Row>
         {cfg.engine === 'provider' ? (
           <>
-            <Row title="服务商" description="使用它的 /audio/transcriptions 接口，如 OpenAI、硅基流动（SenseVoice）、Groq">
+            <Row title={t('服务商')} description={t('使用它的 /audio/transcriptions 接口，如 OpenAI、硅基流动（SenseVoice）、Groq')}>
               <div className="w-56">
                 <Select
                   value={provider?.id}
-                  placeholder={usable.length ? '选择服务商' : '先在「模型」页添加 OpenAI 兼容的服务商'}
+                  placeholder={usable.length ? t('选择服务商') : t('先在「模型」页添加 OpenAI 兼容的服务商')}
                   onChange={(v) => set({ providerId: v })}
                   options={usable.map((p) => ({ value: p.id, label: p.name }))}
                 />
               </div>
             </Row>
             <Row
-              title="识别模型"
+              title={t('识别模型')}
               description={
                 <span className="flex flex-wrap items-center gap-1">
-                  常用：
+                  {t('常用：')}
                   {suggestedModels(provider?.baseURL).map((m) => (
                     <button key={m} className="interactive rounded px-1 font-mono text-brand hover:bg-info-soft" onClick={() => set({ model: m })}>
                       {m}
@@ -152,41 +157,41 @@ function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: Part
                 onChange={(e) => setModel(e.target.value)}
                 onBlur={() => model.trim() !== cfg.model && set({ model: model.trim() })}
                 className="w-56 font-mono text-xs"
-                aria-label="识别模型"
+                aria-label={t('识别模型')}
               />
             </Row>
           </>
         ) : (
-          <Row title="模型大小" description="在本机运行，录音不离开这台电脑。第一次使用会通过 uv 下载识别引擎和模型（small 约 500 MB），需要几分钟">
+          <Row title={t('模型大小')} description={t('在本机运行，录音不离开这台电脑。第一次使用会通过 uv 下载识别引擎和模型（small 约 500 MB），需要几分钟')}>
             <div className="w-56">
               <Select
                 value={cfg.localModel}
                 onChange={(v) => set({ localModel: v as typeof cfg.localModel })}
                 options={[
-                  { value: 'tiny', label: 'tiny · 最快，准确率较低' },
-                  { value: 'base', label: 'base · 快' },
-                  { value: 'small', label: 'small · 推荐' },
-                  { value: 'medium', label: 'medium · 更准，较慢' },
+                  { value: 'tiny', label: t('tiny · 最快，准确率较低') },
+                  { value: 'base', label: t('base · 快') },
+                  { value: 'small', label: t('small · 推荐') },
+                  { value: 'medium', label: t('medium · 更准，较慢') },
                 ]}
               />
             </div>
           </Row>
         )}
-        <Row title="语言" description="自动识别适合中英混说；固定语言更准">
+        <Row title={t('语言')} description={t('自动识别适合中英混说；固定语言更准')}>
           <div className="w-56">
             <Select
               value={cfg.language}
               onChange={(v) => set({ language: v as typeof cfg.language })}
               options={[
-                { value: 'auto', label: '自动' },
-                { value: 'zh', label: '中文' },
+                { value: 'auto', label: t('自动') },
+                { value: 'zh', label: t('中文') },
                 { value: 'en', label: 'English' },
               ]}
             />
           </div>
         </Row>
-        <Row title="识别后直接发送" description="关闭时文字先填进输入框，确认后再发送">
-          <Switch checked={cfg.autoSend} onCheckedChange={(v) => set({ autoSend: v })} aria-label="识别后直接发送" />
+        <Row title={t('识别后直接发送')} description={t('关闭时文字先填进输入框，确认后再发送')}>
+          <Switch checked={cfg.autoSend} onCheckedChange={(v) => set({ autoSend: v })} aria-label={t('识别后直接发送')} />
         </Row>
       </Card>
     </>
@@ -196,7 +201,7 @@ function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: Part
 const LANGFUSE_HOSTS = [
   { value: 'https://cloud.langfuse.com', label: 'Langfuse Cloud · EU' },
   { value: 'https://us.cloud.langfuse.com', label: 'Langfuse Cloud · US' },
-  { value: 'custom', label: '自建 / 其他地址' },
+  { value: 'custom', label: t('自建 / 其他地址') },
 ]
 
 /** Langfuse tracing: every agent run becomes a trace (session = conversation). */
@@ -227,7 +232,7 @@ function LangfuseSection() {
     try {
       if (dirty) await save()
       const r = await call('langfuse.test')
-      setResult(r.ok ? { ok: true, text: `连接成功 · 项目「${r.projectName ?? r.projectId}」` } : { ok: false, text: r.error ?? '连接失败' })
+      setResult(r.ok ? { ok: true, text: t('连接成功 · 项目「{{v0}}」', { v0: r.projectName ?? r.projectId }) } : { ok: false, text: r.error ?? t('连接失败') })
       await useSettings.getState().load()
     } finally {
       setTesting(false)
@@ -236,20 +241,20 @@ function LangfuseSection() {
 
   return (
     <>
-      <h2 className="mb-2 text-sm font-semibold">可观测性</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('可观测性')}</h2>
       <Card className="mb-8 divide-y divide-border">
-        <Row title="Langfuse 追踪" description="记录每次 Agent 运行的模型调用、工具调用、耗时与 Token 用量，按对话归为同一个 Session">
+        <Row title={t('Langfuse 追踪')} description={t('记录每次 Agent 运行的模型调用、工具调用、耗时与 Token 用量，按对话归为同一个 Session')}>
           <Switch
             checked={lf.enabled}
             disabled={!complete && !lf.enabled}
             onCheckedChange={(v) => void update({ langfuse: { ...lf, enabled: v } })}
-            aria-label="启用 Langfuse"
+            aria-label={t('启用 Langfuse')}
           />
         </Row>
         <div className="grid gap-3 px-5 py-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <span className="text-xs text-muted-foreground">服务地址</span>
+              <span className="text-xs text-muted-foreground">{t('服务地址')}</span>
               <Select
                 value={host}
                 onChange={(v) => {
@@ -260,7 +265,7 @@ function LangfuseSection() {
               />
             </div>
             <div className="grid gap-1.5">
-              <span className="text-xs text-muted-foreground">环境</span>
+              <span className="text-xs text-muted-foreground">{t('环境')}</span>
               <Input value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="production" />
             </div>
           </div>
@@ -273,24 +278,24 @@ function LangfuseSection() {
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder={lf.secretKeySet ? '已保存 Secret Key' : 'Secret Key（sk-lf-…）'}
+              placeholder={lf.secretKeySet ? t('已保存 Secret Key') : 'Secret Key（sk-lf-…）'}
               className="font-mono text-xs"
             />
           </div>
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>
-              上传页面截图
-              <span className="block text-xs text-muted-foreground">关闭时截图会以占位文字代替，避免上传隐私页面</span>
+              {t('上传页面截图')}
+              <span className="block text-xs text-muted-foreground">{t('关闭时截图会以占位文字代替，避免上传隐私页面')}</span>
             </span>
             <Switch checked={lf.includeScreenshots} onCheckedChange={(v) => void update({ langfuse: { ...lf, includeScreenshots: v } })} />
           </label>
           <div className="flex items-center justify-end gap-2">
             {result ? <span className={cn('mr-auto text-xs', result.ok ? 'text-success' : 'text-danger')}>{result.text}</span> : null}
             <Button variant="secondary" size="sm" loading={testing} disabled={!publicKey || (!lf.secretKeySet && !secret)} onClick={test}>
-              测试连接
+              {t('测试连接')}
             </Button>
-            <Button variant="primary" size="sm" disabled={!dirty} onClick={() => void save().then(() => toast.success('已保存 Langfuse 配置'))}>
-              保存
+            <Button variant="primary" size="sm" disabled={!dirty} onClick={() => void save().then(() => toast.success(t('已保存 Langfuse 配置')))}>
+              {t('保存')}
             </Button>
           </div>
         </div>
@@ -323,7 +328,7 @@ export function SettingsPage() {
       await update(p)
       if (msg) toast.success(msg)
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     }
   }
 
@@ -343,17 +348,30 @@ export function SettingsPage() {
 
   return (
     <Page>
-      <PageHeader title="设置" />
+      <PageHeader title={t('设置')} />
 
-      <h2 className="mb-2 text-sm font-semibold">外观</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('外观')}</h2>
       <Card className="mb-8">
-        <Row title="主题" description="跟随系统或固定为浅色 / 深色">
+        <Row title={t('语言')} description={t('界面语言；切换后窗口会重新加载')}>
+          <div className="w-40">
+            <Select
+              value={settings.language}
+              onChange={(v) => void patch({ language: v as Settings['language'] })}
+              options={[
+                { value: 'system', label: t('跟随系统') },
+                { value: 'zh', label: '中文' },
+                { value: 'en', label: 'English' },
+              ]}
+            />
+          </div>
+        </Row>
+        <Row title={t('主题')} description={t('跟随系统或固定为浅色 / 深色')}>
           <div className="flex rounded-md border border-border bg-muted p-0.5">
             {(
               [
-                ['system', Monitor, '系统'],
-                ['light', Sun, '浅色'],
-                ['dark', Moon, '深色'],
+                ['system', Monitor, t('系统')],
+                ['light', Sun, t('浅色')],
+                ['dark', Moon, t('深色')],
               ] as const
             ).map(([v, Icon, label]) => (
               <button
@@ -377,12 +395,12 @@ export function SettingsPage() {
 
       <h2 className="mb-2 text-sm font-semibold">Agent</h2>
       <Card className="mb-8 divide-y divide-border">
-        <Row title="浏览器子代理" description="允许主 Agent 把多步骤网页任务委派给专门的 browser-operator 子代理，节省上下文">
+        <Row title={t('浏览器子代理')} description={t('允许主 Agent 把多步骤网页任务委派给专门的 browser-operator 子代理，节省上下文')}>
           <Switch checked={settings.browserSubagent} onCheckedChange={(v) => void patch({ browserSubagent: v })} />
         </Row>
         <div className="px-5 py-4">
-          <div className="text-sm font-medium">需要确认的操作</div>
-          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">Agent 执行以下工具前会暂停并请求你批准（后台任务不受影响）</div>
+          <div className="text-sm font-medium">{t('需要确认的操作')}</div>
+          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">{t('Agent 执行以下工具前会暂停并请求你批准（后台任务不受影响）')}</div>
           <div className="grid grid-cols-2 gap-2">
             {APPROVAL_OPTIONS.map((o) => {
               const on = settings.approvalTools.includes(o.name)
@@ -407,17 +425,17 @@ export function SettingsPage() {
           </div>
         </div>
         <div className="px-5 py-4">
-          <div className="text-sm font-medium">自定义指令</div>
-          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">追加到系统提示词，对所有对话生效</div>
-          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder="例如：回答尽量简洁；涉及金额时保留两位小数。" />
+          <div className="text-sm font-medium">{t('自定义指令')}</div>
+          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">{t('追加到系统提示词，对所有对话生效')}</div>
+          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder={t('例如：回答尽量简洁；涉及金额时保留两位小数。')} />
           <div className="mt-2 flex justify-end">
             <Button
               variant="primary"
               size="sm"
               disabled={prompt === settings.systemPrompt}
-              onClick={() => void patch({ systemPrompt: prompt }, '已保存自定义指令')}
+              onClick={() => void patch({ systemPrompt: prompt }, t('已保存自定义指令'))}
             >
-              保存
+              {t('保存')}
             </Button>
           </div>
         </div>
@@ -425,29 +443,29 @@ export function SettingsPage() {
 
       <LangfuseSection />
 
-      <h2 className="mb-2 text-sm font-semibold">开发者</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('开发者')}</h2>
       <Card className="mb-8 divide-y divide-border">
-        <Row title="开发者模式" description="记录运行轨迹、显示开发者页面与页面 DevTools 入口">
+        <Row title={t('开发者模式')} description={t('记录运行轨迹、显示开发者页面与页面 DevTools 入口')}>
           <Switch checked={settings.devMode} onCheckedChange={(v) => void patch({ devMode: v })} />
         </Row>
         <div className={cn('px-5 py-4', !settings.devMode && 'opacity-50')}>
-          <div className="text-sm font-medium">LangSmith 追踪</div>
-          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">可选。配置后在开发者模式下将运行轨迹上报到 LangSmith。</div>
+          <div className="text-sm font-medium">{t('LangSmith 追踪')}</div>
+          <div className="mt-0.5 mb-3 text-xs text-muted-foreground">{t('可选。配置后在开发者模式下将运行轨迹上报到 LangSmith。')}</div>
           <div className="grid grid-cols-2 gap-3">
             <Input
               type="password"
               value={lsKey}
               onChange={(e) => setLsKey(e.target.value)}
-              placeholder={settings.langsmithApiKeySet ? '已配置 API Key' : 'LangSmith API Key'}
+              placeholder={settings.langsmithApiKeySet ? t('已配置 API Key') : 'LangSmith API Key'}
               disabled={!settings.devMode}
               className="font-mono text-xs"
             />
-            <Input value={lsProject} onChange={(e) => setLsProject(e.target.value)} placeholder="项目名" disabled={!settings.devMode} />
+            <Input value={lsProject} onChange={(e) => setLsProject(e.target.value)} placeholder={t('项目名')} disabled={!settings.devMode} />
           </div>
           <div className="mt-2 flex justify-end gap-2">
             {settings.langsmithApiKeySet ? (
-              <Button variant="ghost" size="sm" onClick={() => void patch({ langsmithApiKey: '' }, '已移除 API Key')} disabled={!settings.devMode}>
-                移除密钥
+              <Button variant="ghost" size="sm" onClick={() => void patch({ langsmithApiKey: '' }, t('已移除 API Key'))} disabled={!settings.devMode}>
+                {t('移除密钥')}
               </Button>
             ) : null}
             <Button
@@ -455,33 +473,33 @@ export function SettingsPage() {
               size="sm"
               disabled={!settings.devMode || (!lsKey && lsProject === settings.langsmithProject)}
               onClick={async () => {
-                await patch({ langsmithApiKey: lsKey || undefined, langsmithProject: lsProject }, '已保存 LangSmith 配置')
+                await patch({ langsmithApiKey: lsKey || undefined, langsmithProject: lsProject }, t('已保存 LangSmith 配置'))
                 setLsKey('')
               }}
             >
-              保存
+              {t('保存')}
             </Button>
           </div>
         </div>
       </Card>
 
-      <h2 className="mb-2 text-sm font-semibold">其他</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('其他')}</h2>
       <Card className="mb-8">
-        <Row title="首次使用引导" description="重新走一遍模型连接、能力导入与外观设置">
+        <Row title={t('首次使用引导')} description={t('重新走一遍模型连接、能力导入与外观设置')}>
           <Button variant="secondary" size="sm" onClick={() => void patch({ onboarded: false })}>
-            重新查看引导
+            {t('重新查看引导')}
           </Button>
         </Row>
       </Card>
 
-      <h2 className="mb-2 text-sm font-semibold">数据位置</h2>
+      <h2 className="mb-2 text-sm font-semibold">{t('数据位置')}</h2>
       <Card className="divide-y divide-border">
         {paths.data ? (
           (
             [
-              ['应用数据', paths.data.userData],
+              [t('应用数据'), paths.data.userData],
               ['Skill', paths.data.skills],
-              ['站点插件', paths.data.plugins],
+              [t('站点插件'), paths.data.plugins],
             ] as const
           ).map(([k, v]) => (
             <div key={k} className="flex items-center gap-4 px-5 py-2.5">

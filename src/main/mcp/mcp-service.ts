@@ -10,6 +10,7 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { shellPath } from '../core/shell-env'
 import { secrets } from '../core/secrets'
+import { t } from '@shared/i18n'
 
 interface Row {
   id: string
@@ -111,10 +112,10 @@ class McpService {
   }
 
   async save(input: Omit<McpServer, 'id'> & { id?: string }): Promise<McpServer> {
-    if (!input.name.trim()) throw new Error('名称不能为空')
-    if (input.transport === 'stdio' && !input.command) throw new Error('stdio 需要填写命令')
-    if (input.transport !== 'stdio' && !input.url) throw new Error('需要填写 URL')
-    if (isNavoSelfUrl(input.url)) throw new Error('这是 Navo 自己对外提供的 MCP 服务，不能再添加到 Navo 中（会让 Agent 调用自己）')
+    if (!input.name.trim()) throw new Error(t('名称不能为空'))
+    if (input.transport === 'stdio' && !input.command) throw new Error(t('stdio 需要填写命令'))
+    if (input.transport !== 'stdio' && !input.url) throw new Error(t('需要填写 URL'))
+    if (isNavoSelfUrl(input.url)) throw new Error(t('这是 Navo 自己对外提供的 MCP 服务，不能再添加到 Navo 中（会让 Agent 调用自己）'))
     const id = input.id ?? newId()
     db()
       .prepare(

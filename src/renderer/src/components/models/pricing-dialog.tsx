@@ -8,6 +8,7 @@ import { Field, Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { call } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
@@ -26,11 +27,11 @@ export function PricingDialog({ model, onClose, onSaved }: { model: ModelConfig;
     setSaving(true)
     try {
       await call('models.setPricing', model.id, pricing)
-      toast.success(pricing ? '价格已保存' : '已清除价格')
+      toast.success(pricing ? t('价格已保存') : t('已清除价格'))
       onSaved()
       onClose()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -39,17 +40,17 @@ export function PricingDialog({ model, onClose, onSaved }: { model: ModelConfig;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={`价格 · ${model.displayName}`}
-        description="每百万 token 的单价，用来估算「用量」页面里的费用。以服务商的实际账单为准。"
+        title={t('价格 · {{v0}}', { v0: model.displayName })}
+        description={t('每百万 token 的单价，用来估算「用量」页面里的费用。以服务商的实际账单为准。')}
         footer={
           <>
             {model.pricing ? (
               <Button variant="ghost" className="mr-auto" disabled={saving} onClick={() => void save(null)}>
-                清除价格
+                {t('清除价格')}
               </Button>
             ) : null}
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button
               variant="primary"
@@ -57,32 +58,34 @@ export function PricingDialog({ model, onClose, onSaved }: { model: ModelConfig;
               disabled={!valid}
               onClick={() => void save({ input: Number(input), output: Number(output), cachedInput: num(cached), currency })}
             >
-              保存
+              {t('保存')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4">
           {!model.pricing && preset ? (
-            <p className="rounded-md bg-info-soft px-3 py-2 text-xs text-muted-foreground">已按 {model.model} 的参考价填好，服务商调价时请以实际价格为准。</p>
+            <p className="rounded-md bg-info-soft px-3 py-2 text-xs text-muted-foreground">
+              {t('已按 {{v0}} 的参考价填好，服务商调价时请以实际价格为准。', { v0: model.model })}
+            </p>
           ) : null}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="输入（每百万 token）">
-              <Input type="number" min={0} step="0.01" value={input} onChange={(e) => setInput(e.target.value)} aria-label="输入单价" />
+            <Field label={t('输入（每百万 token）')}>
+              <Input type="number" min={0} step="0.01" value={input} onChange={(e) => setInput(e.target.value)} aria-label={t('输入单价')} />
             </Field>
-            <Field label="输出（每百万 token）">
-              <Input type="number" min={0} step="0.01" value={output} onChange={(e) => setOutput(e.target.value)} aria-label="输出单价" />
+            <Field label={t('输出（每百万 token）')}>
+              <Input type="number" min={0} step="0.01" value={output} onChange={(e) => setOutput(e.target.value)} aria-label={t('输出单价')} />
             </Field>
-            <Field label="缓存命中的输入（可选）" hint="留空则按输入单价计">
-              <Input type="number" min={0} step="0.01" value={cached} onChange={(e) => setCached(e.target.value)} aria-label="缓存单价" />
+            <Field label={t('缓存命中的输入（可选）')} hint={t('留空则按输入单价计')}>
+              <Input type="number" min={0} step="0.01" value={cached} onChange={(e) => setCached(e.target.value)} aria-label={t('缓存单价')} />
             </Field>
-            <Field label="币种">
+            <Field label={t('币种')}>
               <Select
                 value={currency}
                 onChange={(v) => setCurrency(v as ModelPricing['currency'])}
                 options={[
-                  { value: 'CNY', label: '人民币 ¥' },
-                  { value: 'USD', label: '美元 $' },
+                  { value: 'CNY', label: t('人民币 ¥') },
+                  { value: 'USD', label: t('美元 $') },
                 ]}
               />
             </Field>

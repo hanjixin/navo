@@ -3,6 +3,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { useOverlay } from '@/stores/overlay'
+import { t } from '@shared/i18n'
 
 export interface Option {
   value: string
@@ -28,7 +29,7 @@ export function Select({
   value,
   onChange,
   options,
-  placeholder = '请选择',
+  placeholder = t('请选择'),
   className,
   disabled,
 }: {

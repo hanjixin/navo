@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /** Wraps an async action with pending state and error/success toasts. */
 export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>, opts: { success?: string | ((r: R) => string); error?: string } = {}) {
@@ -13,7 +14,7 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
         if (opts.success) toast.success(typeof opts.success === 'function' ? opts.success(r) : opts.success)
         return r
       } catch (e) {
-        toast.error(opts.error ?? '操作失败', { description: errorMessage(e) })
+        toast.error(opts.error ?? t('操作失败'), { description: errorMessage(e) })
         return undefined
       } finally {
         setPending(false)

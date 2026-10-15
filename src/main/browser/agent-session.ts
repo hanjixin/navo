@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron'
 import { log } from '../core/logger'
 import { browser } from './browser-service'
+import { t } from '@shared/i18n'
 
 /**
  * Replaces alert/confirm/prompt in the page's main world while an agent drives the tab.
@@ -105,7 +106,7 @@ class AgentSessions {
     const prev = this.tabOf.get(threadId)
     if (prev != null && prev !== tabId) browser.setOwner(prev, null)
     this.tabOf.set(threadId, tabId)
-    browser.setOwner(tabId, { threadId, title: this.running.get(threadId) ?? '对话', running: this.running.has(threadId) })
+    browser.setOwner(tabId, { threadId, title: this.running.get(threadId) ?? t('对话'), running: this.running.has(threadId) })
   }
 
   async end(threadId: string): Promise<void> {

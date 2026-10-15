@@ -12,6 +12,7 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { getSettings } from '../core/settings'
 import { files } from '../files/file-service'
+import { language, t } from '@shared/i18n'
 
 /** How recent a clipboard change must be for the quick window to offer it. */
 const CLIPBOARD_FRESH_MS = 60_000
@@ -100,7 +101,7 @@ class QuickService {
       vibrancy: process.platform === 'darwin' ? 'popover' : undefined,
       visualEffectState: 'active',
       roundedCorners: true,
-      title: 'Navo 快问',
+      title: t('Navo 快问'),
       webPreferences: { preload: appFile('out/preload/index.cjs'), sandbox: true, contextIsolation: true },
     })
     // over full-screen apps and on every desktop, like Spotlight
@@ -198,7 +199,7 @@ class QuickService {
     const running = agent.listThreads().filter((t) => agent.isRunning(t.id))
     const cfg = getSettings().quick
     // rebuild only when something visible changed
-    const key = `${running.map((t) => `${t.id}:${t.title}`).join('|')}#${cfg.shortcut}#${this.status.registered.join()}`
+    const key = `${running.map((t) => `${t.id}:${t.title}`).join('|')}#${cfg.shortcut}#${this.status.registered.join()}#${language()}`
     if (key === this.trayKey) return
     this.trayKey = key
     if (process.platform === 'darwin') this.tray.setTitle(running.length ? ` ${running.length}` : '')
@@ -207,19 +208,19 @@ class QuickService {
       : ''
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: `快问${shortcutLabel}`, click: () => void this.show() },
-        { label: '截图提问', click: () => void this.screenshotAsk() },
+        { label: t('快问{{v0}}', { v0: shortcutLabel }), click: () => void this.show() },
+        { label: t('截图提问'), click: () => void this.screenshotAsk() },
         { type: 'separator' },
         ...(running.length
           ? [
-              { label: `正在运行（${running.length}）`, enabled: false },
+              { label: t('正在运行（{{v0}}）', { v0: running.length }), enabled: false },
               ...running.slice(0, 8).map((t) => ({ label: `  ${t.title.slice(0, 32)}`, click: () => this.openInMain(t.id) })),
               { type: 'separator' as const },
             ]
           : []),
-        { label: '打开 Navo', click: () => this.openInMain(null) },
+        { label: t('打开 Navo'), click: () => this.openInMain(null) },
         { type: 'separator' },
-        { label: '退出 Navo', click: () => app.quit() },
+        { label: t('退出 Navo'), click: () => app.quit() },
       ]),
     )
   }

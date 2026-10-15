@@ -1,4 +1,5 @@
 import type { Provider, ProviderType } from '@shared/types'
+import { t } from '@shared/i18n'
 
 export interface Preset {
   id: string
@@ -31,7 +32,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'qwen',
-    name: '通义千问',
+    name: t('通义千问'),
     type: 'openai-compatible',
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     keyUrl: 'https://bailian.console.aliyun.com/',
@@ -47,7 +48,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'glm',
-    name: '智谱 GLM',
+    name: t('智谱 GLM'),
     type: 'openai-compatible',
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
@@ -55,7 +56,7 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'siliconflow',
-    name: '硅基流动',
+    name: t('硅基流动'),
     type: 'openai-compatible',
     baseURL: 'https://api.siliconflow.cn/v1',
     keyUrl: 'https://cloud.siliconflow.cn/account/ak',
@@ -69,7 +70,7 @@ export const PRESETS: Preset[] = [
     keyUrl: 'https://openrouter.ai/keys',
     models: [],
   },
-  { id: 'ollama', name: 'Ollama（本地）', type: 'openai-compatible', baseURL: 'http://localhost:11434/v1', models: [] },
+  { id: 'ollama', name: t('Ollama（本地）'), type: 'openai-compatible', baseURL: 'http://localhost:11434/v1', models: [] },
 ]
 
 export const presetFor = (p: Provider) =>

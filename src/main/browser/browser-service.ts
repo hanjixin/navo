@@ -8,6 +8,7 @@ import type { Bounds, BrowserState, BrowserTab, DownloadInfo } from '@shared/typ
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { pageRuntime } from './page-runtime'
+import { t } from '@shared/i18n'
 
 /** Isolated world shared by the tab preload, agent runtime, plugins and recorder. */
 export const AGENT_WORLD = 999
@@ -107,18 +108,18 @@ class BrowserService {
 
   state(): BrowserState {
     const tabs: BrowserTab[] = this.order.map((id) => {
-      const t = this.tabs.get(id)!
-      const wc = t.view.webContents
+      const entry = this.tabs.get(id)!
+      const wc = entry.view.webContents
       return {
         id,
-        url: wc.getURL() || t.pendingUrl || '',
-        title: wc.getTitle() || '新标签页',
-        favicon: t.favicon,
+        url: wc.getURL() || entry.pendingUrl || '',
+        title: wc.getTitle() || t('新标签页'),
+        favicon: entry.favicon,
         loading: wc.isLoading(),
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
         active: id === this.activeId,
-        agent: t.owner ? { threadId: t.owner.threadId, title: t.owner.title, running: t.owner.running } : undefined,
+        agent: entry.owner ? { threadId: entry.owner.threadId, title: entry.owner.title, running: entry.owner.running } : undefined,
       }
     })
     return { tabs, agentControlled: this.controlled.size > 0, recording: this.recording }
@@ -159,8 +160,8 @@ class BrowserService {
     wc.on('did-navigate', update)
     wc.on('did-navigate-in-page', update)
     wc.on('page-favicon-updated', (_e, favicons) => {
-      const t = this.tabs.get(id)
-      if (t) t.favicon = favicons[0]
+      const entry = this.tabs.get(id)
+      if (entry) entry.favicon = favicons[0]
       update()
     })
     wc.on('dom-ready', () => void this.handleDomReady(wc))
@@ -176,7 +177,7 @@ class BrowserService {
             height: Math.min(size('height', 680), 900),
             parent: this.win ?? undefined,
             autoHideMenuBar: true,
-            title: '登录',
+            title: t('登录'),
             backgroundColor: '#ffffff',
           },
         }
@@ -195,11 +196,11 @@ class BrowserService {
       if (this.controlled.has(id)) return e.preventDefault()
       const choice = dialog.showMessageBoxSync(this.win!, {
         type: 'question',
-        buttons: ['离开', '留下'],
+        buttons: [t('离开'), t('留下')],
         defaultId: 0,
         cancelId: 1,
-        message: '此页面询问你是否要离开',
-        detail: '你所做的更改可能不会保存。',
+        message: t('此页面询问你是否要离开'),
+        detail: t('你所做的更改可能不会保存。'),
       })
       if (choice === 0) e.preventDefault()
     })
@@ -220,9 +221,9 @@ class BrowserService {
   }
 
   setOwner(tabId: number, owner: Tab['owner'] | null): void {
-    const t = this.tabs.get(tabId)
-    if (!t) return
-    t.owner = owner ?? undefined
+    const entry = this.tabs.get(tabId)
+    if (!entry) return
+    entry.owner = owner ?? undefined
     this.changed()
   }
 
@@ -249,11 +250,11 @@ class BrowserService {
   }
 
   closeTab(id: number): void {
-    const t = this.tabs.get(id)
-    if (!t) return
+    const entry = this.tabs.get(id)
+    if (!entry) return
     this.controlled.delete(id)
-    if ((this.attached && id === this.activeId) || this.parked.delete(id)) this.win?.contentView.removeChildView(t.view)
-    t.view.webContents.close()
+    if ((this.attached && id === this.activeId) || this.parked.delete(id)) this.win?.contentView.removeChildView(entry.view)
+    entry.view.webContents.close()
     this.tabs.delete(id)
     this.order = this.order.filter((x) => x !== id)
     if (this.activeId === id) {
@@ -288,13 +289,13 @@ class BrowserService {
    * off-screen and at the usual size, behind everything else.
    */
   private park(id: number): void {
-    const t = this.tabs.get(id)
-    if (!this.win || !t || id === this.activeId) return
+    const entry = this.tabs.get(id)
+    if (!this.win || !entry || id === this.activeId) return
     if (!this.parked.has(id)) {
-      this.win.contentView.addChildView(t.view, 0)
+      this.win.contentView.addChildView(entry.view, 0)
       this.parked.add(id)
     }
-    t.view.setBounds({ x: this.win.getContentBounds().width + 64, y: 0, ...this.pageSize })
+    entry.view.setBounds({ x: this.win.getContentBounds().width + 64, y: 0, ...this.pageSize })
   }
 
   /** Renderer reports where the page area is; null hides the native view (e.g. while dialogs are open). */
@@ -305,26 +306,26 @@ class BrowserService {
 
   private layout(): void {
     if (!this.win || this.activeId == null) return
-    const t = this.tabs.get(this.activeId)!
+    const entry = this.tabs.get(this.activeId)!
     if (!this.bounds || this.bounds.width < 10 || this.bounds.height < 10) {
       if (this.previewing) {
         // Keep rendering at the usual size, off-screen: a detached view stops producing frames and a
         // tiny one would switch sites to their mobile layout under the agent.
-        if (!this.attached) this.win.contentView.addChildView(t.view)
+        if (!this.attached) this.win.contentView.addChildView(entry.view)
         this.attached = true
-        t.view.setBounds({ x: this.win.getContentBounds().width + 64, y: 0, ...this.pageSize })
+        entry.view.setBounds({ x: this.win.getContentBounds().width + 64, y: 0, ...this.pageSize })
         return
       }
-      if (this.attached) this.win.contentView.removeChildView(t.view)
+      if (this.attached) this.win.contentView.removeChildView(entry.view)
       this.attached = false
       return
     }
     if (!this.attached) {
-      this.win.contentView.addChildView(t.view)
+      this.win.contentView.addChildView(entry.view)
       this.attached = true
     }
     this.pageSize = { width: Math.round(this.bounds.width), height: Math.round(this.bounds.height) }
-    t.view.setBounds({
+    entry.view.setBounds({
       x: Math.round(this.bounds.x),
       y: Math.round(this.bounds.y),
       width: Math.round(this.bounds.width),
@@ -414,10 +415,10 @@ class BrowserService {
   private async previewFrame(): Promise<boolean> {
     this.followAgent()
     const id = this.activeId
-    const t = id != null ? this.tabs.get(id) : null
-    if (!t || !this.attached || t.view.webContents.isDestroyed()) return false
+    const entry = id != null ? this.tabs.get(id) : null
+    if (!entry || !this.attached || entry.view.webContents.isDestroyed()) return false
     try {
-      const img = await t.view.webContents.capturePage()
+      const img = await entry.view.webContents.capturePage()
       if (img.isEmpty() || !this.previewing) return false
       const jpeg = img.resize({ width: 560, quality: 'good' }).toJPEG(72)
       const key = `${id}:${createHash('md5').update(jpeg).digest('hex')}`
@@ -431,10 +432,10 @@ class BrowserService {
   }
 
   async captureActive(): Promise<string | null> {
-    const t = this.activeId != null ? this.tabs.get(this.activeId) : null
-    if (!t || !this.attached) return null
+    const entry = this.activeId != null ? this.tabs.get(this.activeId) : null
+    if (!entry || !this.attached) return null
     try {
-      const img = await t.view.webContents.capturePage()
+      const img = await entry.view.webContents.capturePage()
       return img.isEmpty() ? null : `data:image/jpeg;base64,${img.toJPEG(80).toString('base64')}`
     } catch {
       return null
@@ -574,9 +575,9 @@ class BrowserService {
   async waitForLoad(wc: WebContents, timeout = 15000): Promise<void> {
     if (!wc.isLoading()) return
     await new Promise<void>((resolve) => {
-      const t = setTimeout(done, timeout)
+      const entry = setTimeout(done, timeout)
       function done() {
-        clearTimeout(t)
+        clearTimeout(entry)
         wc.removeListener('did-stop-loading', done)
         resolve()
       }

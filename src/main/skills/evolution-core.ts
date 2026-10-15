@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { findSecret, hostOf, similarity } from '../memory/recall'
 import { parseFrontmatter } from './frontmatter'
+import { t } from '@shared/i18n'
 
 /**
  * Skills that improve with use — the pure part.
@@ -49,9 +50,9 @@ export interface SkillPatch {
 export function applyPatch(content: string, patch: SkillPatch): string {
   let out = content
   for (const r of patch.replace ?? []) {
-    if (!r.old.trim()) throw new Error('要替换的原文不能为空')
+    if (!r.old.trim()) throw new Error(t('要替换的原文不能为空'))
     const count = out.split(r.old).length - 1
-    if (count !== 1) throw new Error(count ? '要替换的原文在 Skill 中出现了多次' : '要替换的原文在 Skill 中找不到')
+    if (count !== 1) throw new Error(count ? t('要替换的原文在 Skill 中出现了多次') : t('要替换的原文在 Skill 中找不到'))
     out = out.replace(r.old, () => r.new)
   }
   const notes = (patch.add_notes ?? []).map((n) => n.trim().replace(/^[-*]\s*/, '')).filter(Boolean)
@@ -91,15 +92,16 @@ function existingNotes(content: string): string[] {
  */
 export function unsafeSkillText(text: string, hostsVisited: string[]): string | null {
   const secret = findSecret(text)
-  if (secret) return `包含${secret}`
+  if (secret) return t('包含{{v0}}', { v0: secret })
   for (const m of text.matchAll(/https?:\/\/[^\s)>\]"'`，。；）]+/g)) {
     const host = hostOf(m[0])
-    if (host && !hostsVisited.some((h) => host === h || host.endsWith(`.${h}`) || h.endsWith(`.${host}`))) return `包含这次任务没有访问过的网址（${host}）`
+    if (host && !hostsVisited.some((h) => host === h || host.endsWith(`.${h}`) || h.endsWith(`.${host}`)))
+      return t('包含这次任务没有访问过的网址（{{v0}}）', { v0: host })
   }
   if (/(发送|上传|转发|提交|抄送|同步|send|upload|post|forward|exfiltrat)[^\n。.]{0,24}(https?:\/\/|[\w.+-]+@[\w-]+\.[\w.-]+)/i.test(text))
-    return '包含向外部地址发送内容的指令'
+    return t('包含向外部地址发送内容的指令')
   if (/(忽略|无视|ignore)[^\n。.]{0,12}(之前|以上|所有|previous|above|all)[^\n。.]{0,12}(指令|规则|instructions?|rules?)/i.test(text))
-    return '包含试图覆盖指令的内容'
+    return t('包含试图覆盖指令的内容')
   return null
 }
 
@@ -124,16 +126,16 @@ export function classify(change: {
   const unsafe = unsafeSkillText(added, change.hostsVisited)
   if (unsafe) return { decision: 'reject', why: unsafe }
   const fm = parseFrontmatter(change.after)
-  if (!fm.name || !fm.description) return { decision: 'reject', why: 'SKILL.md 缺少 name 或 description' }
+  if (!fm.name || !fm.description) return { decision: 'reject', why: t('SKILL.md 缺少 name 或 description') }
   if (change.kind === 'create')
-    return change.provenBefore && change.autoCreateFromExperience ? { decision: 'auto' } : { decision: 'confirm', why: '新建 Skill 需要你确认' }
-  if (change.readOnly) return { decision: 'confirm', why: '这是共享的只读 Skill，改进会保存为本地副本' }
-  if (change.kind === 'rewrite') return { decision: 'confirm', why: '改动较大' }
-  if (!change.autoApplySmall) return { decision: 'confirm', why: '已关闭小改动自动生效' }
+    return change.provenBefore && change.autoCreateFromExperience ? { decision: 'auto' } : { decision: 'confirm', why: t('新建 Skill 需要你确认') }
+  if (change.readOnly) return { decision: 'confirm', why: t('这是共享的只读 Skill，改进会保存为本地副本') }
+  if (change.kind === 'rewrite') return { decision: 'confirm', why: t('改动较大') }
+  if (!change.autoApplySmall) return { decision: 'confirm', why: t('已关闭小改动自动生效') }
   const before = parseFrontmatter(change.before)
-  if (before.name !== fm.name || before.description !== fm.description) return { decision: 'confirm', why: '修改了名称或描述' }
-  if (added.length > AUTO_MAX_CHARS) return { decision: 'confirm', why: '新增内容较多' }
-  if (removedShare(change.before, change.after) > AUTO_MAX_REMOVED) return { decision: 'confirm', why: '删除的内容较多' }
+  if (before.name !== fm.name || before.description !== fm.description) return { decision: 'confirm', why: t('修改了名称或描述') }
+  if (added.length > AUTO_MAX_CHARS) return { decision: 'confirm', why: t('新增内容较多') }
+  if (removedShare(change.before, change.after) > AUTO_MAX_REMOVED) return { decision: 'confirm', why: t('删除的内容较多') }
   return { decision: 'auto' }
 }
 

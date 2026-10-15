@@ -1,3 +1,4 @@
+import { t } from '@shared/i18n'
 /**
  * Runtime injected into every tab's isolated world (world 999, shared with the tab preload).
  * It must be self-contained: it is serialized with Function.prototype.toString().
@@ -26,7 +27,7 @@ export function pageRuntime(): void {
 
   function resolve(ref: string): Element {
     const el = refs.get(ref)?.deref()
-    if (!el || !el.isConnected) throw new Error(`元素 ${ref} 已失效，请重新调用 browser_snapshot`)
+    if (!el || !el.isConnected) throw new Error(t('元素 {{v0}} 已失效，请重新调用 browser_snapshot', { v0: ref }))
     return el
   }
 
@@ -308,7 +309,7 @@ export function pageRuntime(): void {
     if (el.tagName === 'SELECT') {
       const sel = el as HTMLSelectElement
       const opt = Array.from(sel.options).find((o) => o.value === value || o.text.trim() === value)
-      if (!opt) throw new Error(`选项不存在: ${value}`)
+      if (!opt) throw new Error(t('选项不存在: {{v0}}', { v0: value }))
       sel.value = opt.value
     } else {
       const proto = Object.getPrototypeOf(el)

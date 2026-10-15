@@ -270,6 +270,8 @@ export interface Api {
   'dev.logs': () => string[]
   'app.openExternal': (url: string) => void
   'app.showItemInFolder': (path: string) => void
+  /** the interface language in effect */
+  'app.language': () => 'zh' | 'en'
   'app.showItem': (path: string) => void
   'browser.downloads': () => DownloadInfo[]
   'app.paths': () => { userData: string; skills: string; plugins: string }

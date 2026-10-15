@@ -7,6 +7,7 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { trackedModel } from '../usage/usage-service'
 import { diffLines, FAIL_ALERT, hashText, judgeMessages, normalize, parseJudge } from './monitor-core'
+import { t } from '@shared/i18n'
 
 interface CheckRow {
   id: string
@@ -79,12 +80,12 @@ class MonitorService {
       await new Promise((r) => setTimeout(r, 300))
       await browser.waitForLoad(wc, 30_000)
       await new Promise((r) => setTimeout(r, SETTLE_MS))
-      if (wc.getURL().startsWith('chrome-error:')) throw new Error('页面打不开')
-      if (status >= 400) throw new Error(`页面返回错误 ${status}`)
+      if (wc.getURL().startsWith('chrome-error:')) throw new Error(t('页面打不开'))
+      if (status >= 400) throw new Error(t('页面返回错误 {{v0}}', { v0: status }))
       const found = selector ? await browser.evalIn<boolean>(wc, `!!document.querySelector(${JSON.stringify(selector)})`) : true
-      if (!found) throw new Error(`页面上没有找到要看的区域（${selector}）`)
+      if (!found) throw new Error(t('页面上没有找到要看的区域（{{v0}}）', { v0: selector }))
       const text = normalize(await browser.evalIn<string>(wc, `__agent.extract(${JSON.stringify(selector || null)} || undefined, 50000)`))
-      if (!text) throw new Error('页面没有可读的文字')
+      if (!text) throw new Error(t('页面没有可读的文字'))
       return { text, title: wc.getTitle() }
     } finally {
       browser.closeTab(tabId)
@@ -117,8 +118,8 @@ class MonitorService {
    */
   async check(task: Task, onTrigger?: (summary: string) => Promise<string | null>): Promise<MonitorCheck> {
     const cfg = task.monitor
-    if (!cfg) throw new Error('这个任务不是网页监控')
-    if (this.busy.has(task.id)) throw new Error('上一次检查还没有结束')
+    if (!cfg) throw new Error(t('这个任务不是网页监控'))
+    if (this.busy.has(task.id)) throw new Error(t('上一次检查还没有结束'))
     this.busy.add(task.id)
     const base = blank(task.id)
     let result: MonitorCheck
@@ -128,7 +129,8 @@ class MonitorService {
       log.warn(`[monitor] ${task.name}: ${(err as Error).message}`)
       result = this.insert({ ...base, error: (err as Error).message })
       // a few failures in a row (not every one after that): the page may have moved or gone
-      if (this.summary(task.id).failStreak === FAIL_ALERT) this.notify(`监控连续 ${FAIL_ALERT} 次检查失败：${task.name}`, (err as Error).message)
+      if (this.summary(task.id).failStreak === FAIL_ALERT)
+        this.notify(t('监控连续 {{v0}} 次检查失败：{{v1}}', { v0: FAIL_ALERT, v1: task.name }), (err as Error).message)
     } finally {
       this.busy.delete(task.id)
     }
@@ -144,7 +146,7 @@ class MonitorService {
     const hash = hashText(text)
     const prev = this.last(task.id)
     if (!prev) {
-      return this.insert({ ...base, first: 1, hash, text, summary: '已记录当前内容，之后有变化时再判断' })
+      return this.insert({ ...base, first: 1, hash, text, summary: t('已记录当前内容，之后有变化时再判断') })
     } else if (prev.hash === hash) {
       // unchanged: no model call. A run of unchanged checks is one row, so the history keeps what happened
       const latest = db().prepare('SELECT * FROM monitor_checks WHERE task_id = ? ORDER BY at DESC LIMIT 1').get(task.id) as CheckRow
@@ -173,7 +175,7 @@ class MonitorService {
       const out = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       const verdict = parseJudge(out)
       // without a verdict the new text doesn't become the baseline: the next check compares again
-      if (!verdict) throw new Error('模型没有给出可用的判断')
+      if (!verdict) throw new Error(t('模型没有给出可用的判断'))
       const threadId = verdict.triggered ? ((await onTrigger?.(verdict.summary)) ?? null) : null
       const check = this.insert({
         ...base,
@@ -186,7 +188,7 @@ class MonitorService {
         removed: json.str(removed.slice(0, 200)),
         thread_id: threadId,
       })
-      if (verdict.triggered) this.notify(`监控提醒：${task.name}`, verdict.summary)
+      if (verdict.triggered) this.notify(t('监控提醒：{{v0}}', { v0: task.name }), verdict.summary)
       return check
     }
   }

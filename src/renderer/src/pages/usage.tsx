@@ -17,49 +17,52 @@ import { call, on } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 const PURPOSE: Record<UsagePurpose, { label: string; background?: boolean }> = {
-  chat: { label: '对话' },
-  memory: { label: '记忆提取', background: true },
-  'memory-tidy': { label: '记忆整理', background: true },
-  skill: { label: 'Skill 复盘', background: true },
-  flow: { label: '流程整理' },
-  monitor: { label: '网页监控', background: true },
-  test: { label: '模型测试' },
-  other: { label: '其他' },
+  chat: { label: t('对话') },
+  memory: { label: t('记忆提取'), background: true },
+  'memory-tidy': { label: t('记忆整理'), background: true },
+  skill: { label: t('Skill 复盘'), background: true },
+  flow: { label: t('流程整理') },
+  monitor: { label: t('网页监控'), background: true },
+  test: { label: t('模型测试') },
+  other: { label: t('其他') },
 }
 
-const tokens = (t: UsageTotals) => t.input + t.output
+const tokens = (totals: UsageTotals) => totals.input + totals.output
 
 function sum(list: UsageTotals[]): UsageTotals {
   const out: UsageTotals = { calls: 0, input: 0, output: 0, cached: 0, cost: {}, unpriced: 0 }
-  for (const t of list) {
-    out.calls += t.calls
-    out.input += t.input
-    out.output += t.output
-    out.cached += t.cached
-    out.unpriced += t.unpriced
-    for (const [c, v] of Object.entries(t.cost) as [ModelPricing['currency'], number][]) out.cost[c] = (out.cost[c] ?? 0) + v
+  for (const totals of list) {
+    out.calls += totals.calls
+    out.input += totals.input
+    out.output += totals.output
+    out.cached += totals.cached
+    out.unpriced += totals.unpriced
+    for (const [c, v] of Object.entries(totals.cost) as [ModelPricing['currency'], number][]) out.cost[c] = (out.cost[c] ?? 0) + v
   }
   return out
 }
 
 /** "¥1.20 + $0.03", or a dash when nothing has a price */
-function Cost({ t, className }: { t: UsageTotals; className?: string }) {
-  const parts = (Object.entries(t.cost) as [ModelPricing['currency'], number][]).map(([c, v]) => formatCost(v, c))
+function Cost({ t: totals, className }: { t: UsageTotals; className?: string }) {
+  const parts = (Object.entries(totals.cost) as [ModelPricing['currency'], number][]).map(([c, v]) => formatCost(v, c))
   return <span className={cn('tabular-nums', className)}>{parts.length ? parts.join(' + ') : '—'}</span>
 }
 
-function Stat({ label, t, hint }: { label: string; t: UsageTotals; hint?: React.ReactNode }) {
+function Stat({ label, t: totals, hint }: { label: string; t: UsageTotals; hint?: React.ReactNode }) {
   return (
     <Card className="grid gap-1 px-4 py-3">
       <span className="text-xs text-muted-foreground">{label}</span>
       <div className="flex items-baseline gap-2">
-        <span className="text-xl font-semibold tabular-nums">{formatTokens(tokens(t))}</span>
+        <span className="text-xl font-semibold tabular-nums">{formatTokens(tokens(totals))}</span>
         <span className="text-xs text-muted-foreground">tokens</span>
-        <Cost t={t} className="ml-auto text-sm" />
+        <Cost t={totals} className="ml-auto text-sm" />
       </div>
-      <span className="text-xs text-subtle-foreground">{hint ?? `${t.calls} 次调用 · 输入 ${formatTokens(t.input)} · 输出 ${formatTokens(t.output)}`}</span>
+      <span className="text-xs text-subtle-foreground">
+        {hint ?? t('{{v0}} 次调用 · 输入 {{v1}} · 输出 {{v2}}', { v0: totals.calls, v1: formatTokens(totals.input), v2: formatTokens(totals.output) })}
+      </span>
     </Card>
   )
 }
@@ -73,7 +76,7 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
         {daily.map((d) => {
           const total = tokens(d)
           return (
-            <Tooltip key={d.day} content={`${d.day} · ${formatTokens(total)} tokens · ${d.calls} 次`}>
+            <Tooltip key={d.day} content={t('{{v0}} · {{v1}} tokens · {{v2}} 次', { v0: d.day, v1: formatTokens(total), v2: d.calls })}>
               <div className="group flex h-full min-w-0 flex-1 flex-col justify-end">
                 {total ? (
                   <div
@@ -101,11 +104,11 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
       <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="size-2 rounded-sm bg-brand/35" />
-          输入
+          {t('输入')}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-2 rounded-sm bg-brand" />
-          输出
+          {t('输出')}
         </span>
       </div>
     </Card>
@@ -113,16 +116,16 @@ function DailyChart({ daily }: { daily: UsageReport['daily'] }) {
 }
 
 /** One row of a breakdown: name, share bar, tokens, cost. */
-function ShareRow({ name, t, of, hint, onClick }: { name: React.ReactNode; t: UsageTotals; of: number; hint?: string; onClick?: () => void }) {
-  const share = of ? tokens(t) / of : 0
+function ShareRow({ name, t: totals, of, hint, onClick }: { name: React.ReactNode; t: UsageTotals; of: number; hint?: string; onClick?: () => void }) {
+  const share = of ? tokens(totals) / of : 0
   const Row = onClick ? 'button' : 'div'
   return (
     <Row onClick={onClick} className={cn('grid w-full gap-1 px-4 py-2 text-left', onClick && 'interactive hover:bg-muted')}>
       <div className="flex items-center gap-2 text-sm">
         <span className="min-w-0 flex-1 truncate">{name}</span>
         {hint ? <span className="shrink-0 text-xs text-subtle-foreground">{hint}</span> : null}
-        <span className="w-16 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatTokens(tokens(t))}</span>
-        <Cost t={t} className="w-20 shrink-0 text-right text-xs" />
+        <span className="w-16 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatTokens(tokens(totals))}</span>
+        <Cost t={totals} className="w-20 shrink-0 text-right text-xs" />
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-brand/70 transition-[width] duration-300" style={{ width: `${Math.max(share * 100, share ? 1 : 0)}%` }} />
@@ -146,7 +149,7 @@ function BudgetCard({ report }: { report: UsageReport }) {
     try {
       await save({ usage: { ...cfg, ...patch } })
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     }
   }
   const b = report.budget
@@ -154,25 +157,25 @@ function BudgetCard({ report }: { report: UsageReport }) {
   return (
     <Card className="grid gap-4 px-4 py-4">
       <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
-        <Field label="每日预算" hint="按模型上设置的单价估算；留空则不限制">
+        <Field label={t('每日预算')} hint={t('按模型上设置的单价估算；留空则不限制')}>
           <Input
             type="number"
             min={0}
             step="1"
             value={budget}
-            placeholder="不限制"
-            aria-label="每日预算"
+            placeholder={t('不限制')}
+            aria-label={t('每日预算')}
             onChange={(e) => setBudget(e.target.value)}
             onBlur={() => void update({ dailyBudget: budget.trim() === '' || Number(budget) <= 0 ? null : Number(budget) })}
           />
         </Field>
-        <Field label="币种">
+        <Field label={t('币种')}>
           <Select
             value={cfg.currency}
             onChange={(v) => void update({ currency: v as ModelPricing['currency'] })}
             options={[
-              { value: 'CNY', label: '人民币 ¥' },
-              { value: 'USD', label: '美元 $' },
+              { value: 'CNY', label: t('人民币 ¥') },
+              { value: 'USD', label: t('美元 $') },
             ]}
           />
         </Field>
@@ -180,8 +183,8 @@ function BudgetCard({ report }: { report: UsageReport }) {
       {b.daily ? (
         <div className="grid gap-1.5" data-testid="usage-budget">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>今日已用 {formatCost(b.spentToday, b.currency)}</span>
-            <span>预算 {formatCost(b.daily, b.currency)}</span>
+            <span>{t('今日已用 {{v0}}', { v0: formatCost(b.spentToday, b.currency) })}</span>
+            <span>{t('预算 {{v0}}', { v0: formatCost(b.daily, b.currency) })}</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
@@ -189,13 +192,13 @@ function BudgetCard({ report }: { report: UsageReport }) {
               style={{ width: `${ratio * 100}%` }}
             />
           </div>
-          {b.paused ? <p className="text-xs text-warning">今日预算已用完：记忆整理、Skill 复盘和网页监控的判断暂停到明天。</p> : null}
+          {b.paused ? <p className="text-xs text-warning">{t('今日预算已用完：记忆整理、Skill 复盘和网页监控的判断暂停到明天。')}</p> : null}
         </div>
       ) : null}
       <label className="flex items-center justify-between gap-4 text-sm">
         <span>
-          超出预算后暂停后台调用
-          <span className="block text-xs text-muted-foreground">记忆提取与整理、Skill 复盘、网页监控的判断；对话不受影响</span>
+          {t('超出预算后暂停后台调用')}
+          <span className="block text-xs text-muted-foreground">{t('记忆提取与整理、Skill 复盘、网页监控的判断；对话不受影响')}</span>
         </span>
         <Switch checked={cfg.pauseBackground} onCheckedChange={(v) => void update({ pauseBackground: v })} />
       </label>
@@ -228,8 +231,8 @@ export function UsagePage() {
   return (
     <Page>
       <PageHeader
-        title="用量"
-        description="每次调用模型用掉的 token，以及按模型单价估算的费用（以服务商账单为准）。"
+        title={t('用量')}
+        description={t('每次调用模型用掉的 token，以及按模型单价估算的费用（以服务商账单为准）。')}
         actions={
           <div className="flex rounded-md border border-border bg-muted p-0.5" role="tablist">
             {[7, 30].map((d) => (
@@ -243,7 +246,7 @@ export function UsagePage() {
                   days === d ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                近 {d} 天
+                {t('近 {{v0}} 天', { v0: d })}
               </button>
             ))}
           </div>
@@ -256,10 +259,14 @@ export function UsagePage() {
         empty={
           <>
             <Card className="mb-6">
-              <EmptyState icon={BarChart3} title="还没有用量记录" description="对话、记忆整理、Skill 复盘、网页监控等每次调用模型后，用量会显示在这里。" />
+              <EmptyState
+                icon={BarChart3}
+                title={t('还没有用量记录')}
+                description={t('对话、记忆整理、Skill 复盘、网页监控等每次调用模型后，用量会显示在这里。')}
+              />
             </Card>
             {report.data ? (
-              <Section title="预算">
+              <Section title={t('预算')}>
                 <BudgetCard report={report.data} />
               </Section>
             ) : null}
@@ -272,53 +279,53 @@ export function UsagePage() {
           return (
             <div className="grid gap-6">
               <div className="grid gap-3 sm:grid-cols-3">
-                <Stat label="今天" t={r.today} />
-                <Stat label={`近 ${r.days} 天`} t={r.total} />
+                <Stat label={t('今天')} t={r.today} />
+                <Stat label={t('近 {{v0}} 天', { v0: r.days })} t={r.total} />
                 <Stat
-                  label="后台调用"
+                  label={t('后台调用')}
                   t={background}
-                  hint={`占全部的 ${all ? Math.round((tokens(background) / all) * 100) : 0}% · 记忆、Skill 复盘、网页监控`}
+                  hint={t('占全部的 {{v0}}% · 记忆、Skill 复盘、网页监控', { v0: all ? Math.round((tokens(background) / all) * 100) : 0 })}
                 />
               </div>
               {r.total.unpriced > 0 ? (
                 <p className="-mt-3 text-xs text-muted-foreground">
-                  有 {formatTokens(r.total.unpriced)} tokens 来自没有设置价格的模型，未计入费用。
+                  {t('有 {{v0}} tokens 来自没有设置价格的模型，未计入费用。', { v0: formatTokens(r.total.unpriced) })}
                   <Button variant="link" size="sm" className="h-auto px-1 text-xs" onClick={() => navigate('/models')}>
-                    去设置价格
+                    {t('去设置价格')}
                   </Button>
                 </p>
               ) : null}
-              <Section title="每日用量">
+              <Section title={t('每日用量')}>
                 <DailyChart daily={r.daily} />
               </Section>
               <div className="grid gap-6 lg:grid-cols-2">
-                <Section title="按用途">
+                <Section title={t('按用途')}>
                   <Card className="divide-y divide-border py-1" data-testid="usage-purpose">
                     {r.byPurpose.map((p) => (
-                      <ShareRow key={p.purpose} name={PURPOSE[p.purpose]?.label ?? p.purpose} t={p} of={all} hint={`${p.calls} 次`} />
+                      <ShareRow key={p.purpose} name={PURPOSE[p.purpose]?.label ?? p.purpose} t={p} of={all} hint={t('{{v0}} 次', { v0: p.calls })} />
                     ))}
                   </Card>
                 </Section>
-                <Section title="按模型">
+                <Section title={t('按模型')}>
                   <Card className="divide-y divide-border py-1" data-testid="usage-model">
                     {r.byModel.map((m) => (
-                      <ShareRow key={m.modelId ?? m.name} name={m.name} t={m} of={all} hint={Object.keys(m.cost).length ? undefined : '未设价格'} />
+                      <ShareRow key={m.modelId ?? m.name} name={m.name} t={m} of={all} hint={Object.keys(m.cost).length ? undefined : t('未设价格')} />
                     ))}
                   </Card>
                 </Section>
               </div>
               {r.topThreads.length ? (
-                <Section title="用量最多的对话">
+                <Section title={t('用量最多的对话')}>
                   <Card className="divide-y divide-border py-1" data-testid="usage-threads">
-                    {r.topThreads.map((t) => (
+                    {r.topThreads.map((totals) => (
                       <ShareRow
-                        key={t.threadId}
-                        name={t.title}
-                        t={t}
+                        key={totals.threadId}
+                        name={totals.title}
+                        t={totals}
                         of={tokens(r.topThreads[0])}
-                        hint={`${t.calls} 次`}
+                        hint={t('{{v0}} 次', { v0: totals.calls })}
                         onClick={() => {
-                          select(t.threadId)
+                          select(totals.threadId)
                           navigate('/chat')
                         }}
                       />
@@ -326,7 +333,7 @@ export function UsagePage() {
                   </Card>
                 </Section>
               ) : null}
-              <Section title="预算">
+              <Section title={t('预算')}>
                 <BudgetCard report={r} />
               </Section>
             </div>

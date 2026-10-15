@@ -11,6 +11,7 @@ import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { secrets } from '../core/secrets'
 import { getSettings } from '../core/settings'
+import { t } from '@shared/i18n'
 
 function allowed(def: ToolDef): boolean {
   const { mcpServer: cfg } = getSettings()
@@ -152,7 +153,7 @@ class NavoMcpServer {
   /** Registers Navo in the cross-agent ~/.agents/mcp.json (keeps a backup of the previous file). */
   installAgents(): { path: string; backup: string | null } {
     const url = this.url()
-    if (!url) throw new Error('请先启用 Navo MCP 服务')
+    if (!url) throw new Error(t('请先启用 Navo MCP 服务'))
     const path = join(homedir(), '.agents', 'mcp.json')
     mkdirSync(dirname(path), { recursive: true })
     let data: { mcpServers?: Record<string, unknown> } = {}

@@ -24,6 +24,7 @@ import {
 import { parseFrontmatter } from './frontmatter'
 import { skills } from './skill-service'
 import { skillVersions } from './versions'
+import { t } from '@shared/i18n'
 
 interface ProposalRow {
   id: string
@@ -135,12 +136,12 @@ class SkillEvolution {
           autoCreateFromExperience: cfg.autoCreateFromExperience,
         })
         if (gate.decision === 'auto') {
-          skills.save(name, content, { source: 'experience', reason: reason || '同类任务已经顺利完成多次', threadId: ctx.threadId })
+          skills.save(name, content, { source: 'experience', reason: reason || t('同类任务已经顺利完成多次'), threadId: ctx.threadId })
           if (earlier) db().prepare("UPDATE skill_proposals SET status = 'superseded' WHERE id = ?").run(earlier.id)
           return this.announce({
             skill: name,
             kind: 'created',
-            summary: reason || '把多次用过的做法整理成了 Skill',
+            summary: reason || t('把多次用过的做法整理成了 Skill'),
             version: skillVersions.latest(name)?.version,
           })
         }
@@ -161,7 +162,7 @@ class SkillEvolution {
       const gate = classify({ kind: r.action, readOnly, before, after, hostsVisited: ctx.hosts, autoApplySmall: cfg.autoApplySmall })
       if (gate.decision === 'auto') {
         skills.save(id, after, { source: 'agent-patch', reason, threadId: ctx.threadId })
-        return this.announce({ skill: id, kind: 'patched', summary: reason || '补充了经验', version: skillVersions.latest(id)?.version })
+        return this.announce({ skill: id, kind: 'patched', summary: reason || t('补充了经验'), version: skillVersions.latest(id)?.version })
       }
       return this.gateResult(gate, { skill: name, kind: readOnly ? 'fork' : r.action, content: after, reason, evidence, threadId: ctx.threadId })
     } catch (err) {
@@ -206,13 +207,13 @@ class SkillEvolution {
 
   /** The agent's own note about a skill during a run (the `skill_note` tool). */
   note(skillId: string, patch: SkillPatch, reason: string, ctx: { threadId: string | null; hosts: string[] }): string {
-    if (!skills.exists(skillId)) throw new Error(`Skill 不存在: ${skillId}`)
+    if (!skills.exists(skillId)) throw new Error(t('Skill 不存在: {{v0}}', { v0: skillId }))
     const r = this.apply(
       { action: 'patch', skill: skillId, add_notes: patch.add_notes, replace: patch.replace, reason },
       { threadId: ctx.threadId, used: [skillId], hosts: ctx.hosts },
     )
-    if (!r) return '没有改动（内容已存在、无法定位要替换的原文，或未通过安全检查）'
-    return r.kind === 'patched' ? `已更新 Skill（版本 ${r.version}）` : '改动较大或涉及共享 Skill，已生成改进建议，等用户在「Skill」页确认'
+    if (!r) return t('没有改动（内容已存在、无法定位要替换的原文，或未通过安全检查）')
+    return r.kind === 'patched' ? t('已更新 Skill（版本 {{v0}}）', { v0: r.version }) : t('改动较大或涉及共享 Skill，已生成改进建议，等用户在「Skill」页确认')
   }
 
   /** A new skill or a full rewrite the agent wants to save without the user having asked: a proposal. */
@@ -255,7 +256,7 @@ class SkillEvolution {
   /** The user's decision; `content` lets them edit the text before approving. */
   resolveProposal(id: string, approve: boolean, content?: string): void {
     const p = this.pending().find((x) => x.id === id)
-    if (!p) throw new Error('这条建议已经处理过了')
+    if (!p) throw new Error(t('这条建议已经处理过了'))
     if (approve) {
       skills.save(p.skill, withName(content ?? p.content, p.skill), {
         source: p.kind === 'rollback' ? 'rollback' : 'agent-proposal',
@@ -317,7 +318,14 @@ class SkillEvolution {
     const prev = versions[versions.length - 2]
     this.gateResult(
       { decision: 'confirm', why: '' },
-      { skill, kind: 'rollback', content: prev.content, reason: `最近一次自动改进后效果变差，建议回到版本 ${prev.version}`, evidence: '', threadId: null },
+      {
+        skill,
+        kind: 'rollback',
+        content: prev.content,
+        reason: t('最近一次自动改进后效果变差，建议回到版本 {{v0}}', { v0: prev.version }),
+        evidence: '',
+        threadId: null,
+      },
     )
   }
 
@@ -340,8 +348,8 @@ class SkillEvolution {
         if (!skills.exists(name)) {
           // deleted by the user before: don't bring it back
           if (latest) continue
-          skills.save(name, content, { source: 'experience', reason: `由 ${notes.length} 条 ${host} 的站点经验整理而成` })
-          this.announce({ skill: name, kind: 'created', summary: `把 ${host} 的 ${notes.length} 条经验整理成了 Skill`, version: 1 })
+          skills.save(name, content, { source: 'experience', reason: t('由 {{v0}} 条 {{v1}} 的站点经验整理而成', { v0: notes.length, v1: host }) })
+          this.announce({ skill: name, kind: 'created', summary: t('把 {{v0}} 的 {{v1}} 条经验整理成了 Skill', { v0: host, v1: notes.length }), version: 1 })
         } else if (latest?.source === 'experience' && latest.content !== content) {
           skills.save(name, content, { source: 'experience', reason: `${host} 的站点经验有更新` })
         }

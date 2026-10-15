@@ -8,6 +8,7 @@ import { useAsync } from '@/hooks/use-async'
 import { call } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
 import { useBrowser } from '@/stores/browser'
+import { t } from '@shared/i18n'
 
 /** The monitor part of the task dialog: which page, what to look at, when to alert, what then. */
 export function MonitorFields({ value, onChange }: { value: MonitorConfig; onChange: (v: MonitorConfig) => void }) {
@@ -34,22 +35,22 @@ export function MonitorFields({ value, onChange }: { value: MonitorConfig; onCha
 
   return (
     <div className="grid gap-4">
-      <Field label="网址">
+      <Field label={t('网址')}>
         <div className="flex gap-2">
           <Input value={value.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://…" className="min-w-0 flex-1" />
           {canUseCurrent ? (
             <Button variant="secondary" size="sm" className="h-9 shrink-0" onClick={() => set({ url: current })}>
               <Globe />
-              用当前页面
+              {t('用当前页面')}
             </Button>
           ) : null}
         </div>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="关注的内容" hint="用一句话说明，帮助判断哪些变化有关">
-          <Input value={value.focus ?? ''} onChange={(e) => set({ focus: e.target.value })} placeholder="商品价格、公告列表…" />
+        <Field label={t('关注的内容')} hint={t('用一句话说明，帮助判断哪些变化有关')}>
+          <Input value={value.focus ?? ''} onChange={(e) => set({ focus: e.target.value })} placeholder={t('商品价格、公告列表…')} />
         </Field>
-        <Field label="页面区域（可选）" hint="CSS 选择器；留空则读取正文">
+        <Field label={t('页面区域（可选）')} hint={t('CSS 选择器；留空则读取正文')}>
           <Input value={value.selector ?? ''} onChange={(e) => set({ selector: e.target.value })} placeholder=".price" className="font-mono" />
         </Field>
       </div>
@@ -63,7 +64,7 @@ export function MonitorFields({ value, onChange }: { value: MonitorConfig; onCha
           onClick={() => void tryRead()}
         >
           {!preview?.loading ? <Eye /> : null}
-          试读一下
+          {t('试读一下')}
         </Button>
         {preview && !preview.loading ? (
           <pre
@@ -78,41 +79,41 @@ export function MonitorFields({ value, onChange }: { value: MonitorConfig; onCha
           </pre>
         ) : null}
       </div>
-      <Field label="触发条件" hint="留空则内容有实质变化就提醒；时间、广告这类无关变化不会打扰你">
+      <Field label={t('触发条件')} hint={t('留空则内容有实质变化就提醒；时间、广告这类无关变化不会打扰你')}>
         <Textarea
           value={value.condition ?? ''}
           onChange={(e) => set({ condition: e.target.value })}
           rows={2}
-          placeholder="价格低于 1500 元；或：出现新的公告"
+          placeholder={t('价格低于 1500 元；或：出现新的公告')}
         />
       </Field>
-      <Field label="触发后">
+      <Field label={t('触发后')}>
         <Select
           value={value.action}
           onChange={(v) => set({ action: v as MonitorConfig['action'] })}
           options={[
-            { value: 'notify', label: '发送系统通知' },
-            { value: 'agent', label: '发送通知，并让 Agent 执行一项任务' },
+            { value: 'notify', label: t('发送系统通知') },
+            { value: 'agent', label: t('发送通知，并让 Agent 执行一项任务') },
           ]}
         />
       </Field>
       <Field
-        label="同时发到"
-        hint={targets.data?.length ? '群机器人发到群里；邮箱发给你自己' : '在「连接器」里连接企业微信 / 钉钉 / 飞书群机器人或邮箱后，可以把提醒发到那里'}
+        label={t('同时发到')}
+        hint={targets.data?.length ? t('群机器人发到群里；邮箱发给你自己') : t('在「连接器」里连接企业微信 / 钉钉 / 飞书群机器人或邮箱后，可以把提醒发到那里')}
       >
         <Select
           value={value.notifyConnector ?? 'none'}
           onChange={(v) => set({ notifyConnector: v === 'none' ? null : v })}
-          options={[{ value: 'none', label: '只发系统通知' }, ...(targets.data ?? []).map((d) => ({ value: d.id, label: d.name }))]}
+          options={[{ value: 'none', label: t('只发系统通知') }, ...(targets.data ?? []).map((d) => ({ value: d.id, label: d.name }))]}
         />
       </Field>
       {value.action === 'agent' ? (
-        <Field label="让 Agent 做什么" hint="触发原因和网址会一并告诉 Agent">
+        <Field label={t('让 Agent 做什么')} hint={t('触发原因和网址会一并告诉 Agent')}>
           <Textarea
             value={value.prompt ?? ''}
             onChange={(e) => set({ prompt: e.target.value })}
             rows={3}
-            placeholder="打开这个页面，把新公告的标题和要点整理成一段摘要"
+            placeholder={t('打开这个页面，把新公告的标题和要点整理成一段摘要')}
           />
         </Field>
       ) : null}

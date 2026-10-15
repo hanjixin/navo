@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { describeFile, useFileRecord } from '@/stores/files'
 import { FileIcon } from './file-icon'
 import { FilePreview } from './file-preview'
+import { t } from '@shared/i18n'
 
 /** A file attached to a draft or a sent message: live parse status, click to preview. */
 export function AttachmentChip({ id, fallback, onRemove, className }: { id: string; fallback?: MessageAttachment; onRemove?: () => void; className?: string }) {
@@ -22,7 +23,7 @@ export function AttachmentChip({ id, fallback, onRemove, className }: { id: stri
     () => (ready && (f.kind === 'image' || f.kind === 'pdf') ? call('files.thumbnail', id) : Promise.resolve(null)),
     [id, ready, f?.parsedAt],
   )
-  const name = f?.name ?? fallback?.name ?? '文件'
+  const name = f?.name ?? fallback?.name ?? t('文件')
   const busy = f?.status === 'queued' || f?.status === 'parsing'
   const failed = f?.status === 'error'
   return (
@@ -50,13 +51,13 @@ export function AttachmentChip({ id, fallback, onRemove, className }: { id: stri
             {busy ? <Loader2 className="size-3 shrink-0 animate-spin text-brand" /> : failed ? <AlertCircle className="size-3 shrink-0" /> : null}
             <span className="truncate">
               {busy
-                ? (f?.progress ?? '解析中…')
+                ? (f?.progress ?? t('解析中…'))
                 : failed
-                  ? '解析失败'
+                  ? t('解析失败')
                   : f
-                    ? describeFile(f) || '已解析'
+                    ? describeFile(f) || t('已解析')
                     : fallback?.chars
-                      ? `${fallback.chars.toLocaleString()} 字`
+                      ? t('{{v0}} 字', { v0: fallback.chars.toLocaleString() })
                       : ''}
             </span>
           </div>
@@ -68,7 +69,7 @@ export function AttachmentChip({ id, fallback, onRemove, className }: { id: stri
               e.stopPropagation()
               onRemove()
             }}
-            aria-label={`移除 ${name}`}
+            aria-label={t('移除 {{v0}}', { v0: name })}
           >
             <X className="size-3.5" />
           </button>
@@ -76,7 +77,7 @@ export function AttachmentChip({ id, fallback, onRemove, className }: { id: stri
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         {open ? (
-          <DialogContent title="文件内容" description="这是发送给 Agent 的解析结果" className="h-[80vh] w-[min(820px,calc(100vw-48px))]">
+          <DialogContent title={t('文件内容')} description={t('这是发送给 Agent 的解析结果')} className="h-[80vh] w-[min(820px,calc(100vw-48px))]">
             {f ? <FilePreview file={f} compact /> : <Skeleton className="h-64" />}
           </DialogContent>
         ) : null}

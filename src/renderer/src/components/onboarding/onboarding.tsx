@@ -30,32 +30,33 @@ import { cn, errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
-const STEPS = ['连接模型', '导入能力', '外观', '完成'] as const
+const STEPS = [t('连接模型'), t('导入能力'), t('外观'), t('完成')] as const
 
-const CUSTOM: Preset = { id: 'custom', name: '其他兼容接口', type: 'openai-compatible', baseURL: '', models: [] }
+const CUSTOM: Preset = { id: 'custom', name: t('其他兼容接口'), type: 'openai-compatible', baseURL: '', models: [] }
 const PRESET_HINTS: Record<string, string> = {
-  anthropic: 'Claude 系列',
-  openai: 'GPT 系列 · Responses API',
-  deepseek: '国内直连 · 性价比高',
-  qwen: '阿里云百炼',
-  kimi: '月之暗面',
-  glm: '智谱开放平台',
-  siliconflow: '多家开源模型',
-  openrouter: '一个 Key 用多家模型',
-  ollama: '本地运行 · 无需密钥',
-  custom: '填写任意 OpenAI 兼容地址',
+  anthropic: t('Claude 系列'),
+  openai: t('GPT 系列 · Responses API'),
+  deepseek: t('国内直连 · 性价比高'),
+  qwen: t('阿里云百炼'),
+  kimi: t('月之暗面'),
+  glm: t('智谱开放平台'),
+  siliconflow: t('多家开源模型'),
+  openrouter: t('一个 Key 用多家模型'),
+  ollama: t('本地运行 · 无需密钥'),
+  custom: t('填写任意 OpenAI 兼容地址'),
 }
 
 const STARTERS: { icon: LucideIcon; text: string }[] = [
-  { icon: Newspaper, text: '打开 Hacker News，总结今天排名前 5 的文章' },
-  { icon: Search, text: '搜索 “LangGraph deepagents”，整理 3 个最有用的链接' },
-  { icon: Sparkles, text: '记住：我偏好简洁的中文回答' },
+  { icon: Newspaper, text: t('打开 Hacker News，总结今天排名前 5 的文章') },
+  { icon: Search, text: t('搜索 “LangGraph deepagents”，整理 3 个最有用的链接') },
+  { icon: Sparkles, text: t('记住：我偏好简洁的中文回答') },
 ]
 
 function Stepper({ current }: { current: number }) {
   return (
-    <ol className="mb-10 flex items-center gap-2" aria-label="设置进度">
+    <ol className="mb-10 flex items-center gap-2" aria-label={t('设置进度')}>
       {STEPS.map((label, i) => {
         const done = i < current
         const active = i === current
@@ -83,15 +84,15 @@ function Stepper({ current }: { current: number }) {
 
 function Welcome() {
   const features: { icon: LucideIcon; title: string; text: string }[] = [
-    { icon: Globe, title: '替你操作浏览器', text: '打开网页、搜索、填表、翻页采集，每一步都在右侧看得见、随时可接管。' },
-    { icon: Plug, title: '连接你的工具', text: '接入 MCP 与连接器，复用 .agents 中已有的 Skill。' },
-    { icon: Clapperboard, title: '把重复操作变成一键', text: '录制宏、编写站点插件，让 Agent 更快更稳地完成固定流程。' },
+    { icon: Globe, title: t('替你操作浏览器'), text: t('打开网页、搜索、填表、翻页采集，每一步都在右侧看得见、随时可接管。') },
+    { icon: Plug, title: t('连接你的工具'), text: t('接入 MCP 与连接器，复用 .agents 中已有的 Skill。') },
+    { icon: Clapperboard, title: t('把重复操作变成一键'), text: t('录制宏、编写站点插件，让 Agent 更快更稳地完成固定流程。') },
   ]
   return (
     <div>
       <Logo className="size-12" />
-      <h1 className="mt-6 text-2xl font-semibold tracking-[-0.01em]">欢迎使用 {PRODUCT_NAME}</h1>
-      <p className="mt-1.5 text-base text-muted-foreground">会自己上网干活的桌面 AI 助手。花一分钟完成设置，就可以开始了。</p>
+      <h1 className="mt-6 text-2xl font-semibold tracking-[-0.01em]">{t('欢迎使用 {{v0}}', { v0: PRODUCT_NAME })}</h1>
+      <p className="mt-1.5 text-base text-muted-foreground">{t('会自己上网干活的桌面 AI 助手。花一分钟完成设置，就可以开始了。')}</p>
       <div className="mt-8 grid gap-3">
         {features.map((f) => (
           <div key={f.title} className="flex items-start gap-3.5 rounded-lg border border-border bg-card px-4 py-3.5">
@@ -141,8 +142,10 @@ function ModelStep({
   if (state.phase === 'pick' || !p) {
     return (
       <div>
-        <h2 className="text-xl font-semibold">选择模型服务</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Agent 需要一个支持工具调用的大模型。选择你已有账号的服务商，之后可以在「模型」页面添加更多。</p>
+        <h2 className="text-xl font-semibold">{t('选择模型服务')}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t('Agent 需要一个支持工具调用的大模型。选择你已有账号的服务商，之后可以在「模型」页面添加更多。')}
+        </p>
         <div className="mt-6 grid grid-cols-2 gap-2 @lg:grid-cols-3">
           {[...PRESETS, CUSTOM].map((x) => (
             <button
@@ -172,14 +175,14 @@ function ModelStep({
         className="interactive mb-4 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
-        重新选择服务商
+        {t('重新选择服务商')}
       </button>
-      <h2 className="text-xl font-semibold">连接 {p.name}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">密钥使用系统钥匙串加密保存在本机，不会上传到任何地方。</p>
+      <h2 className="text-xl font-semibold">{t('连接 {{v0}}', { v0: p.name })}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t('密钥使用系统钥匙串加密保存在本机，不会上传到任何地方。')}</p>
 
       <div className="mt-6 grid gap-4">
         {needsUrl || p.type === 'openai-compatible' ? (
-          <Field label="Base URL" hint={needsUrl ? '例如 https://api.example.com/v1' : undefined}>
+          <Field label="Base URL" hint={needsUrl ? t('例如 https://api.example.com/v1') : undefined}>
             <Input
               value={baseURL}
               onChange={(e) => setBaseURL(e.target.value)}
@@ -195,7 +198,7 @@ function ModelStep({
             hint={
               p.keyUrl ? (
                 <Button variant="link" size="sm" className="text-xs" onClick={() => void call('app.openExternal', p.keyUrl!)}>
-                  还没有？获取 {p.name} API Key
+                  {t('还没有？获取 {{v0}} API Key', { v0: p.name })}
                   <ExternalLink className="size-3" />
                 </Button>
               ) : undefined
@@ -207,7 +210,7 @@ function ModelStep({
               autoFocus
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && key && onConnect(key, baseURL)}
-              placeholder={state.provider ? '已保存（重新填写可更换）' : 'sk-…'}
+              placeholder={state.provider ? t('已保存（重新填写可更换）') : 'sk-…'}
               className="font-mono text-xs"
               disabled={state.phase === 'connecting'}
             />
@@ -217,7 +220,7 @@ function ModelStep({
         {state.phase === 'form' || state.phase === 'error' ? (
           <div className="flex items-center gap-3">
             <Button variant="secondary" disabled={(needsKey && !key && !state.provider) || (needsUrl && !baseURL)} onClick={() => onConnect(key, baseURL)}>
-              连接
+              {t('连接')}
             </Button>
             {state.phase === 'error' && state.error ? <span className="text-xs text-danger">{state.error.split('\n')[0]}</span> : null}
           </div>
@@ -227,13 +230,16 @@ function ModelStep({
           <div className="grid gap-2 rounded-lg border border-border bg-card p-4" aria-busy="true">
             <Skeleton className="h-3.5 w-1/3" />
             <Skeleton className="h-8 w-full" />
-            <p className="text-xs text-muted-foreground">正在连接并获取可用模型…</p>
+            <p className="text-xs text-muted-foreground">{t('正在连接并获取可用模型…')}</p>
           </div>
         ) : null}
 
         {state.phase === 'ready' ? (
           <div className="grid animate-fade-in gap-3 rounded-lg border border-border bg-card p-4">
-            <Field label="默认模型" hint={state.models.length ? `共 ${state.models.length} 个可用模型` : '未能自动获取模型列表，可手动填写模型 ID'}>
+            <Field
+              label={t('默认模型')}
+              hint={state.models.length ? t('共 {{v0}} 个可用模型', { v0: state.models.length }) : t('未能自动获取模型列表，可手动填写模型 ID')}
+            >
               {state.models.length ? (
                 <Select value={state.model} onChange={(v) => onTest(v)} options={state.models.map((m) => ({ value: m, label: m }))} />
               ) : (
@@ -242,22 +248,22 @@ function ModelStep({
                   onChange={(e) => setState({ model: e.target.value, test: null })}
                   onBlur={() => state.model && onTest(state.model)}
                   className="font-mono text-xs"
-                  placeholder="模型 ID"
+                  placeholder={t('模型 ID')}
                 />
               )}
             </Field>
             {state.test == null ? (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="size-1.5 animate-pulse rounded-full bg-brand" />
-                正在测试模型…
+                {t('正在测试模型…')}
               </p>
             ) : state.test.ok ? (
               <p className="flex items-center gap-1.5 text-xs text-success">
                 <Check className="size-3.5" />
-                连接成功 · {state.test.latencyMs} ms
+                {t('连接成功 · {{v0}} ms', { v0: state.test.latencyMs })}
               </p>
             ) : (
-              <ErrorState error={state.test.error ?? '测试失败'} onRetry={() => onTest(state.model)} compact />
+              <ErrorState error={state.test.error ?? t('测试失败')} onRetry={() => onTest(state.model)} compact />
             )}
           </div>
         ) : null}
@@ -280,8 +286,8 @@ function ImportStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s:
   }
   return (
     <div>
-      <h2 className="text-xl font-semibold">导入已有能力</h2>
-      <p className="mt-1 text-sm text-muted-foreground">从本机其他 Agent 工具中复用 Skill 与 MCP 服务器。只会读取它们的配置，不会修改。</p>
+      <h2 className="text-xl font-semibold">{t('导入已有能力')}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t('从本机其他 Agent 工具中复用 Skill 与 MCP 服务器。只会读取它们的配置，不会修改。')}</p>
 
       <div className="mt-6 rounded-lg border border-border bg-card px-4 py-3.5">
         {sources.data === undefined ? (
@@ -292,27 +298,27 @@ function ImportStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s:
             <div className="min-w-0 flex-1 text-sm">
               {skillCount ? (
                 <>
-                  已自动接入 <span className="font-medium">{skillCount}</span> 个 Skill
+                  {t('已自动接入')} <span className="font-medium">{skillCount}</span> {t('个 Skill')}
                 </>
               ) : (
-                '没有发现共享的 Skill'
+                t('没有发现共享的 Skill')
               )}
               <div className="truncate text-xs text-muted-foreground">
                 {(sources.data ?? [])
                   .filter((s) => s.id !== 'local' && s.skillCount)
                   .map((s) => `${s.label} ${s.skillCount}`)
-                  .join(' · ') || '会扫描 ~/.agents/skills、~/.claude/skills 等目录'}
+                  .join(' · ') || t('会扫描 ~/.agents/skills、~/.claude/skills 等目录')}
               </div>
             </div>
-            {skillCount ? <Badge variant="success">只读接入</Badge> : null}
+            {skillCount ? <Badge variant="success">{t('只读接入')}</Badge> : null}
           </div>
         )}
       </div>
 
       <div className="mt-6 mb-2 flex items-end justify-between">
         <div>
-          <div className="text-sm font-medium">MCP 服务器</div>
-          <div className="text-xs text-muted-foreground">来自 .agents、Claude Code、Cursor、Codex 等的配置</div>
+          <div className="text-sm font-medium">{t('MCP 服务器')}</div>
+          <div className="text-xs text-muted-foreground">{t('来自 .agents、Claude Code、Cursor、Codex 等的配置')}</div>
         </div>
         {importable.length > 1 ? (
           <Button
@@ -321,7 +327,7 @@ function ImportStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s:
             className="text-xs"
             onClick={() => setPicked(picked.size === importable.length ? new Set() : new Set(importable.map((d) => d.key)))}
           >
-            {picked.size === importable.length ? '取消全选' : '全选'}
+            {picked.size === importable.length ? t('取消全选') : t('全选')}
           </Button>
         ) : null}
       </div>
@@ -332,8 +338,8 @@ function ImportStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s:
       ) : !found.data.length ? (
         <EmptyState
           icon={Radar}
-          title="没有发现 MCP 配置"
-          description="之后可以在「MCP」页面手动添加。"
+          title={t('没有发现 MCP 配置')}
+          description={t('之后可以在「MCP」页面手动添加。')}
           className="rounded-lg border border-dashed border-border py-8"
         />
       ) : (
@@ -363,7 +369,7 @@ function ImportStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s:
                   {d.transport === 'stdio' ? `${d.command} ${(d.args ?? []).join(' ')}` : d.url}
                 </div>
               </div>
-              {d.imported ? <Badge variant="success">已导入</Badge> : <Badge variant="outline">{d.transport}</Badge>}
+              {d.imported ? <Badge variant="success">{t('已导入')}</Badge> : <Badge variant="outline">{d.transport}</Badge>}
             </label>
           ))}
         </div>
@@ -397,14 +403,14 @@ function ThemePreview({ dark }: { dark: boolean }) {
 function ThemeStep() {
   const { settings, update } = useSettings()
   const options: { value: Settings['theme']; label: string; icon: LucideIcon }[] = [
-    { value: 'light', label: '浅色', icon: Sun },
-    { value: 'dark', label: '深色', icon: Moon },
-    { value: 'system', label: '跟随系统', icon: Monitor },
+    { value: 'light', label: t('浅色'), icon: Sun },
+    { value: 'dark', label: t('深色'), icon: Moon },
+    { value: 'system', label: t('跟随系统'), icon: Monitor },
   ]
   return (
     <div>
-      <h2 className="text-xl font-semibold">选择外观</h2>
-      <p className="mt-1 text-sm text-muted-foreground">随时可以在「设置」中更改。</p>
+      <h2 className="text-xl font-semibold">{t('选择外观')}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t('随时可以在「设置」中更改。')}</p>
       <div className="mt-6 grid grid-cols-3 gap-3">
         {options.map((o) => {
           const active = settings?.theme === o.value
@@ -442,20 +448,20 @@ function DoneStep({ summary, onStart }: { summary: { model?: string; mcp: number
       <div className="flex size-10 items-center justify-center rounded-full bg-success-soft">
         <Check className="size-5 text-success" />
       </div>
-      <h2 className="mt-5 text-xl font-semibold">一切就绪</h2>
+      <h2 className="mt-5 text-xl font-semibold">{t('一切就绪')}</h2>
       <ul className="mt-3 grid gap-1.5 text-sm text-muted-foreground">
         <li className="flex items-center gap-2">
           <Check className={cn('size-3.5', summary.model ? 'text-success' : 'text-subtle-foreground')} />
-          {summary.model ? `默认模型：${summary.model}` : '模型：稍后在「模型」页面配置'}
+          {summary.model ? t('默认模型：{{v0}}', { v0: summary.model }) : t('模型：稍后在「模型」页面配置')}
         </li>
         <li className="flex items-center gap-2">
           <Check className={cn('size-3.5', summary.mcp ? 'text-success' : 'text-subtle-foreground')} />
-          {summary.mcp ? `已导入 ${summary.mcp} 个 MCP 服务器` : '未导入 MCP 服务器'}
+          {summary.mcp ? t('已导入 {{v0}} 个 MCP 服务器', { v0: summary.mcp }) : t('未导入 MCP 服务器')}
         </li>
       </ul>
       {summary.model ? (
         <>
-          <div className="mt-8 mb-2 text-sm font-medium">试试这些</div>
+          <div className="mt-8 mb-2 text-sm font-medium">{t('试试这些')}</div>
           <div className="grid gap-2">
             {STARTERS.map((s) => (
               <button
@@ -486,7 +492,7 @@ export function Onboarding() {
   const isMac = window.api.platform === 'darwin'
 
   useEffect(() => {
-    document.title = `欢迎使用 ${PRODUCT_NAME}`
+    document.title = t('欢迎使用 {{v0}}', { v0: PRODUCT_NAME })
   }, [])
 
   const testModel = async (modelName: string, provider = m.provider) => {
@@ -517,7 +523,7 @@ export function Onboarding() {
       const provider = await call('providers.save', {
         id: m.provider?.id,
         type: p.type,
-        name: p.id === 'custom' ? '自定义接口' : p.name,
+        name: p.id === 'custom' ? t('自定义接口') : p.name,
         baseURL: baseURL.trim() || null,
         apiKey: key ? key.trim() : m.provider ? undefined : '',
       })
@@ -561,19 +567,19 @@ export function Onboarding() {
   }
 
   const primary = useMemo(() => {
-    if (step === -1) return { label: '开始设置', disabled: false }
-    if (step === 0) return { label: '下一步', disabled: !m.test?.ok }
-    if (step === 1) return { label: picked.size ? `导入 ${picked.size} 项并继续` : '下一步', disabled: false }
-    if (step === 2) return { label: '下一步', disabled: false }
-    return { label: '开始使用', disabled: false }
+    if (step === -1) return { label: t('开始设置'), disabled: false }
+    if (step === 0) return { label: t('下一步'), disabled: !m.test?.ok }
+    if (step === 1) return { label: picked.size ? t('导入 {{v0}} 项并继续', { v0: picked.size }) : t('下一步'), disabled: false }
+    if (step === 2) return { label: t('下一步'), disabled: false }
+    return { label: t('开始使用'), disabled: false }
   }, [step, m.test, picked.size])
 
   return (
-    <div className="flex h-full flex-col bg-background" role="dialog" aria-label="首次设置">
+    <div className="flex h-full flex-col bg-background" role="dialog" aria-label={t('首次设置')}>
       <header className={cn('drag flex h-11 shrink-0 items-center justify-end px-4', isMac && 'pl-[84px]')}>
         {step < 3 ? (
           <Button variant="ghost" size="sm" className="no-drag text-xs" onClick={() => void finish()}>
-            跳过引导
+            {t('跳过引导')}
           </Button>
         ) : null}
       </header>
@@ -593,13 +599,13 @@ export function Onboarding() {
         <div className="mx-auto flex w-full max-w-[600px] items-center gap-2 px-6 py-3.5">
           {step >= 0 && step < 3 ? (
             <Button variant="ghost" onClick={() => setStep((s) => s - 1)}>
-              上一步
+              {t('上一步')}
             </Button>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
             {step === 0 && !m.test?.ok ? (
               <Button variant="ghost" onClick={() => setStep(1)}>
-                稍后配置
+                {t('稍后配置')}
               </Button>
             ) : null}
             <Button variant="primary" size="lg" loading={busy} disabled={primary.disabled} onClick={() => (step === 3 ? void finish() : void next())}>

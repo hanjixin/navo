@@ -23,10 +23,12 @@ import { tasks } from './tasks/task-service'
 import { monitor } from './monitor/monitor-service'
 import { usage } from './usage/usage-service'
 import { voice } from './voice/voice-service'
+import { resolveLanguage } from './core/language'
 import { outputs } from './outputs/outputs-service'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
 import { navoMcpServer } from './mcp-server/navo-mcp-server'
+import { t } from '@shared/i18n'
 
 let sandboxRelease: NodeJS.Timeout | undefined
 
@@ -54,14 +56,14 @@ export function registerHandlers(): void {
     'threads.state': (id) => agent.threadState(id),
     // runs stream via events; the invoke returns immediately
     'chat.send': (threadId, text, images, fileIds) => {
-      if (agent.isRunning(threadId)) throw new Error('该会话正在运行中')
+      if (agent.isRunning(threadId)) throw new Error(t('该会话正在运行中'))
       background(agent.send_(threadId, text, images, {}, fileIds ?? []))
     },
     'chat.resume': (threadId, decisions, alwaysAllow) => {
       background(agent.resume(threadId, decisions, alwaysAllow))
     },
     'chat.regenerate': async (threadId, messageId, text) => {
-      if (agent.isRunning(threadId)) throw new Error('该会话正在运行中')
+      if (agent.isRunning(threadId)) throw new Error(t('该会话正在运行中'))
       background(agent.regenerate(threadId, messageId, text))
     },
     'chat.stop': (threadId) => agent.stop(threadId),
@@ -162,14 +164,14 @@ export function registerHandlers(): void {
     'macros.list': () => recorder.list(),
     'macros.save': (m) => {
       const saved = recorder.save(m)
-      flows.recordVersion(saved, 'user', '手动编辑')
+      flows.recordVersion(saved, 'user', t('手动编辑'))
       return saved
     },
     'macros.delete': (id) => recorder.delete(id),
     'macros.startRecording': () => recorder.start(),
     'macros.stopRecording': async () => {
       const m = await recorder.stop()
-      if (m) flows.recordVersion(m, 'recorded', '录制')
+      if (m) flows.recordVersion(m, 'recorded', t('录制'))
       return m
     },
     'flows.traceInfo': (threadId) => flows.traceInfo(threadId),
@@ -241,7 +243,7 @@ export function registerHandlers(): void {
     'dev.tools': () => describeTools(collectTools(activeTabCtx)),
     'dev.invokeTool': async (name, args) => {
       const entry = collectTools(activeTabCtx).find((e) => e.tool.name === name)
-      if (!entry) throw new Error(`工具不存在: ${name}`)
+      if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: name }))
       clearTimeout(sandboxRelease)
       try {
         const out = await entry.tool.invoke(args)
@@ -258,6 +260,7 @@ export function registerHandlers(): void {
     },
     'dev.logs': () => log.lines(),
     'app.showItemInFolder': (path) => shell.showItemInFolder(path),
+    'app.language': () => resolveLanguage(),
     'app.openExternal': (url) => {
       if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     },

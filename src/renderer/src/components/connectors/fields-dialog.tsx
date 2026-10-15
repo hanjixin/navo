@@ -8,6 +8,7 @@ import { Field, Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { call } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /**
  * Connects a connector that takes a form (app credentials, a webhook, a mailbox). On a reconnect the
@@ -29,7 +30,7 @@ export function FieldsDialog({ def, state, onClose, onDone }: { def: ConnectorDe
     setError(null)
     try {
       await call('connectors.connect', def.id, values)
-      toast.success(`已连接 ${def.name}`)
+      toast.success(t('已连接 {{v0}}', { v0: def.name }))
       onDone()
       onClose()
     } catch (e) {
@@ -42,24 +43,24 @@ export function FieldsDialog({ def, state, onClose, onDone }: { def: ConnectorDe
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={`${editing ? '修改' : '连接'} ${def.name}`}
+        title={`${editing ? t('修改') : t('连接')} ${def.name}`}
         description={
-          def.kind === 'stdio' ? '官方 MCP 服务会在本机启动（需要 Node.js），凭证加密保存在钥匙串。' : '凭证加密保存在本机钥匙串，只用于这个连接器。'
+          def.kind === 'stdio' ? t('官方 MCP 服务会在本机启动（需要 Node.js），凭证加密保存在钥匙串。') : t('凭证加密保存在本机钥匙串，只用于这个连接器。')
         }
         className="w-[520px]"
         footer={
           <>
             {def.setupHelp ? (
               <Button variant="link" size="sm" className="mr-auto text-xs" onClick={() => void call('app.openExternal', def.setupHelp!)}>
-                怎么获取
+                {t('怎么获取')}
                 <ExternalLink className="size-3" />
               </Button>
             ) : null}
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" loading={pending} disabled={!ready} onClick={() => void submit()}>
-              {editing ? '保存并重新连接' : '连接'}
+              {editing ? t('保存并重新连接') : t('连接')}
             </Button>
           </>
         }
@@ -83,7 +84,7 @@ export function FieldsDialog({ def, state, onClose, onDone }: { def: ConnectorDe
                   aria-label={f.label}
                   autoFocus={i === 0}
                   value={values[f.key] ?? ''}
-                  placeholder={f.secret && editing ? '已保存，留空则不变' : f.placeholder}
+                  placeholder={f.secret && editing ? t('已保存，留空则不变') : f.placeholder}
                   onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
                   className={f.secret || f.key.includes('host') || f.key === 'webhook' ? 'font-mono text-xs' : undefined}
                 />

@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { call } from '@/lib/ipc'
 import { startRecording, type Recording } from '@/lib/recorder'
 import { errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /** recordings stop by themselves after this long */
 const MAX_MS = 120_000
@@ -47,9 +48,9 @@ export function useVoice(onText: (text: string) => void) {
       const wav = await r.stop()
       const { text } = await call('voice.transcribe', wav)
       if (text) onTextRef.current(text)
-      else toast('没有听清，请再说一次')
+      else toast(t('没有听清，请再说一次'))
     } catch (e) {
-      toast.error('语音识别失败', { description: errorMessage(e) })
+      toast.error(t('语音识别失败'), { description: errorMessage(e) })
     } finally {
       window.clearTimeout(slowTimer)
       setSlow(false)
@@ -64,7 +65,7 @@ export function useVoice(onText: (text: string) => void) {
     try {
       const status = await call('voice.status')
       if (!status.ready) throw new Error(status.reason)
-      if (!(await call('voice.prepare'))) throw new Error('没有麦克风权限：在「系统设置 → 隐私与安全性 → 麦克风」里允许 Navo')
+      if (!(await call('voice.prepare'))) throw new Error(t('没有麦克风权限：在「系统设置 → 隐私与安全性 → 麦克风」里允许 Navo'))
       rec.current = await startRecording()
       const began = Date.now()
       setState('recording')
@@ -78,7 +79,7 @@ export function useVoice(onText: (text: string) => void) {
       rec.current = null
       clear()
       setState('idle')
-      toast.error('无法开始语音输入', { description: errorMessage(e) })
+      toast.error(t('无法开始语音输入'), { description: errorMessage(e) })
     }
   }, [state, stop])
 

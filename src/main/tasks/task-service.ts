@@ -9,6 +9,7 @@ import { agent } from '../agent/agent-service'
 import { flows } from '../flows/flows'
 import { monitor } from '../monitor/monitor-service'
 import { connectors } from '../connectors/connector-service'
+import { t } from '@shared/i18n'
 
 interface TaskRow {
   id: string
@@ -79,22 +80,22 @@ class TaskService {
   }
 
   get(id: string): Task {
-    const t = this.list().find((x) => x.id === id)
-    if (!t) throw new Error('任务不存在')
-    return t
+    const found = this.list().find((x) => x.id === id)
+    if (!found) throw new Error(t('任务不存在'))
+    return found
   }
 
   save(input: Omit<Task, 'id' | 'createdAt'> & { id?: string }): Task {
     const kind = input.kind ?? 'agent'
-    if (!input.name.trim()) throw new Error('名称必填')
-    if (kind === 'agent' && !input.prompt.trim()) throw new Error('任务描述必填')
-    if (kind === 'flow' && !input.macroId) throw new Error('请选择要回放的固定流程')
+    if (!input.name.trim()) throw new Error(t('名称必填'))
+    if (kind === 'agent' && !input.prompt.trim()) throw new Error(t('任务描述必填'))
+    if (kind === 'flow' && !input.macroId) throw new Error(t('请选择要回放的固定流程'))
     if (kind === 'monitor') {
       const url = input.monitor?.url.trim() ?? ''
-      if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('请填写要监控的网址（http:// 或 https:// 开头）')
-      if (input.monitor?.action === 'agent' && !input.monitor.prompt?.trim()) throw new Error('请填写触发后让 Agent 做什么')
+      if (!/^https?:\/\/\S+$/i.test(url)) throw new Error(t('请填写要监控的网址（http:// 或 https:// 开头）'))
+      if (input.monitor?.action === 'agent' && !input.monitor.prompt?.trim()) throw new Error(t('请填写触发后让 Agent 做什么'))
     }
-    if (input.cron && !cron.validate(input.cron)) throw new Error('Cron 表达式无效')
+    if (input.cron && !cron.validate(input.cron)) throw new Error(t('Cron 表达式无效'))
     const id = input.id ?? newId()
     db()
       .prepare(
@@ -154,7 +155,7 @@ class TaskService {
       void this.check(task).catch((err: Error) => log.warn(`[tasks] monitor check: ${err.message}`))
       return { id: '', taskId, threadId: '', status: 'running', startedAt: Date.now() }
     }
-    return this.runAgent(task, task.prompt, `任务：${task.name}`)
+    return this.runAgent(task, task.prompt, t('任务：{{v0}}', { v0: task.name }))
   }
 
   /** Checks a monitor now; when it triggers with an agent action, that runs as one of the task's runs. */
@@ -163,13 +164,16 @@ class TaskService {
       const cfg = task.monitor!
       // also to a group bot / mailbox, when chosen
       if (cfg.notifyConnector)
-        await connectors.notify(cfg.notifyConnector, { title: `监控提醒：${task.name}`, text: `${summary}\n\n[打开网页](${cfg.url})` }).catch((err: Error) => {
-          log.warn(`[tasks] monitor alert to ${cfg.notifyConnector} failed: ${err.message}`)
-          if (Notification.isSupported()) new Notification({ title: `监控提醒没能发出：${task.name}`, body: err.message.slice(0, 160) }).show()
-        })
+        await connectors
+          .notify(cfg.notifyConnector, { title: t('监控提醒：{{v0}}', { v0: task.name }), text: `${summary}\n\n[打开网页](${cfg.url})` })
+          .catch((err: Error) => {
+            log.warn(`[tasks] monitor alert to ${cfg.notifyConnector} failed: ${err.message}`)
+            if (Notification.isSupported())
+              new Notification({ title: t('监控提醒没能发出：{{v0}}', { v0: task.name }), body: err.message.slice(0, 160) }).show()
+          })
       if (cfg.action !== 'agent' || !cfg.prompt?.trim()) return null
       const prompt = `${cfg.prompt.trim()}\n\n（这是网页监控「${task.name}」触发后的任务。触发原因：${summary}。网页：${cfg.url}）`
-      return this.runAgent(task, prompt, `监控：${task.name}`).threadId
+      return this.runAgent(task, prompt, t('监控：{{v0}}', { v0: task.name })).threadId
     })
   }
 
@@ -195,12 +199,17 @@ class TaskService {
         this.updateRun(run.id, {
           status,
           finished_at: Date.now(),
-          summary: res.interrupted ? '等待人工确认，请打开会话处理' : res.finalText.slice(0, 500),
+          summary: res.interrupted ? t('等待人工确认，请打开会话处理') : res.finalText.slice(0, 500),
           error: res.error ?? null,
         })
         if (Notification.isSupported()) {
           new Notification({
-            title: `任务${status === 'success' ? '完成' : status === 'cancelled' ? '已取消' : '失败'}：${task.name}`,
+            title:
+              status === 'success'
+                ? t('任务完成：{{v0}}', { v0: task.name })
+                : status === 'cancelled'
+                  ? t('任务已取消：{{v0}}', { v0: task.name })
+                  : t('任务失败：{{v0}}', { v0: task.name }),
             body: (res.error ?? res.finalText).slice(0, 120),
           }).show()
         }
@@ -230,17 +239,20 @@ class TaskService {
           .map(([k, v]) => `${k}：${v.slice(0, 200)}`)
           .join('\n')
         const summary = res.ok
-          ? `${res.repaired ? '回放中途页面有变化，已由 Agent 完成并更新流程' : '按固定流程回放完成，未调用模型'}${extracted ? `\n${extracted}` : ''}`
+          ? `${res.repaired ? t('回放中途页面有变化，已由 Agent 完成并更新流程') : t('按固定流程回放完成，未调用模型')}${extracted ? `\n${extracted}` : ''}`
           : null
         this.updateRun(run.id, {
           status: res.ok ? 'success' : 'error',
           finished_at: Date.now(),
           summary,
-          error: res.ok ? null : `第 ${(res.failedStep ?? 0) + 1} 步失败：${res.error ?? ''}`,
+          error: res.ok ? null : t('第 {{v0}} 步失败：{{v1}}', { v0: (res.failedStep ?? 0) + 1, v1: res.error ?? '' }),
           thread_id: res.repairThreadId ?? '',
         })
         if (Notification.isSupported())
-          new Notification({ title: `任务${res.ok ? '完成' : '失败'}：${task.name}`, body: (summary ?? res.error ?? '').slice(0, 120) }).show()
+          new Notification({
+            title: res.ok ? t('任务完成：{{v0}}', { v0: task.name }) : t('任务失败：{{v0}}', { v0: task.name }),
+            body: (summary ?? res.error ?? '').slice(0, 120),
+          }).show()
       },
       (err: Error) => this.updateRun(run.id, { status: 'error', finished_at: Date.now(), error: err.message }),
     )
@@ -266,7 +278,7 @@ class TaskService {
   init(): void {
     // runs left in 'running' by a previous session can't be resumed
     db().prepare("UPDATE task_runs SET status = 'cancelled', finished_at = ? WHERE status IN ('running', 'queued')").run(Date.now())
-    for (const t of this.list()) this.schedule(t)
+    for (const found of this.list()) this.schedule(found)
   }
 
   stopAll(): void {

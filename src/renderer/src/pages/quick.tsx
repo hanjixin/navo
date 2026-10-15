@@ -12,6 +12,7 @@ import { call, on } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useModels } from '@/stores/models'
+import { t } from '@shared/i18n'
 
 /**
  * The quick window (global shortcut): ask from anywhere, optionally about what was just copied or a
@@ -65,18 +66,18 @@ export function QuickPage() {
   const attachClipboard = async () => {
     if (!clip) return
     try {
-      const rec = await call('files.addData', '剪贴板.txt', new TextEncoder().encode(clip))
+      const rec = await call('files.addData', t('剪贴板.txt'), new TextEncoder().encode(clip))
       useChat.getState().setDraftFiles([...draftFiles, rec.id])
       setClip(null)
     } catch (e) {
-      toast.error('无法添加剪贴板内容', { description: errorMessage(e) })
+      toast.error(t('无法添加剪贴板内容'), { description: errorMessage(e) })
     }
   }
 
   const decide = async (decisions: Decision[], alwaysAllow?: string[]) => {
     if (!activeId) return
     useChat.setState((s) => ({ views: { ...s.views, [activeId]: { ...s.views[activeId], interrupt: null, running: true } } }))
-    await call('chat.resume', activeId, decisions, alwaysAllow).catch((e) => toast.error('提交失败', { description: errorMessage(e) }))
+    await call('chat.resume', activeId, decisions, alwaysAllow).catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
   }
 
   const hasMessages = !!view?.messages.length
@@ -85,25 +86,25 @@ export function QuickPage() {
     <div className="flex h-screen flex-col overflow-hidden rounded-xl border border-border bg-background/95 text-foreground shadow-float">
       <header className="drag flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
         <Logo className="size-5" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{thread?.title && hasMessages ? thread.title : 'Navo 快问'}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{thread?.title && hasMessages ? thread.title : t('Navo 快问')}</span>
         <div className="no-drag flex items-center gap-0.5">
-          <Tooltip content="截图提问">
-            <Button variant="ghost" size="icon-sm" aria-label="截图提问" onClick={() => void call('quick.screenshot')}>
+          <Tooltip content={t('截图提问')}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('截图提问')} onClick={() => void call('quick.screenshot')}>
               <Camera />
             </Button>
           </Tooltip>
-          <Tooltip content="新的提问 ⌘N">
-            <Button variant="ghost" size="icon-sm" aria-label="新的提问" onClick={newChat} disabled={!hasMessages}>
+          <Tooltip content={t('新的提问 ⌘N')}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('新的提问')} onClick={newChat} disabled={!hasMessages}>
               <Plus />
             </Button>
           </Tooltip>
-          <Tooltip content="在 Navo 中继续">
-            <Button variant="ghost" size="icon-sm" aria-label="在 Navo 中继续" onClick={() => void call('quick.openInMain', activeId)}>
+          <Tooltip content={t('在 Navo 中继续')}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('在 Navo 中继续')} onClick={() => void call('quick.openInMain', activeId)}>
               <Maximize2 />
             </Button>
           </Tooltip>
-          <Tooltip content="收起 Esc">
-            <Button variant="ghost" size="icon-sm" aria-label="收起" onClick={() => void call('quick.hide')}>
+          <Tooltip content={t('收起 Esc')}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('收起')} onClick={() => void call('quick.hide')}>
               <X />
             </Button>
           </Tooltip>
@@ -117,8 +118,8 @@ export function QuickPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <p className="text-sm text-muted-foreground">问点什么，或让 Navo 去网上帮你办件事</p>
-          <p className="text-xs text-subtle-foreground">回车发送 · Esc 收起 · 需要时可以在 Navo 主窗口继续</p>
+          <p className="text-sm text-muted-foreground">{t('问点什么，或让 Navo 去网上帮你办件事')}</p>
+          <p className="text-xs text-subtle-foreground">{t('回车发送 · Esc 收起 · 需要时可以在 Navo 主窗口继续')}</p>
         </div>
       )}
 
@@ -129,7 +130,7 @@ export function QuickPage() {
             className="interactive flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-left text-xs text-muted-foreground hover:border-input hover:text-foreground"
           >
             <ClipboardList className="size-3.5 shrink-0" />
-            <span className="shrink-0">问刚复制的内容：</span>
+            <span className="shrink-0">{t('问刚复制的内容：')}</span>
             <span className="min-w-0 truncate text-subtle-foreground">{clip.replace(/\s+/g, ' ').slice(0, 120)}</span>
           </button>
         ) : null}
@@ -141,7 +142,7 @@ export function QuickPage() {
           modelId={thread?.modelId ?? null}
           onModelChange={(id) => activeId && void call('threads.setModel', activeId, id)}
           disabled={noModels || !!view?.interrupt}
-          disabledReason={noModels ? '请先在 Navo 主窗口配置模型' : '请先处理上方的确认'}
+          disabledReason={noModels ? t('请先在 Navo 主窗口配置模型') : t('请先处理上方的确认')}
         />
       </div>
     </div>

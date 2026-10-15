@@ -9,6 +9,7 @@ import { getSettings } from '../core/settings'
 import { buildChatModel } from '../models/factory'
 import { models, resolveModel } from '../models/registry'
 import { type TokenUsage, UsageHandler } from '../models/usage-callback'
+import { t } from '@shared/i18n'
 
 /** Navo's own passes in the background: these wait when the daily budget is used up (if the user asked so) */
 export const BACKGROUND: UsagePurpose[] = ['memory', 'memory-tidy', 'skill', 'monitor']
@@ -83,8 +84,8 @@ class UsageService {
     const s = getSettings().usage
     if (Notification.isSupported())
       new Notification({
-        title: '今日模型用量已达预算',
-        body: s.pauseBackground ? '记忆整理、Skill 复盘和网页监控的判断会暂停到明天；对话不受影响。' : '可以在「用量」页面查看明细。',
+        title: t('今日模型用量已达预算'),
+        body: s.pauseBackground ? t('记忆整理、Skill 复盘和网页监控的判断会暂停到明天；对话不受影响。') : t('可以在「用量」页面查看明细。'),
       }).show()
   }
 
@@ -126,7 +127,7 @@ class UsageService {
       .all(since) as ({ thread_id: string; title: string | null; model_id: string | null } & Agg)[]
     const threads = new Map<string, { threadId: string; title: string } & UsageTotals>()
     for (const r of threadRows) {
-      if (!threads.has(r.thread_id)) threads.set(r.thread_id, { threadId: r.thread_id, title: r.title ?? '已删除的对话', ...empty() })
+      if (!threads.has(r.thread_id)) threads.set(r.thread_id, { threadId: r.thread_id, title: r.title ?? t('已删除的对话'), ...empty() })
       this.add(threads.get(r.thread_id)!, r, prices.get(r.model_id ?? ''))
     }
     const tokens = (t: UsageTotals) => t.input + t.output
@@ -151,7 +152,7 @@ export const usage = new UsageService()
  * daily budget is used up and the user asked to pause them.
  */
 export function trackedModel(modelId: string | null | undefined, purpose: UsagePurpose, threadId?: string | null): BaseChatModel {
-  if (!usage.allows(purpose)) throw new Error('今日模型用量已达预算，后台调用已暂停')
+  if (!usage.allows(purpose)) throw new Error(t('今日模型用量已达预算，后台调用已暂停'))
   const r = resolveModel(modelId)
   return buildChatModel(r, [new UsageHandler((u) => usage.record({ modelId: r.id, model: r.model, purpose, threadId, usage: u }))])
 }

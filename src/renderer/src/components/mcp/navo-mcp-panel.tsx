@@ -13,28 +13,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 type Client = 'claude-code' | 'cursor' | 'codex' | 'claude-desktop'
 
 function snippet(client: Client, url: string, token: string): { lang: string; text: string; where: string } {
   switch (client) {
     case 'claude-code':
-      return { where: '在终端执行', lang: 'sh', text: `claude mcp add --transport http navo ${url} --header "Authorization: Bearer ${token}"` }
+      return { where: t('在终端执行'), lang: 'sh', text: `claude mcp add --transport http navo ${url} --header "Authorization: Bearer ${token}"` }
     case 'cursor':
       return {
-        where: '写入 ~/.cursor/mcp.json',
+        where: t('写入 ~/.cursor/mcp.json'),
         lang: 'json',
         text: JSON.stringify({ mcpServers: { navo: { url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2),
       }
     case 'codex':
       return {
-        where: '写入 ~/.codex/config.toml',
+        where: t('写入 ~/.codex/config.toml'),
         lang: 'toml',
         text: `[mcp_servers.navo]\nurl = "${url}"\nhttp_headers = { Authorization = "Bearer ${token}" }`,
       }
     case 'claude-desktop':
       return {
-        where: '写入 claude_desktop_config.json（通过 mcp-remote 桥接）',
+        where: t('写入 claude_desktop_config.json（通过 mcp-remote 桥接）'),
         lang: 'json',
         text: JSON.stringify(
           {
@@ -60,11 +61,11 @@ function CopyBlock({ text, masked }: { text: string; masked: string }) {
         variant="ghost"
         size="icon-sm"
         className="absolute top-1.5 right-1.5"
-        aria-label="复制"
+        aria-label={t('复制')}
         onClick={() => {
           void navigator.clipboard.writeText(text)
           setDone(true)
-          toast.success('已复制（包含 Token）')
+          toast.success(t('已复制（包含 Token）'))
           setTimeout(() => setDone(false), 1200)
         }}
       >
@@ -93,7 +94,7 @@ export function NavoMcpPanel() {
     if (cfg.enabled && !token) call('navoMcp.token').then(setToken, () => undefined)
   }, [cfg.enabled, token])
 
-  const patch = (p: Partial<typeof cfg>) => update({ mcpServer: { ...cfg, ...p } }).catch((e) => toast.error('保存失败', { description: errorMessage(e) }))
+  const patch = (p: Partial<typeof cfg>) => update({ mcpServer: { ...cfg, ...p } }).catch((e) => toast.error(t('保存失败'), { description: errorMessage(e) }))
   const url = status?.url ?? `http://127.0.0.1:${cfg.port}/mcp`
   const shown = token ? (reveal ? token : `${token.slice(0, 9)}${'•'.repeat(18)}`) : '…'
   const mask = (s: string) => (token && !reveal ? s.split(token).join(shown) : s)
@@ -106,13 +107,15 @@ export function NavoMcpPanel() {
       <Card className="divide-y divide-border">
         <div className="flex items-start justify-between gap-6 px-5 py-4">
           <div>
-            <div className="text-sm font-medium">对外提供 MCP 服务</div>
+            <div className="text-sm font-medium">{t('对外提供 MCP 服务')}</div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              让 Claude Code、Cursor、Codex 等本机 Agent 通过 MCP 管理 {PRODUCT_NAME} 的对话、模型、Skill、MCP 与连接器，并可把任务交给 {PRODUCT_NAME} 的 Agent
-              执行。仅监听本机回环地址，需要 Token。
+              {t(
+                '让 Claude Code、Cursor、Codex 等本机 Agent 通过 MCP 管理 {{v0}} 的对话、模型、Skill、MCP 与连接器，并可把任务交给 {{v1}} 的 Agent 执行。仅监听本机回环地址，需要 Token。',
+                { v0: PRODUCT_NAME, v1: PRODUCT_NAME },
+              )}
             </div>
           </div>
-          <Switch checked={cfg.enabled} onCheckedChange={(v) => void patch({ enabled: v })} aria-label="启用 Navo MCP 服务" />
+          <Switch checked={cfg.enabled} onCheckedChange={(v) => void patch({ enabled: v })} aria-label={t('启用 Navo MCP 服务')} />
         </div>
 
         {cfg.enabled ? (
@@ -123,10 +126,10 @@ export function NavoMcpPanel() {
                 {status.running ? (
                   <span className="font-mono text-xs">{url}</span>
                 ) : (
-                  <span className="text-xs text-muted-foreground">{status.error ?? '正在启动…'}</span>
+                  <span className="text-xs text-muted-foreground">{status.error ?? t('正在启动…')}</span>
                 )}
                 <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-                  端口
+                  {t('端口')}
                   <Input
                     value={port}
                     onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
@@ -139,7 +142,7 @@ export function NavoMcpPanel() {
                 <code className="selectable flex h-8 min-w-0 flex-1 items-center truncate rounded-md border border-border bg-muted px-2.5 font-mono text-xs">
                   {shown}
                 </code>
-                <Button variant="ghost" size="icon-sm" onClick={() => setReveal((v) => !v)} aria-label={reveal ? '隐藏 Token' : '显示 Token'}>
+                <Button variant="ghost" size="icon-sm" onClick={() => setReveal((v) => !v)} aria-label={reveal ? t('隐藏 Token') : t('显示 Token')}>
                   {reveal ? <EyeOff /> : <Eye />}
                 </Button>
                 <Button
@@ -147,11 +150,11 @@ export function NavoMcpPanel() {
                   size="sm"
                   onClick={async () => {
                     setToken(await call('navoMcp.regenerateToken'))
-                    toast.success('已重新生成 Token', { description: '已连接的客户端需要更新配置' })
+                    toast.success(t('已重新生成 Token'), { description: t('已连接的客户端需要更新配置') })
                   }}
                 >
                   <RotateCw />
-                  重新生成
+                  {t('重新生成')}
                 </Button>
               </div>
             </div>
@@ -159,37 +162,45 @@ export function NavoMcpPanel() {
             <div className="grid gap-3 px-5 py-4">
               <div className="flex items-center gap-1.5 text-sm font-medium">
                 <ShieldCheck className="size-4 stroke-[1.75] text-brand" />
-                权限
+                {t('权限')}
               </div>
               <label className="flex items-center justify-between gap-4 text-sm">
                 <span>
-                  允许运行 {PRODUCT_NAME} Agent
+                  {t('允许运行 {{v0}} Agent', { v0: PRODUCT_NAME })}
                   <span className="block text-xs text-muted-foreground">
-                    navo_send_message：外部 Agent 可以给 {PRODUCT_NAME} 派任务（会操作内置浏览器，需确认的操作仍由你在 {PRODUCT_NAME} 中批准）
+                    {t('navo_send_message：外部 Agent 可以给 {{v0}} 派任务（会操作内置浏览器，需确认的操作仍由你在 {{v1}} 中批准）', {
+                      v0: PRODUCT_NAME,
+                      v1: PRODUCT_NAME,
+                    })}
                   </span>
                 </span>
                 <Switch checked={cfg.allowRun} onCheckedChange={(v) => void patch({ allowRun: v })} />
               </label>
               <label className="flex items-center justify-between gap-4 text-sm">
                 <span>
-                  允许修改配置
+                  {t('允许修改配置')}
                   <span className="block text-xs text-muted-foreground">
-                    新建/修改/删除 Skill、MCP 服务器、连接器、对话，切换默认模型。关闭时只开放只读工具
+                    {t('新建/修改/删除 Skill、MCP 服务器、连接器、对话，切换默认模型。关闭时只开放只读工具')}
                   </span>
                 </span>
                 <Switch checked={cfg.allowWrite} onCheckedChange={(v) => void patch({ allowWrite: v })} />
               </label>
               <label className="flex items-center justify-between gap-4 text-sm">
                 <span>
-                  允许读取记忆
+                  {t('允许读取记忆')}
                   <span className="block text-xs text-muted-foreground">
-                    memory_search / memory_daily：外部 Agent 可以读到 {PRODUCT_NAME} 记住的关于你的信息和每日日记。写入记忆还需要同时开启「允许修改配置」
+                    {t('memory_search / memory_daily：外部 Agent 可以读到 {{v0}} 记住的关于你的信息和每日日记。写入记忆还需要同时开启「允许修改配置」', {
+                      v0: PRODUCT_NAME,
+                    })}
                   </span>
                 </span>
                 <Switch checked={cfg.allowMemory} onCheckedChange={(v) => void patch({ allowMemory: v })} />
               </label>
               <p className="text-xs text-subtle-foreground">
-                当前开放 {status.tools.length} 个工具（只读 {status.tools.filter((t) => t.readOnly).length} 个）。API Key 等密钥从不通过 MCP 返回。
+                {t('当前开放 {{v0}} 个工具（只读 {{v1}} 个）。API Key 等密钥从不通过 MCP 返回。', {
+                  v0: status.tools.length,
+                  v1: status.tools.filter((t) => t.readOnly).length,
+                })}
               </p>
             </div>
           </>
@@ -200,8 +211,8 @@ export function NavoMcpPanel() {
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between gap-4">
             <div>
-              <div className="text-sm font-medium">接入其他 Agent</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">复制对应客户端的配置；或一键写入 .agents，供读取该目录的工具使用。</div>
+              <div className="text-sm font-medium">{t('接入其他 Agent')}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{t('复制对应客户端的配置；或一键写入 .agents，供读取该目录的工具使用。')}</div>
             </div>
             <Button
               variant="secondary"
@@ -209,14 +220,16 @@ export function NavoMcpPanel() {
               onClick={async () => {
                 try {
                   const r = await call('navoMcp.installAgents')
-                  toast.success('已写入 ~/.agents/mcp.json', { description: r.backup ? `原文件已备份为 ${r.backup.split('/').pop()}` : undefined })
+                  toast.success(t('已写入 ~/.agents/mcp.json'), {
+                    description: r.backup ? t('原文件已备份为 {{v0}}', { v0: r.backup.split('/').pop() }) : undefined,
+                  })
                 } catch (e) {
-                  toast.error('写入失败', { description: errorMessage(e) })
+                  toast.error(t('写入失败'), { description: errorMessage(e) })
                 }
               }}
             >
               <FolderSync />
-              写入 ~/.agents/mcp.json
+              {t('写入 ~/.agents/mcp.json')}
             </Button>
           </div>
           <Tabs defaultValue="claude-code">
@@ -241,13 +254,13 @@ export function NavoMcpPanel() {
 
       {cfg.enabled ? (
         <Card>
-          <div className="border-b border-border px-5 py-3 text-sm font-medium">最近调用</div>
+          <div className="border-b border-border px-5 py-3 text-sm font-medium">{t('最近调用')}</div>
           {status.calls.length ? (
             <div className="divide-y divide-border">
               {status.calls.map((c, i) => (
                 <div key={`${c.at}-${i}`} className="flex items-center gap-3 px-5 py-2 text-xs">
                   <Badge variant={c.ok ? 'success' : 'danger'} className="w-10 justify-center">
-                    {c.ok ? '成功' : '失败'}
+                    {c.ok ? t('成功') : t('失败')}
                   </Badge>
                   <span className="w-48 shrink-0 truncate font-mono">{c.tool}</span>
                   <span className={cn('min-w-0 flex-1 truncate', c.ok ? 'text-muted-foreground' : 'text-danger')}>{c.summary}</span>
@@ -258,7 +271,7 @@ export function NavoMcpPanel() {
               ))}
             </div>
           ) : (
-            <p className="px-5 py-6 text-center text-xs text-muted-foreground">还没有外部 Agent 调用过</p>
+            <p className="px-5 py-6 text-center text-xs text-muted-foreground">{t('还没有外部 Agent 调用过')}</p>
           )}
         </Card>
       ) : null}

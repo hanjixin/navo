@@ -10,6 +10,7 @@ import { MemoryRefs } from './memory-refs'
 import { AttachmentChip } from '@/components/files/attachment-chip'
 import { Markdown } from './markdown'
 import { ToolCard } from './tool-card'
+import { t } from '@shared/i18n'
 
 type Block = { kind: 'user'; msg: ChatMessage } | { kind: 'assistant'; msg: ChatMessage } | { kind: 'sub'; ns: string; msgs: ChatMessage[] }
 
@@ -36,12 +37,12 @@ export interface MessageActions {
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false)
   return (
-    <Tooltip content={done ? '已复制' : '复制'} side="top">
+    <Tooltip content={done ? t('已复制') : t('复制')} side="top">
       <Button
         variant="ghost"
         size="icon-sm"
         className="size-6"
-        aria-label="复制"
+        aria-label={t('复制')}
         onClick={() => {
           void navigator.clipboard.writeText(text)
           setDone(true)
@@ -68,8 +69,8 @@ function Reasoning({ text, live }: { text: string; live: boolean }) {
       >
         <ChevronRight className={cn('size-3 transition-transform duration-150', open && 'rotate-90')} />
         <Brain className="size-3.5 stroke-[1.75]" />
-        {live ? '正在思考…' : '思考过程'}
-        <span className="text-subtle-foreground">· {text.length} 字</span>
+        {live ? t('正在思考…') : t('思考过程')}
+        <span className="text-subtle-foreground">{t('· {{v0}} 字', { v0: text.length })}</span>
         {live ? <span className="ml-1 size-1.5 animate-pulse rounded-full bg-brand" /> : null}
       </button>
       {open ? (
@@ -113,8 +114,8 @@ function AssistantBlock({
         <div className="-mt-1 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
           <CopyButton text={msg.content} />
           {onRegenerate && !running ? (
-            <Tooltip content="重新生成" side="top">
-              <Button variant="ghost" size="icon-sm" className="size-6" onClick={onRegenerate} aria-label="重新生成">
+            <Tooltip content={t('重新生成')} side="top">
+              <Button variant="ghost" size="icon-sm" className="size-6" onClick={onRegenerate} aria-label={t('重新生成')}>
                 <RotateCcw />
               </Button>
             </Tooltip>
@@ -150,10 +151,10 @@ function UserBubble({ msg, running, onEdit }: { msg: ChatMessage; running: boole
         />
         <div className="flex justify-end gap-1.5">
           <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-            取消
+            {t('取消')}
           </Button>
           <Button variant="primary" size="sm" disabled={!draft.trim()} onClick={submit}>
-            发送
+            {t('发送')}
           </Button>
         </div>
       </div>
@@ -185,12 +186,12 @@ function UserBubble({ msg, running, onEdit }: { msg: ChatMessage; running: boole
         <div className="flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover/user:opacity-100 focus-within:opacity-100">
           <CopyButton text={msg.content} />
           {onEdit && !running ? (
-            <Tooltip content="编辑后重新发送" side="top">
+            <Tooltip content={t('编辑后重新发送')} side="top">
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="size-6"
-                aria-label="编辑"
+                aria-label={t('编辑')}
                 onClick={() => {
                   setDraft(msg.content)
                   setEditing(true)
@@ -217,8 +218,8 @@ function SubagentBlock({ msgs, running }: { msgs: ChatMessage[]; running: boolea
       <button onClick={() => setOpen((v) => !v)} className="interactive flex h-8 w-full items-center gap-2 px-2.5 text-left text-xs hover:bg-accent/50">
         <ChevronRight className={cn('size-3 text-subtle-foreground transition-transform duration-150', open && 'rotate-90')} />
         <Bot className="size-3.5 stroke-[1.75] text-muted-foreground" />
-        <span className="font-medium">子代理</span>
-        <span className="text-muted-foreground">{calls.length} 次工具调用</span>
+        <span className="font-medium">{t('子代理')}</span>
+        <span className="text-muted-foreground">{t('{{v0}} 次工具调用', { v0: calls.length })}</span>
         {active ? <span className="ml-auto size-1.5 animate-pulse rounded-full bg-brand" /> : null}
       </button>
       {open ? (
@@ -269,7 +270,7 @@ export function MessageList({ messages, running, actions }: { messages: ChatMess
               <span key={d} className="size-1 animate-pulse rounded-full bg-muted-foreground" style={{ animationDelay: `${d * 150}ms` }} />
             ))}
           </span>
-          思考中
+          {t('思考中')}
         </div>
       ) : null}
     </div>

@@ -10,6 +10,7 @@ import { parseSheet } from './parsers/sheet'
 import { decodeText, looksBinary, normalizeCjk, tidyMarkdown } from './text-utils'
 import { UnsupportedFileError, type FileKind, type ParseOptions, type ParseResult } from './types'
 import { writeVisual } from './visuals'
+import { t } from '@shared/i18n'
 
 const CODE_EXT: Record<string, string> = {
   js: 'javascript',
@@ -143,7 +144,7 @@ function rtfToText(rtf: string): string {
 const ARCHIVE_LIMIT = { files: 50, bytes: 50 * 1024 * 1024 }
 
 async function parseZip(buf: Buffer, opts: ParseOptions): Promise<ParseResult> {
-  if ((opts.depth ?? 0) >= 2) throw new UnsupportedFileError('压缩包嵌套过深')
+  if ((opts.depth ?? 0) >= 2) throw new UnsupportedFileError(t('压缩包嵌套过深'))
   const zip = await JSZip.loadAsync(buf)
   const entries = Object.values(zip.files).filter((f) => !f.dir && !/(^|\/)(__MACOSX|\.DS_Store)/.test(f.name))
   const warnings: string[] = []
@@ -185,8 +186,8 @@ export async function parseFile(buf: Buffer, name: string, opts: ParseOptions): 
     const r = await parseDocx(buf)
     return done('word', r.markdown, { warnings: r.warnings, title: r.title })
   }
-  if (ext === 'doc') throw new UnsupportedFileError('暂不支持旧版 Word（.doc），请另存为 .docx 后再上传')
-  if (ext === 'ppt') throw new UnsupportedFileError('暂不支持旧版 PowerPoint（.ppt），请另存为 .pptx 后再上传')
+  if (ext === 'doc') throw new UnsupportedFileError(t('暂不支持旧版 Word（.doc），请另存为 .docx 后再上传'))
+  if (ext === 'ppt') throw new UnsupportedFileError(t('暂不支持旧版 PowerPoint（.ppt），请另存为 .pptx 后再上传'))
   if (ext === 'pptx') {
     const r = await parsePptx(buf)
     return done('slides', r.markdown, { units: r.slides, unitLabel: '张幻灯片' })
@@ -196,7 +197,7 @@ export async function parseFile(buf: Buffer, name: string, opts: ParseOptions): 
     return done(ext === 'odt' ? 'word' : 'slides', r.markdown, r.units ? { units: r.units, unitLabel: '张幻灯片' } : {})
   }
   if (SHEET_EXT.has(ext)) {
-    if (ext === 'numbers') throw new UnsupportedFileError('暂不支持 Numbers 文件，请导出为 .xlsx 或 .csv')
+    if (ext === 'numbers') throw new UnsupportedFileError(t('暂不支持 Numbers 文件，请导出为 .xlsx 或 .csv'))
     const r = parseSheet(buf, ext)
     return done('sheet', r.markdown, { units: r.sheets, unitLabel: '个工作表', warnings: r.warnings })
   }
@@ -223,7 +224,7 @@ export async function parseFile(buf: Buffer, name: string, opts: ParseOptions): 
   if (ext === 'rtf') return done('word', normalizeCjk(rtfToText(decodeText(buf).text)))
 
   // text-like formats
-  if (looksBinary(buf)) throw new UnsupportedFileError(`不支持的文件格式${declared ? `（.${declared}）` : ''}`)
+  if (looksBinary(buf)) throw new UnsupportedFileError(t('不支持的文件格式{{v0}}', { v0: declared ? `（.${declared}）` : '' }))
   const { text, encoding } = decodeText(buf)
   const warnings = encoding.startsWith('UTF-8') ? [] : [`已按 ${encoding} 编码读取`]
   if (ext === 'html' || ext === 'htm' || /^\s*<!doctype html|^\s*<html[\s>]/i.test(text)) {

@@ -2,6 +2,7 @@ import { AlertCircle, RotateCw, type LucideIcon } from 'lucide-react'
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
+import { t } from '@shared/i18n'
 
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn('skeleton h-4', className)} />
@@ -10,7 +11,7 @@ export function Skeleton({ className }: { className?: string }) {
 /** Skeleton rows shaped like a list of cards/rows. */
 export function ListSkeleton({ rows = 4, className }: { rows?: number; className?: string }) {
   return (
-    <div className={cn('grid gap-2', className)} aria-busy="true" aria-label="加载中">
+    <div className={cn('grid gap-2', className)} aria-busy="true" aria-label={t('加载中')}>
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3.5">
           <Skeleton className="size-8 rounded-md" />
@@ -57,7 +58,7 @@ export function ErrorState({ error, onRetry, className, compact }: { error: stri
       <div className="flex items-start gap-3">
         <AlertCircle className="mt-0.5 size-4 shrink-0 stroke-[1.75] text-danger" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">{compact ? summary : '加载失败'}</p>
+          <p className="text-sm font-medium text-foreground">{compact ? summary : t('加载失败')}</p>
           {!compact ? <p className="mt-0.5 text-sm break-words text-muted-foreground">{summary}</p> : null}
           {open ? (
             <pre className="selectable mt-2 max-h-48 overflow-auto rounded-md bg-card p-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">
@@ -68,12 +69,12 @@ export function ErrorState({ error, onRetry, className, compact }: { error: stri
             {onRetry ? (
               <Button variant="link" size="sm" onClick={onRetry} className="text-xs">
                 <RotateCw className="size-3" />
-                重试
+                {t('重试')}
               </Button>
             ) : null}
             {error.length > summary.length || error.includes('\n') ? (
               <Button variant="link" size="sm" onClick={() => setOpen((v) => !v)} className="text-xs text-muted-foreground">
-                {open ? '收起详情' : '查看详情'}
+                {open ? t('收起详情') : t('查看详情')}
               </Button>
             ) : null}
           </div>

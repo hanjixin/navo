@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { FileRecord } from '@shared/types'
 import { call, on } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 interface FilesState {
   items: FileRecord[] | undefined
@@ -48,7 +49,7 @@ export const useFiles = create<FilesState>((set) => {
       if (paths.length) recs.push(...(await call('files.addPaths', paths)))
       // pasted content (screenshots etc.) has no path on disk
       for (const { f } of withPath.filter((x) => !x.path))
-        recs.push(await call('files.addData', f.name || `粘贴-${Date.now()}.png`, new Uint8Array(await f.arrayBuffer())))
+        recs.push(await call('files.addData', f.name || t('粘贴-{{v0}}.png', { v0: Date.now() }), new Uint8Array(await f.arrayBuffer())))
       merge(recs)
       return recs
     },
@@ -72,7 +73,7 @@ export function formatFileSize(n: number): string {
 export function describeFile(f: Pick<FileRecord, 'units' | 'unitLabel' | 'chars' | 'ocrPages'>): string {
   const parts: string[] = []
   if (f.units && f.unitLabel) parts.push(`${f.units} ${f.unitLabel}`)
-  if (f.chars) parts.push(`${f.chars.toLocaleString()} 字`)
-  if (f.ocrPages?.length) parts.push(`OCR ${f.ocrPages.length} 页`)
+  if (f.chars) parts.push(t('{{v0}} 字', { v0: f.chars.toLocaleString() }))
+  if (f.ocrPages?.length) parts.push(t('OCR {{v0}} 页', { v0: f.ocrPages.length }))
   return parts.join(' · ')
 }

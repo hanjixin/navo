@@ -12,6 +12,7 @@ import { StoredOAuthProvider, waitForAuthCode } from './oauth'
 import { builtinTools, notifyBuiltin, verifyBuiltin } from './builtin'
 import { isWriteTool } from './write-tools'
 import type { BotMessage } from './builtin/bots'
+import { t } from '@shared/i18n'
 
 /** fills {{key}}; null when a placeholder has no value (that arg / env var is left out) */
 function fill(template: string, values: Record<string, string>): string | null {
@@ -37,6 +38,23 @@ interface Row {
 
 type Live = { tools: StructuredToolInterface[]; close: () => Promise<void> }
 
+/** The built-in definitions in the interface language (the user's own connectors are shown as written). */
+function translated(d: ConnectorDef): ConnectorDef {
+  const o = (v?: string) => (v ? t(v) : v)
+  return {
+    ...d,
+    name: t(d.name),
+    description: t(d.description),
+    fields: d.fields?.map((f) => ({
+      ...f,
+      label: t(f.label),
+      help: o(f.help),
+      placeholder: o(f.placeholder),
+      options: f.options?.map((x) => ({ ...x, label: t(x.label) })),
+    })),
+  }
+}
+
 class ConnectorService {
   private live = new Map<string, Live>()
 
@@ -44,12 +62,12 @@ class ConnectorService {
     const custom = (db().prepare('SELECT custom_def FROM connectors WHERE custom_def IS NOT NULL').all() as Row[])
       .map((r) => json.parse<ConnectorDef>(r.custom_def))
       .filter((d): d is ConnectorDef => !!d)
-    return [...CATALOG, ...custom]
+    return [...CATALOG.map(translated), ...custom]
   }
 
   def(id: string): ConnectorDef {
     const d = this.catalog().find((c) => c.id === id)
-    if (!d) throw new Error(`未知连接器: ${id}`)
+    if (!d) throw new Error(t('未知连接器: {{v0}}', { v0: id }))
     return d
   }
 
@@ -108,10 +126,10 @@ class ConnectorService {
         const key = `connector:${def.id}:${f.key}`
         if (v) secrets.set(key, v)
         else if (f.optional && input[f.key] !== undefined) secrets.delete(key)
-        if (!f.optional && !hidden && !secrets.has(key)) throw new Error(`请填写${f.label}`)
+        if (!f.optional && !hidden && !secrets.has(key)) throw new Error(t('请填写{{v0}}', { v0: f.label }))
       } else {
         const val = v || f.default || ''
-        if (!val && !f.optional && !hidden) throw new Error(`请填写${f.label}`)
+        if (!val && !f.optional && !hidden) throw new Error(t('请填写{{v0}}', { v0: f.label }))
         if (val) config[f.key] = val
       }
     }
@@ -134,10 +152,10 @@ class ConnectorService {
       }
       return this.state(id)
     }
-    if (!def.mcpUrl) throw new Error('该连接器缺少 MCP 地址')
+    if (!def.mcpUrl) throw new Error(t('该连接器缺少 MCP 地址'))
     try {
       if (def.auth === 'token') {
-        if (!token && !secrets.has(`connector:${id}`)) throw new Error(`请填写 ${def.tokenLabel ?? 'Token'}`)
+        if (!token && !secrets.has(`connector:${id}`)) throw new Error(t('请填写 {{v0}}', { v0: def.tokenLabel ?? 'Token' }))
         if (token) secrets.set(`connector:${id}`, token)
       } else if (def.auth === 'oauth') {
         const provider = new StoredOAuthProvider(id)
@@ -213,8 +231,8 @@ class ConnectorService {
   }
 
   addCustom(input: Omit<ConnectorDef, 'id' | 'custom' | 'icon'>): ConnectorDef {
-    if (!input.name.trim() || !input.mcpUrl) throw new Error('名称和 MCP 地址必填')
-    if (isNavoSelfUrl(input.mcpUrl)) throw new Error('这是 Navo 自己对外提供的 MCP 服务，不能作为连接器添加')
+    if (!input.name.trim() || !input.mcpUrl) throw new Error(t('名称和 MCP 地址必填'))
+    if (isNavoSelfUrl(input.mcpUrl)) throw new Error(t('这是 Navo 自己对外提供的 MCP 服务，不能作为连接器添加'))
     const def: ConnectorDef = { ...input, id: `custom-${Date.now().toString(36)}`, icon: 'plug', custom: true }
     this.upsert(def.id, { custom_def: JSON.stringify(def), connected: 0 })
     return def
@@ -235,13 +253,16 @@ class ConnectorService {
   async notify(id: string, msg: BotMessage): Promise<void> {
     const def = this.def(id)
     const s = this.state(id)
-    if (!def.canNotify || !def.builtin) throw new Error(`${def.name} 不能接收通知`)
-    if (!s.connected || !s.enabled) throw new Error(`${def.name} 没有连接`)
+    if (!def.canNotify || !def.builtin) throw new Error(t('{{v0}} 不能接收通知', { v0: def.name }))
+    if (!s.connected || !s.enabled) throw new Error(t('{{v0}} 没有连接', { v0: def.name }))
     await notifyBuiltin(def.builtin, this.values(def), msg)
   }
 
   testNotify(id: string): Promise<void> {
-    return this.notify(id, { title: 'Navo 测试消息', text: `连接正常。之后网页监控的提醒等可以发到这里。\n\n${new Date().toLocaleString('zh-CN')}` })
+    return this.notify(id, {
+      title: t('Navo 测试消息'),
+      text: t('连接正常。之后网页监控的提醒等可以发到这里。\n\n{{v0}}', { v0: new Date().toLocaleString('zh-CN') }),
+    })
   }
 
   /**

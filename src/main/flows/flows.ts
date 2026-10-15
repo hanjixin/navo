@@ -21,6 +21,7 @@ import {
   traceToSteps,
 } from './flows-core'
 import { trace, type TraceStep } from './trace'
+import { t } from '@shared/i18n'
 
 /** a browser task with at least this many actions that sounds recurring gets the "keep as a flow" offer */
 const SUGGEST_MIN_ACTIONS = 3
@@ -76,9 +77,9 @@ class Flows {
   /** The conversation's last successful run as a flow: steps, plus a name and parameters from one model call. */
   async draft(threadId: string): Promise<FlowDraft> {
     const row = this.lastTrace(threadId)
-    if (!row) throw new Error('这个对话里还没有可以固化的浏览器操作')
+    if (!row) throw new Error(t('这个对话里还没有可以固化的浏览器操作'))
     const flow = traceToSteps(json.parse<TraceStep[]>(row.steps) ?? [])
-    if (actionCount(flow.steps) < MIN_FLOW_ACTIONS) throw new Error('操作步骤太少，不需要固化')
+    if (actionCount(flow.steps) < MIN_FLOW_ACTIONS) throw new Error(t('操作步骤太少，不需要固化'))
     const thread = agent.getThread(threadId)
     let text = ''
     try {
@@ -87,7 +88,7 @@ class Flows {
     } catch (err) {
       log.warn(`[flows] naming failed: ${(err as Error).message}`)
     }
-    const meta = parseFlowMeta(text, flow.steps, thread?.title.slice(0, 20) || '固定流程')
+    const meta = parseFlowMeta(text, flow.steps, thread?.title.slice(0, 20) || t('固定流程'))
     if (!meta.params.length) meta.params = fallbackParams(row.user_text ?? '', flow.steps)
     // passwords were never kept: they are asked for when the flow runs
     if (flow.steps.some((s) => s.value === '{{password}}') && !meta.params.some((p) => p.name === 'password'))
@@ -100,7 +101,7 @@ class Flows {
     const now = Date.now()
     const m = recorder.save({
       id: newId(),
-      name: d.name.trim() || '固定流程',
+      name: d.name.trim() || t('固定流程'),
       description: d.description,
       startUrl: d.startUrl,
       params: d.params.map(({ value: _value, ...p }) => p),
@@ -110,7 +111,7 @@ class Flows {
       updatedAt: now,
     })
     const title = agent.getThread(d.threadId)?.title
-    this.recordVersion(m, 'agent', title ? `由对话「${title}」整理` : '由对话整理')
+    this.recordVersion(m, 'agent', title ? t('由对话「{{v0}}」整理', { v0: title }) : t('由对话整理'))
     return m
   }
 
@@ -143,10 +144,10 @@ class Flows {
 
   rollback(macroId: string, version: number): void {
     const row = db().prepare('SELECT data FROM macro_versions WHERE macro_id = ? AND version = ?').get(macroId, version) as { data: string } | undefined
-    if (!row) throw new Error('这个版本不存在')
+    if (!row) throw new Error(t('这个版本不存在'))
     const data = json.parse<Pick<Macro, 'startUrl' | 'params' | 'steps'>>(row.data)!
     const m = recorder.save({ ...recorder.get(macroId), ...data })
-    this.recordVersion(m, 'rollback', `回滚到版本 ${version}`)
+    this.recordVersion(m, 'rollback', t('回滚到版本 {{v0}}', { v0: version }))
   }
 
   // ---------- replay (and repair)
@@ -163,7 +164,7 @@ class Flows {
     try {
       const res = await recorder.run(macroId, params, wc, true)
       // where it stopped helps whoever looks at it next (a person, or the agent repairing it)
-      if (!res.ok && !wc.isDestroyed()) res.error = `${res.error ?? '未知错误'}（当时页面：${wc.getTitle() || '无标题'} ${wc.getURL()}）`
+      if (!res.ok && !wc.isDestroyed()) res.error = `${res.error ?? t('未知错误')}（当时页面：${wc.getTitle() || t('无标题')} ${wc.getURL()}）`
       if (res.ok || !repair) {
         this.recordRun(macroId, res.ok, res.failedStep, res.error, false, 0)
         return res
@@ -179,7 +180,7 @@ class Flows {
     const step = failed.failedStep ?? 0
     const values = Object.fromEntries(m.params.map((p) => [p.name, params[p.name] ?? p.default ?? '']))
     const fill = (s: string) => s.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k: string) => values[k] ?? '')
-    const thread = agent.createThread(null, { title: `修复流程：${m.name}` })
+    const thread = agent.createThread(null, { title: t('修复流程：{{v0}}', { v0: m.name }) })
     sessions.assign(thread.id, tabId)
     const prompt = [
       `固定流程「${m.name}」${m.description ? `（${m.description}）` : ''}回放到第 ${step + 1} 步时失败了：${fill(describeStep(m.steps[step]))}。错误：${failed.error ?? '未知'}。`,
@@ -198,7 +199,7 @@ class Flows {
       const res = await agent.send_(thread.id, prompt, [], { headless: true })
       const calls = (await agent.threadState(thread.id).catch(() => null))?.messages.filter((x) => x.role === 'assistant').length ?? 1
       if (res.error || res.aborted) {
-        this.recordRun(m.id, false, step, res.error ?? '修复未完成', false, calls)
+        this.recordRun(m.id, false, step, res.error ?? t('修复未完成'), false, calls)
         return { ...failed, repairThreadId: thread.id }
       }
       // what the agent did from the failure on replaces the broken part (with this run's values back as parameters)
@@ -208,7 +209,7 @@ class Flows {
       const fixed = applyParams({ steps: repairSteps }, reparam).steps
       if (actionCount(fixed)) {
         const saved = recorder.save({ ...m, steps: splice(m.steps, step, fixed) })
-        const version = this.recordVersion(saved, 'repair', `第 ${step + 1} 步失效，由 Agent 修复`)
+        const version = this.recordVersion(saved, 'repair', t('第 {{v0}} 步失效，由 Agent 修复', { v0: step + 1 }))
         emit('flows.repaired', { macroId: m.id, name: m.name, step: step + 1, version })
       }
       this.recordRun(m.id, true, step, failed.error, true, calls)

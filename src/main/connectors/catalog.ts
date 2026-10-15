@@ -1,33 +1,40 @@
 import type { ConnectorDef, ConnectorField } from '@shared/types'
 import { PROVIDERS } from './builtin/email'
+import { t, tk } from '@shared/i18n'
 
-const webhook = (placeholder: string, help: string): ConnectorField => ({ key: 'webhook', label: 'Webhook 地址', secret: true, placeholder, help })
-const signSecret = (help: string): ConnectorField => ({ key: 'secret', label: '签名密钥（可选）', secret: true, optional: true, help })
+const webhook = (placeholder: string, help: string): ConnectorField => ({ key: 'webhook', label: t('Webhook 地址'), secret: true, placeholder, help })
+const signSecret = (help: string): ConnectorField => ({ key: 'secret', label: t('签名密钥（可选）'), secret: true, optional: true, help })
 
 /** Office tools used in China: official local MCP servers, group bots, mail and calendars. */
 const OFFICE_CN: ConnectorDef[] = [
   {
     id: 'feishu',
-    name: '飞书',
-    description: '飞书官方 MCP：消息、群聊、云文档、多维表格、日历等开放平台接口。',
+    name: tk('飞书'),
+    description: tk('飞书官方 MCP：消息、群聊、云文档、多维表格、日历等开放平台接口。'),
     icon: 'feishu',
     auth: 'fields',
     kind: 'stdio',
     group: 'office-cn',
     setupHelp: 'https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/mcp_integration/mcp_installation',
     fields: [
-      { key: 'app_id', label: 'App ID', placeholder: 'cli_…', help: '在飞书开放平台创建企业自建应用，在「凭证与基础信息」里找到' },
+      { key: 'app_id', label: 'App ID', placeholder: 'cli_…', help: tk('在飞书开放平台创建企业自建应用，在「凭证与基础信息」里找到') },
       { key: 'app_secret', label: 'App Secret', secret: true },
       {
         key: 'domain',
-        label: '版本',
+        label: tk('版本'),
         default: 'https://open.feishu.cn',
         options: [
-          { value: 'https://open.feishu.cn', label: '飞书（中国）' },
-          { value: 'https://open.larksuite.com', label: 'Lark（国际）' },
+          { value: 'https://open.feishu.cn', label: tk('飞书（中国）') },
+          { value: 'https://open.larksuite.com', label: tk('Lark（国际）') },
         ],
       },
-      { key: 'tools', label: '启用的工具（可选）', optional: true, placeholder: 'preset.default', help: '工具名或预设，逗号分隔；留空使用官方默认的常用接口' },
+      {
+        key: 'tools',
+        label: tk('启用的工具（可选）'),
+        optional: true,
+        placeholder: 'preset.default',
+        help: tk('工具名或预设，逗号分隔；留空使用官方默认的常用接口'),
+      },
     ],
     stdio: {
       command: 'npx',
@@ -36,21 +43,21 @@ const OFFICE_CN: ConnectorDef[] = [
   },
   {
     id: 'dingtalk',
-    name: '钉钉',
-    description: '钉钉官方 MCP：通讯录、机器人消息、日程、待办、工作通知等开放平台接口。',
+    name: tk('钉钉'),
+    description: tk('钉钉官方 MCP：通讯录、机器人消息、日程、待办、工作通知等开放平台接口。'),
     icon: 'dingtalk',
     auth: 'fields',
     kind: 'stdio',
     group: 'office-cn',
     setupHelp: 'https://open.dingtalk.com/document/ai-dev/dingtalk-server-api-mcp-overview',
     fields: [
-      { key: 'client_id', label: 'Client ID（AppKey）', help: '在钉钉开放平台创建应用，在「凭证与基础信息」里找到，并按需要添加权限' },
+      { key: 'client_id', label: 'Client ID（AppKey）', help: tk('在钉钉开放平台创建应用，在「凭证与基础信息」里找到，并按需要添加权限') },
       { key: 'client_secret', label: 'Client Secret（AppSecret）', secret: true },
       {
         key: 'profiles',
-        label: '启用的服务',
+        label: tk('启用的服务'),
         default: 'dingtalk-contacts,dingtalk-robot-send-message,dingtalk-calendar',
-        help: '逗号分隔，ALL 为全部；需要在开放平台给应用开通对应权限',
+        help: tk('逗号分隔，ALL 为全部；需要在开放平台给应用开通对应权限'),
       },
     ],
     stdio: {
@@ -61,8 +68,8 @@ const OFFICE_CN: ConnectorDef[] = [
   },
   {
     id: 'wecom-bot',
-    name: '企业微信群机器人',
-    description: '往企业微信群里发消息：日报、提醒、网页监控的通知。',
+    name: tk('企业微信群机器人'),
+    description: tk('往企业微信群里发消息：日报、提醒、网页监控的通知。'),
     icon: 'wecom',
     auth: 'fields',
     kind: 'builtin',
@@ -70,14 +77,14 @@ const OFFICE_CN: ConnectorDef[] = [
     group: 'office-cn',
     canNotify: true,
     fields: [
-      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '研发群', help: '告诉 Agent 这是哪个群' },
-      webhook('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…', '群聊 → 右上角 → 消息推送 / 群机器人 → 添加，复制 Webhook 地址'),
+      { key: 'name', label: tk('群名称（可选）'), optional: true, placeholder: tk('研发群'), help: tk('告诉 Agent 这是哪个群') },
+      webhook('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…', tk('群聊 → 右上角 → 消息推送 / 群机器人 → 添加，复制 Webhook 地址')),
     ],
   },
   {
     id: 'dingtalk-bot',
-    name: '钉钉群机器人',
-    description: '往钉钉群里发消息：日报、提醒、网页监控的通知。',
+    name: tk('钉钉群机器人'),
+    description: tk('往钉钉群里发消息：日报、提醒、网页监控的通知。'),
     icon: 'dingtalk',
     auth: 'fields',
     kind: 'builtin',
@@ -85,15 +92,15 @@ const OFFICE_CN: ConnectorDef[] = [
     group: 'office-cn',
     canNotify: true,
     fields: [
-      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '项目群' },
-      webhook('https://oapi.dingtalk.com/robot/send?access_token=…', '群设置 → 机器人 → 添加机器人 → 自定义，复制 Webhook'),
-      signSecret('安全设置选了「加签」时填写（SEC 开头）'),
+      { key: 'name', label: tk('群名称（可选）'), optional: true, placeholder: tk('项目群') },
+      webhook('https://oapi.dingtalk.com/robot/send?access_token=…', tk('群设置 → 机器人 → 添加机器人 → 自定义，复制 Webhook')),
+      signSecret(tk('安全设置选了「加签」时填写（SEC 开头）')),
     ],
   },
   {
     id: 'feishu-bot',
-    name: '飞书群机器人',
-    description: '往飞书群里发消息（支持 Markdown 卡片）：日报、提醒、网页监控的通知。',
+    name: tk('飞书群机器人'),
+    description: tk('往飞书群里发消息（支持 Markdown 卡片）：日报、提醒、网页监控的通知。'),
     icon: 'feishu',
     auth: 'fields',
     kind: 'builtin',
@@ -101,15 +108,15 @@ const OFFICE_CN: ConnectorDef[] = [
     group: 'office-cn',
     canNotify: true,
     fields: [
-      { key: 'name', label: '群名称（可选）', optional: true, placeholder: '运营群' },
-      webhook('https://open.feishu.cn/open-apis/bot/v2/hook/…', '群设置 → 群机器人 → 添加机器人 → 自定义机器人，复制 Webhook 地址'),
-      signSecret('安全设置开启了「签名校验」时填写'),
+      { key: 'name', label: tk('群名称（可选）'), optional: true, placeholder: tk('运营群') },
+      webhook('https://open.feishu.cn/open-apis/bot/v2/hook/…', tk('群设置 → 群机器人 → 添加机器人 → 自定义机器人，复制 Webhook 地址')),
+      signSecret(tk('安全设置开启了「签名校验」时填写')),
     ],
   },
   {
     id: 'email',
-    name: '邮箱',
-    description: '收发邮件：查看和搜索收件箱、读正文、发送（发送前确认）。支持 QQ、163、企业邮箱等。',
+    name: tk('邮箱'),
+    description: tk('收发邮件：查看和搜索收件箱、读正文、发送（发送前确认）。支持 QQ、163、企业邮箱等。'),
     icon: 'mail',
     auth: 'fields',
     kind: 'builtin',
@@ -117,19 +124,19 @@ const OFFICE_CN: ConnectorDef[] = [
     group: 'office-cn',
     canNotify: true,
     fields: [
-      { key: 'provider', label: '邮箱服务', default: 'qq', options: Object.entries(PROVIDERS).map(([value, p]) => ({ value, label: p.label })) },
-      { key: 'address', label: '邮箱地址', placeholder: 'name@qq.com' },
-      { key: 'password', label: '授权码', secret: true, help: '不是登录密码：在邮箱设置里开启 IMAP/SMTP 后生成' },
-      { key: 'imap_host', label: 'IMAP 服务器', placeholder: 'imap.example.com', showIf: { key: 'provider', values: ['custom'] } },
-      { key: 'imap_port', label: 'IMAP 端口', default: '993', showIf: { key: 'provider', values: ['custom'] } },
-      { key: 'smtp_host', label: 'SMTP 服务器', placeholder: 'smtp.example.com', showIf: { key: 'provider', values: ['custom'] } },
-      { key: 'smtp_port', label: 'SMTP 端口', default: '465', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'provider', label: tk('邮箱服务'), default: 'qq', options: Object.entries(PROVIDERS).map(([value, p]) => ({ value, label: p.label })) },
+      { key: 'address', label: tk('邮箱地址'), placeholder: 'name@qq.com' },
+      { key: 'password', label: tk('授权码'), secret: true, help: tk('不是登录密码：在邮箱设置里开启 IMAP/SMTP 后生成') },
+      { key: 'imap_host', label: tk('IMAP 服务器'), placeholder: 'imap.example.com', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'imap_port', label: tk('IMAP 端口'), default: '993', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'smtp_host', label: tk('SMTP 服务器'), placeholder: 'smtp.example.com', showIf: { key: 'provider', values: ['custom'] } },
+      { key: 'smtp_port', label: tk('SMTP 端口'), default: '465', showIf: { key: 'provider', values: ['custom'] } },
     ],
   },
   {
     id: 'caldav',
-    name: '日历（CalDAV）',
-    description: '查看和创建日程。支持 iCloud，以及在飞书、钉钉等日历设置里开启的 CalDAV 同步。',
+    name: tk('日历（CalDAV）'),
+    description: tk('查看和创建日程。支持 iCloud，以及在飞书、钉钉等日历设置里开启的 CalDAV 同步。'),
     icon: 'calendar',
     auth: 'fields',
     kind: 'builtin',
@@ -138,12 +145,12 @@ const OFFICE_CN: ConnectorDef[] = [
     fields: [
       {
         key: 'server',
-        label: 'CalDAV 服务器',
+        label: tk('CalDAV 服务器'),
         placeholder: 'https://caldav.example.com',
-        help: 'iCloud 填 icloud；飞书、钉钉等在日历设置的「CalDAV 同步」里可以看到服务器地址、用户名和密码',
+        help: tk('iCloud 填 icloud；飞书、钉钉等在日历设置的「CalDAV 同步」里可以看到服务器地址、用户名和密码'),
       },
-      { key: 'username', label: '用户名' },
-      { key: 'password', label: '密码', secret: true, help: 'iCloud 用 App 专用密码' },
+      { key: 'username', label: tk('用户名') },
+      { key: 'password', label: tk('密码'), secret: true, help: tk('iCloud 用 App 专用密码') },
     ],
   },
 ]
@@ -154,7 +161,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'github',
     name: 'GitHub',
-    description: '读取仓库、Issue、PR，搜索代码，创建评论。',
+    description: tk('读取仓库、Issue、PR，搜索代码，创建评论。'),
     icon: 'github',
     auth: 'token',
     mcpUrl: 'https://api.githubcopilot.com/mcp/',
@@ -164,7 +171,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'notion',
     name: 'Notion',
-    description: '搜索与读取页面、数据库，创建和更新内容。',
+    description: tk('搜索与读取页面、数据库，创建和更新内容。'),
     icon: 'notebook',
     auth: 'oauth',
     mcpUrl: 'https://mcp.notion.com/mcp',
@@ -172,7 +179,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'linear',
     name: 'Linear',
-    description: '查询和创建 Issue、项目与评论。',
+    description: tk('查询和创建 Issue、项目与评论。'),
     icon: 'list-checks',
     auth: 'oauth',
     mcpUrl: 'https://mcp.linear.app/mcp',
@@ -180,7 +187,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'sentry',
     name: 'Sentry',
-    description: '查看错误事件、Issue 详情与发布信息。',
+    description: tk('查看错误事件、Issue 详情与发布信息。'),
     icon: 'bug',
     auth: 'oauth',
     mcpUrl: 'https://mcp.sentry.dev/mcp',
@@ -188,7 +195,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'huggingface',
     name: 'Hugging Face',
-    description: '搜索模型、数据集与 Spaces。',
+    description: tk('搜索模型、数据集与 Spaces。'),
     icon: 'boxes',
     auth: 'token',
     mcpUrl: 'https://huggingface.co/mcp',
@@ -198,7 +205,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'context7',
     name: 'Context7',
-    description: '获取最新的开源库文档与代码示例。',
+    description: tk('获取最新的开源库文档与代码示例。'),
     icon: 'book-open',
     auth: 'none',
     mcpUrl: 'https://mcp.context7.com/mcp',
@@ -206,7 +213,7 @@ export const CATALOG: ConnectorDef[] = [
   {
     id: 'deepwiki',
     name: 'DeepWiki',
-    description: '针对 GitHub 仓库的文档问答。',
+    description: tk('针对 GitHub 仓库的文档问答。'),
     icon: 'library',
     auth: 'none',
     mcpUrl: 'https://mcp.deepwiki.com/mcp',

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Skeleton } from '@/components/ui/states'
 import { call } from '@/lib/ipc'
 import { useBrowser } from '@/stores/browser'
+import { t } from '@shared/i18n'
 
 const MIN_W = 220
 const MAX_W = 640
@@ -91,7 +92,7 @@ export function BrowserMini() {
       ref={ref}
       role="button"
       tabIndex={0}
-      aria-label="浏览器小窗，双击展开"
+      aria-label={t('浏览器小窗，双击展开')}
       data-testid="browser-mini"
       onDoubleClick={expand}
       onKeyDown={(e) => e.key === 'Enter' && expand()}
@@ -100,44 +101,48 @@ export function BrowserMini() {
       onPointerUp={onPointerUp}
       style={{ right: pos.right, top: pos.top, width: pos.width }}
       className="group absolute z-30 animate-fade-in cursor-grab overflow-hidden rounded-lg border border-border bg-card shadow-float select-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none active:cursor-grabbing"
-      title="双击展开浏览器"
+      title={t('双击展开浏览器')}
     >
       <div className="flex h-8 items-center gap-2 border-b border-border px-2.5">
         {running ? (
-          <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" aria-label="Agent 正在操作" />
+          <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" aria-label={t('Agent 正在操作')} />
         ) : tab?.favicon ? (
           <img src={tab.favicon} alt="" className="size-3.5 shrink-0" />
         ) : (
           <Globe className="size-3.5 shrink-0 text-subtle-foreground" />
         )}
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {running ? 'Agent 正在操作 · ' : ''}
-          {tab?.title || tab?.url || '浏览器'}
+          {running ? t('Agent 正在操作 · ') : ''}
+          {tab?.title || tab?.url || t('浏览器')}
         </span>
-        <button className="interactive rounded-sm p-0.5 text-subtle-foreground hover:bg-accent hover:text-foreground" onClick={expand} aria-label="展开浏览器">
+        <button
+          className="interactive rounded-sm p-0.5 text-subtle-foreground hover:bg-accent hover:text-foreground"
+          onClick={expand}
+          aria-label={t('展开浏览器')}
+        >
           <Maximize2 className="size-3.5" />
         </button>
         <button
           className="interactive rounded-sm p-0.5 text-subtle-foreground hover:bg-accent hover:text-foreground"
           onClick={() => setMini(false)}
-          aria-label="关闭小窗"
+          aria-label={t('关闭小窗')}
         >
           <X className="size-3.5" />
         </button>
       </div>
       <div className="relative aspect-[16/10] bg-muted">
         {frame ? (
-          <img src={frame} alt="浏览器实时画面" draggable={false} className="size-full object-cover object-top" />
+          <img src={frame} alt={t('浏览器实时画面')} draggable={false} className="size-full object-cover object-top" />
         ) : tab ? (
           <Skeleton className="size-full rounded-none" />
         ) : (
-          <div className="flex size-full items-center justify-center text-xs text-muted-foreground">还没有打开的页面</div>
+          <div className="flex size-full items-center justify-center text-xs text-muted-foreground">{t('还没有打开的页面')}</div>
         )}
         {tab?.loading ? <div className="absolute inset-x-0 top-0 h-0.5 animate-progress bg-brand/70" /> : null}
         <span
           data-resize
           aria-hidden
-          title="拖动调整大小"
+          title={t('拖动调整大小')}
           className="absolute bottom-0 left-0 flex size-5 cursor-nesw-resize items-end justify-start p-1 text-white/80 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
         >
           <svg viewBox="0 0 10 10" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -145,7 +150,7 @@ export function BrowserMini() {
           </svg>
         </span>
         <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-sm bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          双击展开
+          {t('双击展开')}
         </span>
       </div>
     </div>

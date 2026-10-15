@@ -19,6 +19,7 @@ import { marked, type Token, type Tokens } from 'marked'
 import * as XLSX from 'xlsx'
 import type { ExportFormat, OutputKind } from '@shared/types'
 import { decodeText } from '../files/text-utils'
+import { t } from '@shared/i18n'
 
 /**
  * Turning what the agent produced into files people use: Markdown → Word / HTML (for PDF),
@@ -95,8 +96,8 @@ export function jsonRows(text: string): unknown[][] | null {
 export function markdownTables(md: string): string[][][] {
   return marked
     .lexer(md)
-    .filter((t): t is Tokens.Table => t.type === 'table')
-    .map((t) => [t.header.map((c) => c.text), ...t.rows.map((r) => r.map((c) => c.text))])
+    .filter((tok): tok is Tokens.Table => tok.type === 'table')
+    .map((tok) => [tok.header.map((c) => c.text), ...tok.rows.map((r) => r.map((c) => c.text))])
 }
 
 /** Numbers that were written as text become numbers, so Excel can sum them. */
@@ -120,12 +121,12 @@ export function toXlsx(name: string, content: Buffer): Buffer {
   }
   if (kind === 'json') {
     const rows = jsonRows(text)
-    if (!rows) throw new Error('这个 JSON 不是表格数据（需要一组记录或一组行）')
+    if (!rows) throw new Error(t('这个 JSON 不是表格数据（需要一组记录或一组行）'))
     return workbook([{ name: 'Sheet1', rows }])
   }
   const tables = markdownTables(text)
-  if (!tables.length) throw new Error('这个文件里没有表格')
-  return workbook(tables.map((rows, i) => ({ name: `表格${i + 1}`, rows })))
+  if (!tables.length) throw new Error(t('这个文件里没有表格'))
+  return workbook(tables.map((rows, i) => ({ name: t('表格{{v0}}', { v0: i + 1 }), rows })))
 }
 
 // ---------- Markdown → HTML (for previews of HTML / printing to PDF)
@@ -186,39 +187,39 @@ function inline(tokens: Token[] | undefined, style: RunStyle = {}): ParagraphChi
       font: s.code ? MONO : undefined,
       shading: s.code ? { type: ShadingType.CLEAR, fill: 'F3F4F6', color: 'auto' } : undefined,
     })
-  for (const t of tokens ?? []) {
-    switch (t.type) {
+  for (const tok of tokens ?? []) {
+    switch (tok.type) {
       case 'strong':
-        out.push(...inline((t as Tokens.Strong).tokens, { ...style, bold: true }))
+        out.push(...inline((tok as Tokens.Strong).tokens, { ...style, bold: true }))
         break
       case 'em':
-        out.push(...inline((t as Tokens.Em).tokens, { ...style, italics: true }))
+        out.push(...inline((tok as Tokens.Em).tokens, { ...style, italics: true }))
         break
       case 'del':
-        out.push(...inline((t as Tokens.Del).tokens, { ...style, strike: true }))
+        out.push(...inline((tok as Tokens.Del).tokens, { ...style, strike: true }))
         break
       case 'codespan':
-        out.push(run((t as Tokens.Codespan).text, { ...style, code: true }))
+        out.push(run((tok as Tokens.Codespan).text, { ...style, code: true }))
         break
       case 'br':
         out.push(new TextRun({ text: '', break: 1 }))
         break
       case 'link': {
-        const l = t as Tokens.Link
+        const l = tok as Tokens.Link
         out.push(new ExternalHyperlink({ link: l.href, children: [new TextRun({ text: unescape(l.text), style: 'Hyperlink' })] }))
         break
       }
       case 'image':
-        out.push(run(`[图片：${(t as Tokens.Image).text || (t as Tokens.Image).href}]`, style))
+        out.push(run(t('[图片：{{v0}}]', { v0: (tok as Tokens.Image).text || (tok as Tokens.Image).href }), style))
         break
       case 'text': {
-        const x = t as Tokens.Text
+        const x = tok as Tokens.Text
         if (x.tokens?.length) out.push(...inline(x.tokens, style))
         else out.push(run(x.text, style))
         break
       }
       default:
-        if ('text' in t && typeof t.text === 'string') out.push(run(t.text, style))
+        if ('text' in tok && typeof tok.text === 'string') out.push(run(tok.text, style))
     }
   }
   return out
@@ -228,18 +229,18 @@ type Block = Paragraph | Table
 
 function blocks(tokens: Token[], ctx: { list: number }, depth = 0): Block[] {
   const out: Block[] = []
-  for (const t of tokens) {
-    switch (t.type) {
+  for (const tok of tokens) {
+    switch (tok.type) {
       case 'heading': {
-        const h = t as Tokens.Heading
+        const h = tok as Tokens.Heading
         out.push(new Paragraph({ heading: HEADINGS[Math.min(h.depth, 6) - 1], children: inline(h.tokens) }))
         break
       }
       case 'paragraph':
-        out.push(new Paragraph({ children: inline((t as Tokens.Paragraph).tokens), spacing: { after: 120 } }))
+        out.push(new Paragraph({ children: inline((tok as Tokens.Paragraph).tokens), spacing: { after: 120 } }))
         break
       case 'list': {
-        const l = t as Tokens.List
+        const l = tok as Tokens.List
         const instance = ++ctx.list
         for (const item of l.items) {
           const [first, ...rest] = item.tokens
@@ -256,7 +257,7 @@ function blocks(tokens: Token[], ctx: { list: number }, depth = 0): Block[] {
         break
       }
       case 'code':
-        for (const line of (t as Tokens.Code).text.split('\n'))
+        for (const line of (tok as Tokens.Code).text.split('\n'))
           out.push(
             new Paragraph({
               children: [new TextRun({ text: line || ' ', font: MONO, size: 19 })],
@@ -267,10 +268,10 @@ function blocks(tokens: Token[], ctx: { list: number }, depth = 0): Block[] {
         out.push(new Paragraph({ children: [] }))
         break
       case 'blockquote':
-        out.push(...blocks((t as Tokens.Blockquote).tokens, ctx, depth))
+        out.push(...blocks((tok as Tokens.Blockquote).tokens, ctx, depth))
         break
       case 'table': {
-        const tb = t as Tokens.Table
+        const tb = tok as Tokens.Table
         const cell = (c: Tokens.TableCell, header: boolean) =>
           new TableCell({
             children: [
@@ -297,12 +298,12 @@ function blocks(tokens: Token[], ctx: { list: number }, depth = 0): Block[] {
         out.push(new Paragraph({ children: [], border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'D0D3D9', space: 1 } } }))
         break
       case 'html':
-        if ((t as Tokens.HTML).text.trim()) out.push(new Paragraph({ children: [new TextRun((t as Tokens.HTML).text.replace(/<[^>]+>/g, '').trim())] }))
+        if ((tok as Tokens.HTML).text.trim()) out.push(new Paragraph({ children: [new TextRun((tok as Tokens.HTML).text.replace(/<[^>]+>/g, '').trim())] }))
         break
       case 'space':
         break
       default:
-        if ('text' in t && typeof t.text === 'string' && t.text.trim()) out.push(new Paragraph({ children: [new TextRun(unescape(t.text))] }))
+        if ('text' in tok && typeof tok.text === 'string' && tok.text.trim()) out.push(new Paragraph({ children: [new TextRun(unescape(tok.text))] }))
     }
   }
   return out

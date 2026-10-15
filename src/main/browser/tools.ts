@@ -5,6 +5,7 @@ import { sessions } from './agent-session'
 import { trace } from '../flows/trace'
 import { memory } from '../memory/memory-service'
 import { browser } from './browser-service'
+import { t } from '@shared/i18n'
 
 /** Which tab a set of tools drives. Agent runs get their conversation's tab; the dev sandbox uses the active one. */
 export interface ToolCtx {
@@ -226,7 +227,7 @@ export function createBrowserTools(ctx: ToolCtx) {
           if (active.id !== wc.id) browser.activate(wc.id)
           const data = await Promise.race([
             browser.screenshot(wc, fullPage),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('截图超时：标签页可能不可见，请先打开浏览器面板')), 8000)),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('截图超时：标签页可能不可见，请先打开浏览器面板'))), 8000)),
           ])
           return [
             { type: 'text', text: withNotices(wc, header(wc)) },

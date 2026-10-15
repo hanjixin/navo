@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { MacroParam, MacroStep } from '@shared/types'
 import { appendEvent } from '../recorder/steps'
 import type { TraceStep } from './trace'
+import { t } from '@shared/i18n'
 
 /**
  * Fixed flows — the pure part. What the agent worked out with the model on an (often old,
@@ -77,21 +78,21 @@ export function describeStep(s: MacroStep): string {
   const what = s.label ? `「${s.label}」` : (s.selectors?.[0] ?? '')
   switch (s.type) {
     case 'navigate':
-      return `打开 ${s.url}`
+      return t('打开 {{v0}}', { v0: s.url })
     case 'click':
-      return `点击 ${what}`
+      return t('点击 {{v0}}', { v0: what })
     case 'type':
-      return `在 ${what} 输入 ${s.value ?? ''}`
+      return t('在 {{v0}} 输入 {{v1}}', { v0: what, v1: s.value ?? '' })
     case 'select':
-      return `在 ${what} 选择 ${s.value ?? ''}`
+      return t('在 {{v0}} 选择 {{v1}}', { v0: what, v1: s.value ?? '' })
     case 'press':
-      return `按 ${s.key ?? 'Enter'}`
+      return t('按 {{v0}}', { v0: s.key ?? 'Enter' })
     case 'wait':
-      return `等待 ${what || `${s.value}ms`}`
+      return t('等待 {{v0}}', { v0: what || `${s.value}ms` })
     case 'scroll':
-      return '向下滚动'
+      return t('向下滚动')
     default:
-      return `提取 ${what || '页面'} 的文本`
+      return t('提取 {{v0}} 的文本', { v0: what || t('页面') })
   }
 }
 

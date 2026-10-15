@@ -16,24 +16,13 @@ import { useAsync } from '@/hooks/use-async'
 import { useSkillEvolution } from '@/hooks/use-skill-evolution'
 import { call } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
-const template = (name: string) => `---
-name: ${name}
-description: 一句话说明这个 Skill 做什么、何时使用（Agent 依据它决定是否加载）
----
-
-# ${name}
-
-## 何时使用
-- …
-
-## 步骤
-1. …
-2. …
-
-## 注意事项
-- …
-`
+const template = (name: string) =>
+  t(
+    '---\nname: {{v0}}\ndescription: 一句话说明这个 Skill 做什么、何时使用（Agent 依据它决定是否加载）\n---\n\n# {{v1}}\n\n## 何时使用\n- …\n\n## 步骤\n1. …\n2. …\n\n## 注意事项\n- …\n',
+    { v0: name, v1: name },
+  )
 
 function SourcesDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const sources = useAsync(() => call('skills.sources'))
@@ -41,27 +30,27 @@ function SourcesDialog({ onClose, onChanged }: { onClose: () => void; onChanged:
     try {
       const s = await call('skills.addSource')
       if (s) {
-        toast.success(`已添加来源：${s.label}`, { description: `发现 ${s.skillCount} 个 Skill` })
+        toast.success(t('已添加来源：{{v0}}', { v0: s.label }), { description: t('发现 {{v0}} 个 Skill', { v0: s.skillCount }) })
         sources.reload()
         onChanged()
       }
     } catch (e) {
-      toast.error('添加失败', { description: errorMessage(e) })
+      toast.error(t('添加失败'), { description: errorMessage(e) })
     }
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="Skill 来源"
-        description="除本地 Skill 外，还会扫描其他 Agent 共享的目录。外部 Skill 以只读方式提供给 Agent，不会被复制或修改。"
+        title={t('Skill 来源')}
+        description={t('除本地 Skill 外，还会扫描其他 Agent 共享的目录。外部 Skill 以只读方式提供给 Agent，不会被复制或修改。')}
         footer={
           <>
             <Button variant="secondary" onClick={add}>
               <FolderPlus />
-              添加目录
+              {t('添加目录')}
             </Button>
             <Button variant="primary" onClick={onClose}>
-              完成
+              {t('完成')}
             </Button>
           </>
         }
@@ -74,18 +63,18 @@ function SourcesDialog({ onClose, onChanged }: { onClose: () => void; onChanged:
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {s.label}
-                      {s.builtin && s.id !== 'local' ? <Badge variant="outline">内置</Badge> : null}
+                      {s.builtin && s.id !== 'local' ? <Badge variant="outline">{t('内置')}</Badge> : null}
                     </div>
                     <div className="truncate font-mono text-xs text-muted-foreground">{s.path}</div>
                   </div>
                   <span className={cn('text-xs', s.exists ? 'text-muted-foreground' : 'text-subtle-foreground')}>
-                    {s.exists ? `${s.skillCount} 个` : '目录不存在'}
+                    {s.exists ? t('{{v0}} 个', { v0: s.skillCount }) : t('目录不存在')}
                   </span>
                   {!s.builtin ? (
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="移除来源"
+                      aria-label={t('移除来源')}
                       onClick={async () => {
                         await call('skills.removeSource', s.id)
                         sources.reload()
@@ -129,7 +118,7 @@ export function SkillsPage() {
     const m = new Map<string, Skill[]>()
     for (const s of list.data ?? []) {
       if (q && !`${s.name} ${s.description}`.toLowerCase().includes(q.toLowerCase())) continue
-      const k = s.source === 'local' ? '本地' : s.sourceLabel
+      const k = s.source === 'local' ? t('本地') : s.sourceLabel
       m.set(k, [...(m.get(k) ?? []), s])
     }
     return [...m.entries()]
@@ -155,10 +144,10 @@ export function SkillsPage() {
     try {
       await call('skills.save', current.id, content)
       setDirty(false)
-      toast.success('已保存 Skill')
+      toast.success(t('已保存 Skill'))
       list.reload()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -176,7 +165,7 @@ export function SkillsPage() {
       list.reload()
       setSelected(name)
     } catch (e) {
-      toast.error('创建失败', { description: errorMessage(e) })
+      toast.error(t('创建失败'), { description: errorMessage(e) })
     }
   }
 
@@ -185,7 +174,7 @@ export function SkillsPage() {
     try {
       await call('skills.setEnabled', s.id, enabled)
     } catch (e) {
-      toast.error('操作失败', { description: errorMessage(e) })
+      toast.error(t('操作失败'), { description: errorMessage(e) })
       list.reload()
     }
   }
@@ -194,11 +183,11 @@ export function SkillsPage() {
     if (!current) return
     try {
       const s = await call('skills.copyToLocal', current.id)
-      toast.success(`已复制到本地：${s.name}`, { description: '本地版本会覆盖同名的外部 Skill' })
+      toast.success(t('已复制到本地：{{v0}}', { v0: s.name }), { description: t('本地版本会覆盖同名的外部 Skill') })
       list.reload()
       setSelected(s.id)
     } catch (e) {
-      toast.error('复制失败', { description: errorMessage(e) })
+      toast.error(t('复制失败'), { description: errorMessage(e) })
     }
   }
 
@@ -211,43 +200,40 @@ export function SkillsPage() {
         title="Skill"
         description={
           <>
-            可复用的专业流程说明（SKILL.md）。同时扫描 <code className="font-mono text-xs">~/.agents/skills</code> 等共享目录，Agent 按描述按需加载。
-            {total ? (
-              <span className="ml-1 text-subtle-foreground">
-                · {enabled}/{total} 已启用
-              </span>
-            ) : null}
+            {t('可复用的专业流程说明（SKILL.md）。同时扫描')} <code className="font-mono text-xs">~/.agents/skills</code>{' '}
+            {t('等共享目录，Agent 按描述按需加载。')}
+            {total ? <span className="ml-1 text-subtle-foreground">{t('· {{v0}}/{{v1}} 已启用', { v0: enabled, v1: total })}</span> : null}
           </>
         }
         actions={
           <>
-            <Tooltip content="重新扫描">
-              <Button variant="ghost" size="icon" onClick={list.reload} aria-label="重新扫描">
+            <Tooltip content={t('重新扫描')}>
+              <Button variant="ghost" size="icon" onClick={list.reload} aria-label={t('重新扫描')}>
                 <RotateCw className={cn(list.loading && 'animate-spin')} />
               </Button>
             </Tooltip>
             <Button variant="secondary" onClick={() => setEvolutionOpen(true)}>
               <WandSparkles />
-              自迭代
+              {t('自迭代')}
             </Button>
             <Button variant="secondary" onClick={() => setSourcesOpen(true)}>
               <FolderCog />
-              来源
+              {t('来源')}
             </Button>
             <Button
               variant="secondary"
               onClick={async () => {
                 const imported = await call('skills.import')
-                if (imported.length) toast.success(`已导入 ${imported.length} 个 Skill`)
+                if (imported.length) toast.success(t('已导入 {{v0}} 个 Skill', { v0: imported.length }))
                 list.reload()
               }}
             >
               <FolderInput />
-              导入
+              {t('导入')}
             </Button>
             <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus />
-              新建 Skill
+              {t('新建 Skill')}
             </Button>
           </>
         }
@@ -255,7 +241,7 @@ export function SkillsPage() {
       <ProposalCards proposals={proposals} />
       <div className="flex min-h-0 flex-1 gap-4">
         <div className="flex w-56 shrink-0 flex-col @4xl:w-72">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 Skill" className="mb-3 h-7 text-xs" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('搜索 Skill')} className="mb-3 h-7 text-xs" />
           <div className="min-h-0 flex-1 overflow-y-auto">
             <AsyncView
               state={list}
@@ -263,11 +249,11 @@ export function SkillsPage() {
               empty={
                 <EmptyState
                   icon={Sparkles}
-                  title="还没有 Skill"
-                  description="新建一个 Skill，或在「来源」中添加其他 Agent 的 Skill 目录。"
+                  title={t('还没有 Skill')}
+                  description={t('新建一个 Skill，或在「来源」中添加其他 Agent 的 Skill 目录。')}
                   action={
                     <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-                      新建 Skill
+                      {t('新建 Skill')}
                     </Button>
                   }
                 />
@@ -280,7 +266,7 @@ export function SkillsPage() {
                       <div key={label}>
                         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wide text-subtle-foreground">
                           {label !== '本地' ? <Lock className="size-3" /> : null}
-                          <span className="truncate">{label}</span>
+                          <span className="truncate">{t(label)}</span>
                           <span className="ml-auto">{items.length}</span>
                         </div>
                         <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
@@ -299,22 +285,31 @@ export function SkillsPage() {
                                 >
                                   {s.name}
                                 </span>
-                                <Switch checked={s.enabled} onClick={(e) => e.stopPropagation()} onCheckedChange={(v) => void toggle(s, v)} aria-label="启用" />
+                                <Switch
+                                  checked={s.enabled}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onCheckedChange={(v) => void toggle(s, v)}
+                                  aria-label={t('启用')}
+                                />
                               </div>
-                              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{s.description || '（缺少描述）'}</p>
+                              <p data-user-content className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                {s.description || t('（缺少描述）')}
+                              </p>
                               {stats[s.id]?.uses || stats[s.id]?.autoPatches ? (
                                 <p className="mt-1 text-[11px] text-subtle-foreground">
-                                  {stats[s.id].uses ? `用过 ${stats[s.id].uses} 次` : ''}
+                                  {stats[s.id].uses ? t('用过 {{v0}} 次', { v0: stats[s.id].uses }) : ''}
                                   {stats[s.id].uses && stats[s.id].corrected + stats[s.id].failed
-                                    ? ` · ${stats[s.id].corrected + stats[s.id].failed} 次不顺`
+                                    ? t(' · {{v0}} 次不顺', { v0: stats[s.id].corrected + stats[s.id].failed })
                                     : ''}
-                                  {stats[s.id].autoPatches ? `${stats[s.id].uses ? ' · ' : ''}自动改进 ${stats[s.id].autoPatches} 次` : ''}
+                                  {stats[s.id].autoPatches
+                                    ? t('{{v0}}自动改进 {{v1}} 次', { v0: stats[s.id].uses ? ' · ' : '', v1: stats[s.id].autoPatches })
+                                    : ''}
                                 </p>
                               ) : null}
                               {s.origin || s.shadowed ? (
                                 <div className="mt-1.5 flex flex-wrap gap-1">
                                   {s.origin ? <Badge variant="outline">{s.origin}</Badge> : null}
-                                  {s.shadowed ? <Badge variant="warning">已被本地同名覆盖</Badge> : null}
+                                  {s.shadowed ? <Badge variant="warning">{t('已被本地同名覆盖')}</Badge> : null}
                                 </div>
                               ) : null}
                             </div>
@@ -324,7 +319,7 @@ export function SkillsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="px-2 py-8 text-center text-xs text-muted-foreground">没有匹配的 Skill</p>
+                  <p className="px-2 py-8 text-center text-xs text-muted-foreground">{t('没有匹配的 Skill')}</p>
                 )
               }
             </AsyncView>
@@ -349,22 +344,22 @@ export function SkillsPage() {
                 <span className="min-w-0 truncate font-mono text-sm font-medium">
                   {current.readOnly ? current.path.replace(/^\/Users\/[^/]+/, '~') : `${current.name}/SKILL.md`}
                 </span>
-                {dirty ? <span className="text-xs text-warning">未保存</span> : null}
+                {dirty ? <span className="text-xs text-warning">{t('未保存')}</span> : null}
                 <div className="ml-auto flex gap-1.5">
                   <Button variant="ghost" size="sm" onClick={() => void call('skills.reveal', current.id)}>
                     <FolderOpen />
-                    打开目录
+                    {t('打开目录')}
                   </Button>
                   {current.readOnly ? (
                     <Button variant="primary" size="sm" onClick={copyToLocal} disabled={current.shadowed}>
                       <Copy />
-                      复制到本地编辑
+                      {t('复制到本地编辑')}
                     </Button>
                   ) : (
                     <>
                       <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
                         <History />
-                        版本
+                        {t('版本')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -377,11 +372,11 @@ export function SkillsPage() {
                         }}
                       >
                         <Trash2 />
-                        删除
+                        {t('删除')}
                       </Button>
                       <Button variant="primary" size="sm" loading={saving} disabled={!dirty} onClick={save}>
                         {!saving ? <Save /> : null}
-                        保存
+                        {t('保存')}
                       </Button>
                     </>
                   )}
@@ -390,7 +385,8 @@ export function SkillsPage() {
               {current.readOnly ? (
                 <div className="mb-2 flex animate-fade-in items-center gap-2 rounded-md bg-info-soft px-3 py-2 text-xs text-muted-foreground">
                   <Lock className="size-3.5 shrink-0 text-brand" />
-                  来自 {current.sourceLabel}，与其他 Agent 共享，这里以只读方式使用。{current.shadowed ? '本地已有同名 Skill，Agent 会优先使用本地版本。' : ''}
+                  {t('来自 {{v0}}，与其他 Agent 共享，这里以只读方式使用。', { v0: current.sourceLabel })}
+                  {current.shadowed ? t('本地已有同名 Skill，Agent 会优先使用本地版本。') : ''}
                 </div>
               ) : null}
               <CodeEditor
@@ -404,7 +400,7 @@ export function SkillsPage() {
                   setDirty(true)
                 }}
               />
-              {!current.enabled ? <p className="mt-2 text-xs text-muted-foreground">该 Skill 已禁用，Agent 不会加载。</p> : null}
+              {!current.enabled ? <p className="mt-2 text-xs text-muted-foreground">{t('该 Skill 已禁用，Agent 不会加载。')}</p> : null}
             </>
           )}
         </div>
@@ -413,20 +409,20 @@ export function SkillsPage() {
       <Dialog open={creating} onOpenChange={setCreating}>
         {creating ? (
           <DialogContent
-            title="新建 Skill"
+            title={t('新建 Skill')}
             className="w-[440px]"
             footer={
               <>
                 <Button variant="ghost" onClick={() => setCreating(false)}>
-                  取消
+                  {t('取消')}
                 </Button>
                 <Button variant="primary" disabled={!newName.trim()} onClick={create}>
-                  创建
+                  {t('创建')}
                 </Button>
               </>
             }
           >
-            <Field label="名称" hint="小写字母、数字和连字符，例如 weekly-report">
+            <Field label={t('名称')} hint={t('小写字母、数字和连字符，例如 weekly-report')}>
               <Input value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus className="font-mono" placeholder="my-skill" />
             </Field>
           </DialogContent>

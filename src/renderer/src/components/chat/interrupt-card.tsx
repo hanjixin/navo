@@ -4,6 +4,7 @@ import type { Decision, PendingInterrupt } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
 import { toolMeta } from './tool-meta'
+import { t } from '@shared/i18n'
 
 export function InterruptCard({ interrupt, onDecide }: { interrupt: PendingInterrupt; onDecide: (d: Decision[], alwaysAllow?: string[]) => Promise<void> }) {
   const [editing, setEditing] = useState<number | null>(null)
@@ -30,7 +31,7 @@ export function InterruptCard({ interrupt, onDecide }: { interrupt: PendingInter
       setError(null)
       await decideAll((i) => (i === editing ? { type: 'edit', editedAction: { name: reqs[i].name, args } } : { type: 'approve' }))
     } catch {
-      setError('参数不是合法的 JSON')
+      setError(t('参数不是合法的 JSON'))
     }
   }
 
@@ -38,7 +39,7 @@ export function InterruptCard({ interrupt, onDecide }: { interrupt: PendingInter
     <div className="animate-fade-in rounded-lg border border-l-2 border-border border-l-warning bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <ShieldAlert className="size-4 stroke-[1.75] text-warning" />
-        <span className="text-sm font-medium">需要你的确认</span>
+        <span className="text-sm font-medium">{t('需要你的确认')}</span>
       </div>
       <div className="grid gap-2">
         {reqs.map((r, i) => (
@@ -61,28 +62,28 @@ export function InterruptCard({ interrupt, onDecide }: { interrupt: PendingInter
         {editing != null ? (
           <>
             <Button variant="primary" size="sm" loading={pending} onClick={saveEdit}>
-              使用修改后的参数
+              {t('使用修改后的参数')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
-              取消
+              {t('取消')}
             </Button>
           </>
         ) : (
           <>
             <Button variant="primary" size="sm" loading={pending} onClick={() => decideAll(() => ({ type: 'approve' }))}>
-              批准执行
+              {t('批准执行')}
             </Button>
             <Button
               variant="secondary"
               size="sm"
               disabled={pending}
               onClick={() => decideAll(() => ({ type: 'approve' }), [...new Set(reqs.map((r) => r.name))])}
-              title="本会话中不再询问这些操作"
+              title={t('本会话中不再询问这些操作')}
             >
-              本会话始终允许
+              {t('本会话始终允许')}
             </Button>
-            <Button variant="secondary" size="sm" disabled={pending} onClick={() => decideAll(() => ({ type: 'reject', message: '用户拒绝了该操作' }))}>
-              拒绝
+            <Button variant="secondary" size="sm" disabled={pending} onClick={() => decideAll(() => ({ type: 'reject', message: t('用户拒绝了该操作') }))}>
+              {t('拒绝')}
             </Button>
             {interrupt.allowedDecisions[0]?.includes('edit') && reqs.length === 1 ? (
               <Button
@@ -94,7 +95,7 @@ export function InterruptCard({ interrupt, onDecide }: { interrupt: PendingInter
                   setEditing(0)
                 }}
               >
-                修改参数
+                {t('修改参数')}
               </Button>
             ) : null}
           </>

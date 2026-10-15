@@ -1,3 +1,6 @@
+// The suites check Chinese text; the interface follows the system language otherwise (English on CI)
+process.env.NAVO_LANG ??= 'zh'
+
 /**
  * The app's own window (not a browser-tab WebContentsView, which Playwright also lists as a page and
  * which may well contain a <nav> of its own). Fresh profiles start in onboarding; suites skip it
@@ -8,7 +11,8 @@ export async function mainWindow(app, { onboarding = false } = {}) {
   for (let i = 0; i < 100; i++) {
     const found = app.windows().find(isMain)
     if (found) {
-      await found.waitForFunction(() => !!window.api && !!document.querySelector('nav, [aria-label="首次设置"]'))
+      const ONBOARDING = '[aria-label="首次设置"], [aria-label="First-time setup"]'
+      await found.waitForFunction((sel) => !!window.api && !!document.querySelector(`nav, ${sel}`), ONBOARDING)
       // NAVO_E2E_WINDOW=1024x700 reproduces a small screen (e.g. CI runners) on a large one
       const size = /^(\d+)x(\d+)$/.exec(process.env.NAVO_E2E_WINDOW ?? '')
       if (size)
@@ -19,7 +23,7 @@ export async function mainWindow(app, { onboarding = false } = {}) {
               ?.setSize(w, h),
           [Number(size[1]), Number(size[2])],
         )
-      if (!onboarding && (await found.$('[aria-label="首次设置"]'))) {
+      if (!onboarding && (await found.$(ONBOARDING))) {
         await found.evaluate(() => window.api.invoke('settings.set', { onboarded: true }))
         await found.reload()
         await found.waitForFunction(() => !!window.api && !!document.querySelector('nav'))

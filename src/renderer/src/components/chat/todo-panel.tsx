@@ -2,6 +2,7 @@ import { Check, ChevronDown, Circle, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Todo } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 export function TodoPanel({ todos }: { todos: Todo[] }) {
   const [open, setOpen] = useState(true)
@@ -11,7 +12,7 @@ export function TodoPanel({ todos }: { todos: Todo[] }) {
   return (
     <div className="animate-fade-in rounded-lg border border-border bg-card">
       <button onClick={() => setOpen((v) => !v)} className="interactive flex h-9 w-full items-center gap-2.5 px-3 text-left text-xs hover:bg-accent/50">
-        <span className="font-medium">任务计划</span>
+        <span className="font-medium">{t('任务计划')}</span>
         <span className="text-muted-foreground">
           {done}/{todos.length}
         </span>

@@ -32,6 +32,7 @@ import { useChat } from '@/stores/chat'
 import { useBrowser } from '@/stores/browser'
 import { useSettings } from '@/stores/settings'
 import { SIDEBAR_COLLAPSED, SIDEBAR_EXPANDED, sidebarCollapsed, useLayout, useWindowWidthTracker } from '@/stores/layout'
+import { t } from '@shared/i18n'
 
 interface NavItem {
   to: string
@@ -42,36 +43,36 @@ interface NavItem {
 
 const NAV: { group: string; items: NavItem[] }[] = [
   {
-    group: '工作台',
+    group: t('工作台'),
     items: [
-      { to: '/chat', label: '对话', icon: MessageSquare },
-      { to: '/tasks', label: '任务', icon: ListChecks },
-      { to: '/files', label: '文件', icon: FolderOpen },
+      { to: '/chat', label: t('对话'), icon: MessageSquare },
+      { to: '/tasks', label: t('任务'), icon: ListChecks },
+      { to: '/files', label: t('文件'), icon: FolderOpen },
     ],
   },
   {
-    group: '能力',
+    group: t('能力'),
     items: [
       { to: '/skills', label: 'Skill', icon: Sparkles },
-      { to: '/connectors', label: '连接器', icon: Plug },
+      { to: '/connectors', label: t('连接器'), icon: Plug },
       { to: '/mcp', label: 'MCP', icon: Server },
-      { to: '/memory', label: '记忆', icon: Brain },
+      { to: '/memory', label: t('记忆'), icon: Brain },
     ],
   },
   {
-    group: '自动化',
+    group: t('自动化'),
     items: [
-      { to: '/plugins', label: '站点插件', icon: Puzzle },
-      { to: '/macros', label: '录制宏', icon: Clapperboard },
+      { to: '/plugins', label: t('站点插件'), icon: Puzzle },
+      { to: '/macros', label: t('录制宏'), icon: Clapperboard },
     ],
   },
   {
-    group: '系统',
+    group: t('系统'),
     items: [
-      { to: '/models', label: '模型', icon: Cpu },
-      { to: '/usage', label: '用量', icon: BarChart3 },
-      { to: '/dev', label: '开发者', icon: Code2, dev: true },
-      { to: '/settings', label: '设置', icon: Settings },
+      { to: '/models', label: t('模型'), icon: Cpu },
+      { to: '/usage', label: t('用量'), icon: BarChart3 },
+      { to: '/dev', label: t('开发者'), icon: Code2, dev: true },
+      { to: '/settings', label: t('设置'), icon: Settings },
     ],
   },
 ]
@@ -175,8 +176,8 @@ export function AppShell() {
           </span>
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
-          <Tooltip content={`${collapsed ? '展开' : '收起'}侧边栏 ${mod}B`}>
-            <Button variant="ghost" size="icon-sm" className="no-drag" onClick={toggleSidebar} aria-label="切换侧边栏" aria-expanded={!collapsed}>
+          <Tooltip content={t('{{v0}}侧边栏 {{v1}}B', { v0: collapsed ? t('展开') : t('收起'), v1: mod })}>
+            <Button variant="ghost" size="icon-sm" className="no-drag" onClick={toggleSidebar} aria-label={t('切换侧边栏')} aria-expanded={!collapsed}>
               {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
             </Button>
           </Tooltip>
@@ -187,20 +188,20 @@ export function AppShell() {
             <button
               className="interactive mr-1 flex h-7 items-center gap-1.5 rounded-md px-2 text-xs whitespace-nowrap text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => (open ? undefined : useBrowser.getState().setMini(!mini))}
-              aria-label={open ? 'Agent 正在操作浏览器' : mini ? '隐藏浏览器小窗' : '显示浏览器小窗'}
+              aria-label={open ? t('Agent 正在操作浏览器') : mini ? t('隐藏浏览器小窗') : t('显示浏览器小窗')}
             >
               <span className="size-1.5 animate-pulse rounded-full bg-brand" />
-              <span className="hidden md:inline">Agent 正在操作浏览器</span>
+              <span className="hidden md:inline">{t('Agent 正在操作浏览器')}</span>
             </button>
           ) : null}
           {state.recording ? (
             <span className="mr-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-danger">
               <span className="size-1.5 animate-pulse rounded-full bg-danger" />
-              录制中
+              {t('录制中')}
             </span>
           ) : null}
-          <Tooltip content={`${open ? '收起' : '打开'}浏览器 ${mod}\\`}>
-            <Button variant="ghost" size="icon-sm" onClick={() => setOpen(!open)} aria-label="切换浏览器面板" aria-expanded={open}>
+          <Tooltip content={t('{{v0}}浏览器 {{v1}}\\', { v0: open ? t('收起') : t('打开'), v1: mod })}>
+            <Button variant="ghost" size="icon-sm" onClick={() => setOpen(!open)} aria-label={t('切换浏览器面板')} aria-expanded={open}>
               {open ? <PanelRightClose /> : <PanelRight />}
             </Button>
           </Tooltip>
@@ -210,7 +211,7 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         {/* sidebar */}
         <nav
-          aria-label="主导航"
+          aria-label={t('主导航')}
           className={cn(
             'flex shrink-0 flex-col gap-4 overflow-x-hidden overflow-y-auto border-r border-border bg-sidebar py-4 transition-[width,padding] duration-200 ease-[var(--ease)]',
             collapsed ? 'items-center px-2.5' : 'px-2.5',

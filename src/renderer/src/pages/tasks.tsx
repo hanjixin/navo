@@ -20,30 +20,31 @@ import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useModels } from '@/stores/models'
+import { t } from '@shared/i18n'
 
 const PRESETS = [
-  { value: '', label: '仅手动运行' },
-  { value: '0 * * * *', label: '每小时' },
-  { value: '0 9 * * *', label: '每天 09:00' },
-  { value: '0 9 * * 1-5', label: '工作日 09:00' },
-  { value: '0 9 * * 1', label: '每周一 09:00' },
-  { value: 'custom', label: '自定义 Cron…' },
+  { value: '', label: t('仅手动运行') },
+  { value: '0 * * * *', label: t('每小时') },
+  { value: '0 9 * * *', label: t('每天 09:00') },
+  { value: '0 9 * * 1-5', label: t('工作日 09:00') },
+  { value: '0 9 * * 1', label: t('每周一 09:00') },
+  { value: 'custom', label: t('自定义 Cron…') },
 ]
 
 const EMPTY_MONITOR: MonitorConfig = { url: '', selector: '', focus: '', condition: '', action: 'notify', prompt: '' }
 
 /** monitors check more often than tasks run */
 const MONITOR_PRESETS = [
-  { value: '*/5 * * * *', label: '每 5 分钟' },
-  { value: '*/15 * * * *', label: '每 15 分钟' },
-  { value: '*/30 * * * *', label: '每 30 分钟' },
-  { value: '0 * * * *', label: '每小时' },
-  { value: '0 9 * * *', label: '每天 09:00' },
-  { value: '', label: '仅手动检查' },
-  { value: 'custom', label: '自定义 Cron…' },
+  { value: '*/5 * * * *', label: t('每 5 分钟') },
+  { value: '*/15 * * * *', label: t('每 15 分钟') },
+  { value: '*/30 * * * *', label: t('每 30 分钟') },
+  { value: '0 * * * *', label: t('每小时') },
+  { value: '0 9 * * *', label: t('每天 09:00') },
+  { value: '', label: t('仅手动检查') },
+  { value: 'custom', label: t('自定义 Cron…') },
 ]
 
-const describeCron = (c?: string | null) => (c ? ([...PRESETS, ...MONITOR_PRESETS].find((p) => p.value === c)?.label ?? `Cron: ${c}`) : '手动')
+const describeCron = (c?: string | null) => (c ? ([...PRESETS, ...MONITOR_PRESETS].find((p) => p.value === c)?.label ?? `Cron: ${c}`) : t('手动'))
 const hostOf = (url?: string) => {
   try {
     return new URL(url ?? '').host
@@ -56,11 +57,11 @@ const STATUS: Record<
   TaskRunStatus,
   { label: string; variant: 'success' | 'danger' | 'neutral' | 'primary' | 'warning'; dot: 'success' | 'danger' | 'neutral' | 'running' | 'warning' }
 > = {
-  queued: { label: '排队中', variant: 'neutral', dot: 'neutral' },
-  running: { label: '运行中', variant: 'primary', dot: 'running' },
-  success: { label: '成功', variant: 'success', dot: 'success' },
-  error: { label: '失败', variant: 'danger', dot: 'danger' },
-  cancelled: { label: '已取消', variant: 'warning', dot: 'warning' },
+  queued: { label: t('排队中'), variant: 'neutral', dot: 'neutral' },
+  running: { label: t('运行中'), variant: 'primary', dot: 'running' },
+  success: { label: t('成功'), variant: 'success', dot: 'success' },
+  error: { label: t('失败'), variant: 'danger', dot: 'danger' },
+  cancelled: { label: t('已取消'), variant: 'warning', dot: 'warning' },
 }
 
 type Draft = Omit<Task, 'id' | 'createdAt'> & { id?: string }
@@ -86,11 +87,11 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
     setSaving(true)
     try {
       await call('tasks.save', { ...d, cron: mode === 'custom' ? d.cron : mode === 'none' ? null : mode })
-      toast.success('任务已保存')
+      toast.success(t('任务已保存'))
       onSaved()
       onClose()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -99,31 +100,31 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={task ? '编辑任务' : '新建任务'}
+        title={task ? t('编辑任务') : t('新建任务')}
         description={
-          kind === 'monitor' ? '在后台定时查看网页；内容没变不调用模型，有变化才判断是否满足条件。' : '任务在后台以独立会话运行，完成后发送系统通知。'
+          kind === 'monitor' ? t('在后台定时查看网页；内容没变不调用模型，有变化才判断是否满足条件。') : t('任务在后台以独立会话运行，完成后发送系统通知。')
         }
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
-              取消
+              {t('取消')}
             </Button>
             <Button variant="primary" loading={saving} disabled={!ready} onClick={save}>
-              保存
+              {t('保存')}
             </Button>
           </>
         }
       >
         <div className="grid gap-4">
-          <Field label="名称">
-            <Input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus placeholder="每日资讯摘要" />
+          <Field label={t('名称')}>
+            <Input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus placeholder={t('每日资讯摘要')} />
           </Field>
           <div className="flex rounded-md border border-border bg-muted p-0.5" role="tablist">
             {(
               [
-                ['agent', 'Agent 任务', '由模型理解并完成'],
-                ['flow', '固定流程', '按保存的步骤直接回放，不调用模型'],
-                ['monitor', '网页监控', '定时查看网页，内容变化且满足条件时提醒'],
+                ['agent', t('Agent 任务'), t('由模型理解并完成')],
+                ['flow', t('固定流程'), t('按保存的步骤直接回放，不调用模型')],
+                ['monitor', t('网页监控'), t('定时查看网页，内容变化且满足条件时提醒')],
               ] as const
             ).map(([v, label, hint]) => (
               <button
@@ -144,20 +145,20 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
           {kind === 'monitor' ? (
             <MonitorFields value={d.monitor ?? EMPTY_MONITOR} onChange={(monitor) => setD({ ...d, monitor })} />
           ) : kind === 'agent' ? (
-            <Field label="任务描述" hint="像对 Agent 说话一样描述目标和输出要求">
+            <Field label={t('任务描述')} hint={t('像对 Agent 说话一样描述目标和输出要求')}>
               <Textarea
                 value={d.prompt}
                 onChange={(e) => setD({ ...d, prompt: e.target.value })}
                 rows={5}
-                placeholder="打开 Hacker News，总结前 10 篇文章，并把摘要保存到 /workspace/daily/今天日期.md"
+                placeholder={t('打开 Hacker News，总结前 10 篇文章，并把摘要保存到 /workspace/daily/今天日期.md')}
               />
             </Field>
           ) : (
             <>
-              <Field label="固定流程" hint="按步骤直接回放、不调用模型；某一步因页面改版失效时，由 Agent 完成并自动更新流程">
+              <Field label={t('固定流程')} hint={t('按步骤直接回放、不调用模型；某一步因页面改版失效时，由 Agent 完成并自动更新流程')}>
                 <Select
                   value={d.macroId ?? undefined}
-                  placeholder={flowsList.data?.length ? '选择流程' : '还没有固定流程：在对话里点「固化流程」，或在录制宏页面录制'}
+                  placeholder={flowsList.data?.length ? t('选择流程') : t('还没有固定流程：在对话里点「固化流程」，或在录制宏页面录制')}
                   onChange={(v) => setD({ ...d, macroId: v, params: {} })}
                   options={(flowsList.data ?? []).map((x) => ({ value: x.id, label: x.name }))}
                 />
@@ -168,7 +169,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
                     <Field key={p.name} label={p.description || p.name}>
                       <Input
                         value={d.params?.[p.name] ?? ''}
-                        placeholder={p.default ? `默认：${p.default}` : ''}
+                        placeholder={p.default ? t('默认：{{v0}}', { v0: p.default }) : ''}
                         type={p.name === 'password' ? 'password' : 'text'}
                         onChange={(e) => setD({ ...d, params: { ...(d.params ?? {}), [p.name]: e.target.value } })}
                       />
@@ -179,24 +180,24 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
             </>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label={kind === 'monitor' ? '判断用的模型' : '模型'} className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
+            <Field label={kind === 'monitor' ? t('判断用的模型') : t('模型')} className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
               <Select
                 value={d.modelId ?? 'default'}
                 onChange={(v) => setD({ ...d, modelId: v === 'default' ? null : v })}
-                options={[{ value: 'default', label: '默认模型' }, ...models.map((m) => ({ value: m.id, label: m.displayName }))]}
+                options={[{ value: 'default', label: t('默认模型') }, ...models.map((m) => ({ value: m.id, label: m.displayName }))]}
               />
             </Field>
-            <Field label={kind === 'monitor' ? '检查频率' : '计划'}>
+            <Field label={kind === 'monitor' ? t('检查频率') : t('计划')}>
               <Select value={mode} onChange={setMode} options={presets.map((p) => ({ value: p.value === '' ? 'none' : p.value, label: p.label }))} />
             </Field>
           </div>
           {mode === 'custom' ? (
-            <Field label="Cron 表达式" hint="分 时 日 月 周，例如 30 8 * * 1-5">
+            <Field label={t('Cron 表达式')} hint={t('分 时 日 月 周，例如 30 8 * * 1-5')}>
               <Input value={d.cron ?? ''} onChange={(e) => setD({ ...d, cron: e.target.value })} className="font-mono" />
             </Field>
           ) : null}
           <label className="flex items-center justify-between text-sm">
-            启用定时计划
+            {t('启用定时计划')}
             <Switch checked={d.enabled} onCheckedChange={(v) => setD({ ...d, enabled: v })} />
           </label>
         </div>
@@ -225,12 +226,12 @@ export function TasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const runNow = async (t: Task) => {
+  const runNow = async (task: Task) => {
     try {
-      await call('tasks.run', t.id)
-      toast.success(t.kind === 'monitor' ? `正在检查：${t.name}` : `已开始运行：${t.name}`)
+      await call('tasks.run', task.id)
+      toast.success(task.kind === 'monitor' ? t('正在检查：{{v0}}', { v0: task.name }) : t('已开始运行：{{v0}}', { v0: task.name }))
     } catch (e) {
-      toast.error('运行失败', { description: errorMessage(e) })
+      toast.error(t('运行失败'), { description: errorMessage(e) })
     }
   }
 
@@ -239,21 +240,21 @@ export function TasksPage() {
     navigate('/chat')
   }
 
-  const taskName = (id: string) => tasks.data?.find((t) => t.id === id)?.name ?? '已删除的任务'
+  const taskName = (id: string) => tasks.data?.find((task) => task.id === id)?.name ?? t('已删除的任务')
 
   return (
     <Page>
       <PageHeader
-        title="任务"
-        description="保存常用的 Agent 任务，手动或按计划在后台运行。"
+        title={t('任务')}
+        description={t('保存常用的 Agent 任务，手动或按计划在后台运行。')}
         actions={
           <Button variant="primary" onClick={() => setEditing('new')}>
             <Plus />
-            新建任务
+            {t('新建任务')}
           </Button>
         }
       />
-      <Section title="我的任务">
+      <Section title={t('我的任务')}>
         <AsyncView
           state={tasks}
           loading={<ListSkeleton rows={2} />}
@@ -261,11 +262,11 @@ export function TasksPage() {
             <Card>
               <EmptyState
                 icon={ListChecks}
-                title="还没有任务"
-                description="把重复性的工作交给 Agent，例如每天早上汇总资讯、定期检查网站变化。"
+                title={t('还没有任务')}
+                description={t('把重复性的工作交给 Agent，例如每天早上汇总资讯、定期检查网站变化。')}
                 action={
                   <Button variant="primary" onClick={() => setEditing('new')}>
-                    新建任务
+                    {t('新建任务')}
                   </Button>
                 }
               />
@@ -274,67 +275,67 @@ export function TasksPage() {
         >
           {(list) => (
             <div className="grid gap-2">
-              {list.map((t) => (
-                <Card key={t.id} className="flex animate-fade-in items-center gap-4 px-4 py-3">
+              {list.map((task) => (
+                <Card key={task.id} className="flex animate-fade-in items-center gap-4 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{t.name}</span>
+                      <span className="font-medium">{task.name}</span>
                       <Badge variant="outline">
                         <CalendarClock />
-                        {describeCron(t.cron)}
+                        {describeCron(task.cron)}
                       </Badge>
-                      {t.cron && !t.enabled ? <Badge variant="warning">已暂停</Badge> : null}
+                      {task.cron && !task.enabled ? <Badge variant="warning">{t('已暂停')}</Badge> : null}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {t.kind === 'flow'
-                        ? '固定流程 · 直接回放，不调用模型'
-                        : t.kind === 'monitor'
-                          ? `监控 ${hostOf(t.monitor?.url)} · ${t.monitor?.condition || '有变化就提醒'}`
-                          : t.prompt}
+                      {task.kind === 'flow'
+                        ? t('固定流程 · 直接回放，不调用模型')
+                        : task.kind === 'monitor'
+                          ? t('监控 {{v0}} · {{v1}}', { v0: hostOf(task.monitor?.url), v1: task.monitor?.condition || t('有变化就提醒') })
+                          : task.prompt}
                     </p>
-                    {t.kind === 'monitor' && monitors.data?.[t.id]?.checks ? (
+                    {task.kind === 'monitor' && monitors.data?.[task.id]?.checks ? (
                       <p data-testid="monitor-summary" className="mt-0.5 truncate text-xs text-subtle-foreground">
-                        已检查 {monitors.data[t.id].checks} 次 · 触发 {monitors.data[t.id].triggers} 次
-                        {monitors.data[t.id].lastSummary ? ` · 最近：${monitors.data[t.id].lastSummary}` : ''}
+                        {t('已检查 {{v0}} 次 · 触发 {{v1}} 次', { v0: monitors.data[task.id].checks, v1: monitors.data[task.id].triggers })}
+                        {monitors.data[task.id].lastSummary ? t(' · 最近：{{v0}}', { v0: monitors.data[task.id].lastSummary }) : ''}
                       </p>
                     ) : null}
                   </div>
-                  {t.kind === 'monitor' && (monitors.data?.[t.id]?.failStreak ?? 0) >= 2 ? (
-                    <Badge variant="danger">连续失败 {monitors.data![t.id].failStreak} 次</Badge>
+                  {task.kind === 'monitor' && (monitors.data?.[task.id]?.failStreak ?? 0) >= 2 ? (
+                    <Badge variant="danger">{t('连续失败 {{v0}} 次', { v0: monitors.data![task.id].failStreak })}</Badge>
                   ) : null}
-                  {t.lastStatus ? (
+                  {task.lastStatus ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                      <StatusDot status={STATUS[t.lastStatus].dot} />
-                      {STATUS[t.lastStatus].label} · {timeAgo(t.lastRunAt!)}
+                      <StatusDot status={STATUS[task.lastStatus].dot} />
+                      {STATUS[task.lastStatus].label} · {timeAgo(task.lastRunAt!)}
                     </span>
                   ) : (
-                    <span className="shrink-0 text-xs text-subtle-foreground">尚未运行</span>
+                    <span className="shrink-0 text-xs text-subtle-foreground">{t('尚未运行')}</span>
                   )}
-                  {t.kind === 'monitor' ? (
-                    <Button variant="ghost" size="sm" onClick={() => setHistory(t)}>
+                  {task.kind === 'monitor' ? (
+                    <Button variant="ghost" size="sm" onClick={() => setHistory(task)}>
                       <History />
-                      记录
+                      {t('记录')}
                     </Button>
                   ) : null}
-                  <Button variant="secondary" size="sm" onClick={() => void runNow(t)}>
-                    {t.kind === 'monitor' ? <RefreshCw /> : <Play />}
-                    {t.kind === 'monitor' ? '检查' : '运行'}
+                  <Button variant="secondary" size="sm" onClick={() => void runNow(task)}>
+                    {task.kind === 'monitor' ? <RefreshCw /> : <Play />}
+                    {task.kind === 'monitor' ? t('检查') : t('运行')}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-sm" aria-label="更多">
+                      <Button variant="ghost" size="icon-sm" aria-label={t('更多')}>
                         <MoreHorizontal />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setEditing(t)}>
+                      <DropdownMenuItem onSelect={() => setEditing(task)}>
                         <Pencil />
-                        编辑
+                        {t('编辑')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem danger onSelect={async () => (await call('tasks.delete', t.id), tasks.reload())}>
+                      <DropdownMenuItem danger onSelect={async () => (await call('tasks.delete', task.id), tasks.reload())}>
                         <Trash2 />
-                        删除
+                        {t('删除')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -345,11 +346,13 @@ export function TasksPage() {
         </AsyncView>
       </Section>
 
-      <Section title="运行记录">
+      <Section title={t('运行记录')}>
         <AsyncView
           state={runs}
           loading={<ListSkeleton rows={2} />}
-          empty={<p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">任务运行后会显示在这里</p>}
+          empty={
+            <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">{t('任务运行后会显示在这里')}</p>
+          }
         >
           {(list) => (
             <Card className="divide-y divide-border">
@@ -362,19 +365,19 @@ export function TasksPage() {
                     </Badge>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm">{taskName(r.taskId)}</div>
-                      <div className="truncate text-xs text-muted-foreground">{r.error ?? r.summary ?? (r.status === 'running' ? '正在执行…' : '')}</div>
+                      <div className="truncate text-xs text-muted-foreground">{r.error ?? r.summary ?? (r.status === 'running' ? t('正在执行…') : '')}</div>
                     </div>
                     <span className="shrink-0 text-xs text-subtle-foreground">{timeAgo(r.startedAt)}</span>
                     {r.status === 'running' ? (
                       <Button variant="ghost" size="sm" onClick={() => void call('tasks.cancel', r.id)}>
                         <Square className="size-3 fill-current" />
-                        停止
+                        {t('停止')}
                       </Button>
                     ) : null}
                     {r.threadId ? (
                       <Button variant="ghost" size="sm" onClick={() => openThread(r.threadId)}>
                         <MessageSquare />
-                        查看会话
+                        {t('查看会话')}
                       </Button>
                     ) : null}
                   </div>

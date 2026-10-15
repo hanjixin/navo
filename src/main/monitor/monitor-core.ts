@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { t } from '@shared/i18n'
 
 /**
  * Web page monitoring — the pure part. A check reads the page's text; only when it differs from the
@@ -83,7 +84,7 @@ export function parseJudge(text: string): { triggered: boolean; summary: string 
   if (start < 0 || end <= start) return null
   try {
     const j = Judge.parse(JSON.parse(text.slice(start, end + 1)))
-    return { triggered: j.triggered, summary: j.summary?.trim() || (j.triggered ? '内容有变化' : '变化与条件无关') }
+    return { triggered: j.triggered, summary: j.summary?.trim() || (j.triggered ? t('内容有变化') : t('变化与条件无关')) }
   } catch {
     return null
   }

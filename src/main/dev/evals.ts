@@ -11,6 +11,7 @@ import { resolveModel } from '../models/registry'
 import { trackedModel, usage } from '../usage/usage-service'
 import { recorder } from '../recorder/recorder-service'
 import { skillEvolution } from '../skills/evolution'
+import { t } from '@shared/i18n'
 
 /**
  * Real-model evaluations (scripts/memory-eval.mjs, scripts/agent-eval.mjs). They run in a normally
@@ -49,12 +50,12 @@ export async function runAgentEval(file: string): Promise<void> {
   const { cases } = JSON.parse(readFileSync(file, 'utf8')) as { cases: { prompt: string; timeoutMs?: number }[] }
   const results = []
   for (const c of cases) {
-    const t = agent.createThread(null, { title: `eval: ${c.prompt.slice(0, 30)}` })
+    const thread = agent.createThread(null, { title: `eval: ${c.prompt.slice(0, 30)}` })
     const started = Date.now()
-    const timer = setTimeout(() => agent.stop(t.id), c.timeoutMs ?? 180_000)
-    const r = await agent.send_(t.id, c.prompt, [], { headless: true }).catch((e: Error) => ({ finalText: '', error: e.message, aborted: false }))
+    const timer = setTimeout(() => agent.stop(thread.id), c.timeoutMs ?? 180_000)
+    const r = await agent.send_(thread.id, c.prompt, [], { headless: true }).catch((e: Error) => ({ finalText: '', error: e.message, aborted: false }))
     clearTimeout(timer)
-    const msgs = (await agent.threadState(t.id).catch(() => null))?.messages ?? []
+    const msgs = (await agent.threadState(thread.id).catch(() => null))?.messages ?? []
     const calls = msgs.flatMap((m) => m.toolCalls ?? []).map((x) => x.name)
     results.push({
       finalText: r.finalText,
@@ -99,13 +100,13 @@ export async function runFlowEval(file: string): Promise<void> {
   const assistantTurns = async (threadId: string) =>
     (await agent.threadState(threadId).catch(() => null))?.messages.filter((m) => m.role === 'assistant').length ?? 0
   try {
-    const t = agent.createThread(null, { title: 'eval: 固定流程' })
+    const thread = agent.createThread(null, { title: t('eval: 固定流程') })
     let started = Date.now()
-    const r = await agent.send_(t.id, prompt, [], { headless: true })
-    out.first = { ok: !r.error && !r.aborted, error: r.error, finalText: r.finalText, modelCalls: await assistantTurns(t.id), ms: Date.now() - started }
-    out.traceInfo = flows.traceInfo(t.id)
+    const r = await agent.send_(thread.id, prompt, [], { headless: true })
+    out.first = { ok: !r.error && !r.aborted, error: r.error, finalText: r.finalText, modelCalls: await assistantTurns(thread.id), ms: Date.now() - started }
+    out.traceInfo = flows.traceInfo(thread.id)
     started = Date.now()
-    const draft = await flows.draft(t.id)
+    const draft = await flows.draft(thread.id)
     out.rawSteps = draft.steps
     out.draft = {
       name: draft.name,

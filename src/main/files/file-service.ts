@@ -15,6 +15,7 @@ import { secrets } from '../core/secrets'
 import { getSettings } from '../core/settings'
 import { shellPath } from '../core/shell-env'
 import type { ParseResult } from './types'
+import { t } from '@shared/i18n'
 
 const MAX_FILE_BYTES = 300 * 1024 * 1024
 const CONCURRENCY = 2
@@ -125,7 +126,7 @@ class FileService {
 
   private row(id: string): Row {
     const r = db().prepare('SELECT * FROM files WHERE id = ?').get(id) as Row | undefined
-    if (!r) throw new Error('文件不存在')
+    if (!r) throw new Error(t('文件不存在'))
     return r
   }
 
@@ -182,8 +183,8 @@ class FileService {
 
   /** Adds a file; identical content that already parsed fine is reused instead of parsed again. */
   private add(name: string, data: Buffer): FileRecord {
-    if (data.length > MAX_FILE_BYTES) throw new Error(`${name} 超过 ${MAX_FILE_BYTES / 1024 / 1024} MB 上限`)
-    if (!data.length) throw new Error(`${name} 是空文件`)
+    if (data.length > MAX_FILE_BYTES) throw new Error(t('{{v0}} 超过 {{v1}} MB 上限', { v0: name, v1: MAX_FILE_BYTES / 1024 / 1024 }))
+    if (!data.length) throw new Error(t('{{v0}} 是空文件', { v0: name }))
     const sha256 = createHash('sha256').update(data).digest('hex')
     const same = db().prepare("SELECT * FROM files WHERE sha256 = ? AND status = 'ready' ORDER BY created_at DESC LIMIT 1").get(sha256) as Row | undefined
     if (same) return toRecord(same)
@@ -206,7 +207,7 @@ class FileService {
   }
 
   async pick(): Promise<FileRecord[]> {
-    const res = await dialog.showOpenDialog({ title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] })
+    const res = await dialog.showOpenDialog({ title: t('选择要上传的文件'), properties: ['openFile', 'multiSelections'] })
     return res.canceled ? [] : this.addPaths(res.filePaths)
   }
 
@@ -232,7 +233,7 @@ class FileService {
   markdown(id: string): string {
     const r = this.row(id)
     const p = join(paths.uploads, mdName(r))
-    if (!existsSync(p)) throw new Error(r.status === 'error' ? (r.error ?? '解析失败') : '尚未解析完成')
+    if (!existsSync(p)) throw new Error(r.status === 'error' ? (r.error ?? t('解析失败')) : t('尚未解析完成'))
     return readFileSync(p, 'utf8')
   }
 

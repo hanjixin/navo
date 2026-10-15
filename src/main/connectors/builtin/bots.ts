@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import { t } from '@shared/i18n'
 
 /**
  * Group bots of WeCom (企业微信), DingTalk (钉钉) and Feishu (飞书): a webhook address the group
@@ -28,7 +29,7 @@ export function checkWebhook(kind: BotKind, url: string, allowAny = false): void
     'dingtalk-bot': 'https://oapi.dingtalk.com/robot/send?access_token=…',
     'feishu-bot': 'https://open.feishu.cn/open-apis/bot/v2/hook/…',
   }[kind]
-  throw new Error(`Webhook 地址不对，应该像 ${example}`)
+  throw new Error(t('Webhook 地址不对，应该像 {{v0}}', { v0: example }))
 }
 
 /** WeCom's markdown takes at most 4096 bytes; DingTalk and Feishu are roomier, but a group message should be short */
@@ -103,7 +104,7 @@ export async function sendBot(kind: BotKind, cfg: { webhook: string; secret?: st
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   })
-  if (!res.ok) throw new Error(`发送失败：HTTP ${res.status}`)
+  if (!res.ok) throw new Error(t('发送失败：HTTP {{v0}}', { v0: res.status }))
   const err = botError(kind, (await res.json().catch(() => ({}))) as Record<string, unknown>)
   if (err) throw new Error(err)
 }

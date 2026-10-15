@@ -4,6 +4,7 @@ import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { secrets } from '../core/secrets'
 import { buildChatModel, type ResolvedModel } from './factory'
+import { t } from '@shared/i18n'
 
 interface ProviderRow {
   id: string
@@ -66,7 +67,7 @@ export const providers = {
   },
   get(id: string): Provider {
     const row = db().prepare('SELECT * FROM providers WHERE id = ?').get(id) as ProviderRow | undefined
-    if (!row) throw new Error('提供方不存在')
+    if (!row) throw new Error(t('提供方不存在'))
     return toProvider(row)
   },
   save(input: ProviderInput): Provider {
@@ -131,7 +132,7 @@ export const providers = {
         }
       }
     }
-    throw new Error(`无法获取模型列表，可以直接手动填写模型 ID。\n尝试过：\n${tried.join('\n')}`)
+    throw new Error(t('无法获取模型列表，可以直接手动填写模型 ID。\n尝试过：\n{{v0}}', { v0: tried.join('\n') }))
   },
 }
 
@@ -179,7 +180,7 @@ export const models = {
   },
   setPricing(id: string, pricing: ModelPricing | null): void {
     if (pricing && ![pricing.input, pricing.output, pricing.cachedInput ?? 0].every((n) => Number.isFinite(n) && n >= 0))
-      throw new Error('价格必须是不小于 0 的数字')
+      throw new Error(t('价格必须是不小于 0 的数字'))
     db()
       .prepare('UPDATE models SET pricing = ? WHERE id = ?')
       .run(pricing ? json.str(pricing) : null, id)
@@ -195,7 +196,7 @@ export const models = {
 /** Resolves a stored model (or the default) into a self-contained config with the decrypted key. */
 export function resolveModel(modelId?: string | null): ResolvedModel {
   const cfg = (modelId && models.get(modelId)) || models.default()
-  if (!cfg) throw new Error('尚未配置模型，请先在「模型」页面添加提供方和模型')
+  if (!cfg) throw new Error(t('尚未配置模型，请先在「模型」页面添加提供方和模型'))
   const p = providers.get(cfg.providerId)
   return {
     id: cfg.id,

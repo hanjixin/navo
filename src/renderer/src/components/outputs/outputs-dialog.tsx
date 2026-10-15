@@ -12,6 +12,7 @@ import { useAsync } from '@/hooks/use-async'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { formatFileSize } from '@/stores/files'
+import { t } from '@shared/i18n'
 
 const FORMAT_LABEL: Record<ExportFormat, string> = { docx: 'Word', pdf: 'PDF', xlsx: 'Excel' }
 /** FileIcon's kinds */
@@ -33,7 +34,7 @@ function PreviewBody({ p }: { p: OutputPreview }) {
       return (
         <div className="selectable px-5 py-4 text-sm">
           <Markdown text={p.text} />
-          {p.truncated ? <p className="mt-3 text-xs text-subtle-foreground">（文件较长，只显示了开头）</p> : null}
+          {p.truncated ? <p className="mt-3 text-xs text-subtle-foreground">{t('（文件较长，只显示了开头）')}</p> : null}
         </div>
       )
     case 'document':
@@ -48,7 +49,7 @@ function PreviewBody({ p }: { p: OutputPreview }) {
       return <pre className="selectable px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{p.text}</pre>
     case 'html':
       // the page is shown as is, without running its scripts
-      return <iframe title="HTML 预览" sandbox="" srcDoc={p.html} className="size-full min-h-[50vh] bg-white" />
+      return <iframe title={t('HTML 预览')} sandbox="" srcDoc={p.html} className="size-full min-h-[50vh] bg-white" />
     case 'image':
       return (
         <div className="flex justify-center p-4">
@@ -73,14 +74,14 @@ function PreviewBody({ p }: { p: OutputPreview }) {
           </table>
           {p.truncated || p.sheets ? (
             <p className="px-3 py-2 text-xs text-subtle-foreground">
-              {p.truncated ? '只显示了前 300 行。' : ''}
-              {p.sheets ? `共 ${p.sheets.length} 个工作表，这里显示第一个（${p.sheets[0]}）。` : ''}
+              {p.truncated ? t('只显示了前 300 行。') : ''}
+              {p.sheets ? t('共 {{v0}} 个工作表，这里显示第一个（{{v1}}）。', { v0: p.sheets.length, v1: p.sheets[0] }) : ''}
             </p>
           ) : null}
         </div>
       )
     default:
-      return <EmptyState icon={PackageOpen} title="无法预览" description={p.message} />
+      return <EmptyState icon={PackageOpen} title={t('无法预览')} description={p.message} />
   }
 }
 
@@ -92,9 +93,9 @@ function Preview({ file }: { file: OutputFile }) {
     setBusy(key)
     try {
       const r = await fn()
-      if (typeof r === 'string' && done) toast.success(done(r), { action: { label: '在访达中显示', onClick: () => void call('app.showItemInFolder', r) } })
+      if (typeof r === 'string' && done) toast.success(done(r), { action: { label: t('在访达中显示'), onClick: () => void call('app.showItemInFolder', r) } })
     } catch (e) {
-      toast.error('操作失败', { description: errorMessage(e) })
+      toast.error(t('操作失败'), { description: errorMessage(e) })
     } finally {
       setBusy(null)
     }
@@ -108,7 +109,7 @@ function Preview({ file }: { file: OutputFile }) {
             {file.name}
           </div>
           <div className="truncate text-xs text-muted-foreground">
-            {file.source === 'download' ? '下载的文件' : file.path} · {formatFileSize(file.size)}
+            {file.source === 'download' ? t('下载的文件') : file.path} · {formatFileSize(file.size)}
           </div>
         </div>
         {file.exports.map((f) => (
@@ -121,12 +122,12 @@ function Preview({ file }: { file: OutputFile }) {
               void act(
                 f,
                 () => call('outputs.export', file.id, f),
-                (p) => `已导出 ${FORMAT_LABEL[f]}：${p.split('/').pop()}`,
+                (p) => t('已导出 {{v0}}：{{v1}}', { v0: FORMAT_LABEL[f], v1: p.split('/').pop() }),
               )
             }
           >
             {busy !== f ? <FileDown /> : null}
-            导出 {FORMAT_LABEL[f]}
+            {t('导出 {{v0}}', { v0: FORMAT_LABEL[f] })}
           </Button>
         ))}
         <Button
@@ -138,18 +139,18 @@ function Preview({ file }: { file: OutputFile }) {
             void act(
               'save',
               () => call('outputs.saveAs', file.id),
-              () => '已另存',
+              () => t('已另存'),
             )
           }
         >
           {busy !== 'save' ? <Download /> : null}
-          另存为
+          {t('另存为')}
         </Button>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="在访达中显示"
-          title="在访达中显示"
+          aria-label={t('在访达中显示')}
+          title={t('在访达中显示')}
           disabled={file.missing}
           onClick={() => void call('outputs.reveal', file.id)}
         >
@@ -158,8 +159,8 @@ function Preview({ file }: { file: OutputFile }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="用默认应用打开"
-          title="用默认应用打开"
+          aria-label={t('用默认应用打开')}
+          title={t('用默认应用打开')}
           disabled={file.missing}
           onClick={() => void act('open', () => call('outputs.open', file.id))}
         >
@@ -200,11 +201,17 @@ export function OutputsDialog({ threadId, onClose }: { threadId: string; onClose
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="产出" description="这个对话里 Agent 写下或下载的文件" className="h-[min(720px,calc(100vh-48px))] w-[min(1040px,calc(100vw-48px))]">
+      <DialogContent
+        title={t('产出')}
+        description={t('这个对话里 Agent 写下或下载的文件')}
+        className="h-[min(720px,calc(100vh-48px))] w-[min(1040px,calc(100vw-48px))]"
+      >
         <AsyncView
           state={list}
           loading={<ListSkeleton rows={3} />}
-          empty={<EmptyState icon={PackageOpen} title="还没有产出" description="Agent 在 /workspace/ 写下的文件和在浏览器里下载的文件会出现在这里。" />}
+          empty={
+            <EmptyState icon={PackageOpen} title={t('还没有产出')} description={t('Agent 在 /workspace/ 写下的文件和在浏览器里下载的文件会出现在这里。')} />
+          }
         >
           {(files) => (
             <div className="-mx-5 -my-4 flex h-full min-h-0 flex-col sm:flex-row">
@@ -225,11 +232,11 @@ export function OutputsDialog({ threadId, onClose }: { threadId: string; onClose
                       <span className="min-w-0 flex-1">
                         <span className={cn('block truncate text-sm', f.missing && 'line-through')}>{f.name}</span>
                         <span className="block truncate text-[11px] text-subtle-foreground">
-                          {f.source === 'download' ? '下载 · ' : ''}
+                          {f.source === 'download' ? t('下载 · ') : ''}
                           {timeAgo(f.at)}
                         </span>
                       </span>
-                      {f.missing ? <Badge variant="warning">已移除</Badge> : null}
+                      {f.missing ? <Badge variant="warning">{t('已移除')}</Badge> : null}
                     </button>
                   </li>
                 ))}

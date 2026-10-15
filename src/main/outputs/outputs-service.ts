@@ -11,6 +11,7 @@ import { paths } from '../core/paths'
 import { files } from '../files/file-service'
 import { decodeText } from '../files/text-utils'
 import { exportTargets, kindOf, markdownToDocx, markdownToHtml, toXlsx } from './convert'
+import { t } from '@shared/i18n'
 
 interface Row {
   id: string
@@ -97,7 +98,7 @@ class OutputsService {
 
   private row(id: string): Row {
     const r = db().prepare('SELECT * FROM outputs WHERE id = ?').get(id) as Row | undefined
-    if (!r) throw new Error('产出文件不存在')
+    if (!r) throw new Error(t('产出文件不存在'))
     return r
   }
 
@@ -138,7 +139,7 @@ class OutputsService {
   async preview(id: string): Promise<OutputPreview> {
     const r = this.row(id)
     const abs = absOf(r.path)
-    if (!existsSync(abs)) return { kind: 'other', message: '文件已被删除或移走' }
+    if (!existsSync(abs)) return { kind: 'other', message: t('文件已被删除或移走') }
     const name = basename(abs)
     const kind = kindOf(name)
     const text = () => {
@@ -166,14 +167,14 @@ class OutputsService {
       }
       case 'image': {
         const size = statSync(abs).size
-        if (size > MAX_IMAGE) return { kind: 'other', message: '图片太大，请用其他应用打开' }
+        if (size > MAX_IMAGE) return { kind: 'other', message: t('图片太大，请用其他应用打开') }
         return { kind, dataUrl: `data:${MIME[extname(name).slice(1).toLowerCase()] ?? 'image/png'};base64,${readFileSync(abs).toString('base64')}` }
       }
       case 'pdf':
       case 'document':
         return { kind, markdown: await files.markdownOf(abs, name) }
       default:
-        return { kind: 'other', message: '这种文件无法预览，可以用默认应用打开' }
+        return { kind: 'other', message: t('这种文件无法预览，可以用默认应用打开') }
     }
   }
 
@@ -186,10 +187,10 @@ class OutputsService {
     if (format === 'xlsx') return { data: toXlsx(name, content), name: `${stem}.xlsx` }
     const md = decodeText(content).text
     if (format === 'docx') {
-      if (kind !== 'markdown' && kind !== 'text') throw new Error('只有 Markdown 或文本可以导出为 Word')
+      if (kind !== 'markdown' && kind !== 'text') throw new Error(t('只有 Markdown 或文本可以导出为 Word'))
       return { data: await markdownToDocx(kind === 'text' ? md.replace(/\n/g, '  \n') : md, stem), name: `${stem}.docx` }
     }
-    if (kind !== 'markdown' && kind !== 'text' && kind !== 'html') throw new Error('只有 Markdown、文本或 HTML 可以导出为 PDF')
+    if (kind !== 'markdown' && kind !== 'text' && kind !== 'html') throw new Error(t('只有 Markdown、文本或 HTML 可以导出为 PDF'))
     const html = kind === 'html' ? md : markdownToHtml(kind === 'text' ? `\`\`\`\n${md}\n\`\`\`` : md, stem)
     return { data: await printToPdf(html), name: `${stem}.pdf` }
   }
@@ -201,7 +202,7 @@ class OutputsService {
   async export(id: string, format: ExportFormat, dest?: string): Promise<string | null> {
     const r = this.row(id)
     const abs = absOf(r.path)
-    if (!existsSync(abs)) throw new Error('文件已被删除或移走')
+    if (!existsSync(abs)) throw new Error(t('文件已被删除或移走'))
     const { data, name } = await this.convert(abs, format)
     let target = dest === 'beside' ? join(dirname(abs), name) : dest
     if (!target) {
@@ -242,10 +243,10 @@ class OutputsService {
 
   /** For the agent's export_file: /workspace/report.md → /workspace/report.docx */
   async exportWorkspaceFile(threadId: string, virtualPath: string, format: ExportFormat): Promise<string> {
-    if (!virtualPath.startsWith(VIRTUAL)) throw new Error('只能导出 /workspace/ 下的文件')
+    if (!virtualPath.startsWith(VIRTUAL)) throw new Error(t('只能导出 /workspace/ 下的文件'))
     const abs = absOf(virtualPath)
-    if (relative(paths.workspace, abs).startsWith('..')) throw new Error('只能导出 /workspace/ 下的文件')
-    if (!existsSync(abs)) throw new Error(`文件不存在：${virtualPath}`)
+    if (relative(paths.workspace, abs).startsWith('..')) throw new Error(t('只能导出 /workspace/ 下的文件'))
+    if (!existsSync(abs)) throw new Error(t('文件不存在：{{v0}}', { v0: virtualPath }))
     const { data, name } = await this.convert(abs, format)
     const target = join(dirname(abs), name)
     writeFileSync(target, data)

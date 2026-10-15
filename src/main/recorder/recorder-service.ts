@@ -10,6 +10,7 @@ import { browser } from '../browser/browser-service'
 import { skills } from '../skills/skill-service'
 import { recorderScript } from './recorder-script'
 import { appendEvent, fillTemplate, placeholders, type RawEvent } from './steps'
+import { t } from '@shared/i18n'
 
 const RECORDER_SRC = `(${recorderScript.toString()})();`
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -48,7 +49,7 @@ class RecorderService {
 
   get(id: string): Macro {
     const r = db().prepare('SELECT data FROM macros WHERE id = ?').get(id) as { data: string } | undefined
-    if (!r) throw new Error('宏不存在')
+    if (!r) throw new Error(t('宏不存在'))
     return JSON.parse(r.data) as Macro
   }
 
@@ -118,7 +119,7 @@ class RecorderService {
       if (ref) return ref
       await sleep(300)
     }
-    throw new Error(`未找到元素: ${selectors[0] ?? '(无选择器)'}`)
+    throw new Error(t('未找到元素: {{v0}}', { v0: selectors[0] ?? t('(无选择器)') }))
   }
 
   /** Plays a macro on `wc` (the active tab by default). Agent runs pass their own tab and keep control afterwards. */

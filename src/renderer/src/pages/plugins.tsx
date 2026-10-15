@@ -16,6 +16,7 @@ import { useAsync } from '@/hooks/use-async'
 import { call } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 import { useBrowser } from '@/stores/browser'
+import { t } from '@shared/i18n'
 
 function exampleArgs(a: PluginAction): string {
   const props = (a.parameters as { properties?: Record<string, { type?: string }> }).properties ?? {}
@@ -43,11 +44,13 @@ function ActionTester({ plugin, action, active }: { plugin: PluginInfo; action: 
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="font-mono text-sm font-medium">{action.name}</div>
-          <p className="mt-0.5 text-xs text-muted-foreground">{action.description}</p>
+          <p data-user-content className="mt-0.5 text-xs text-muted-foreground">
+            {action.description}
+          </p>
         </div>
-        <Button variant="secondary" size="sm" loading={running} disabled={!active} onClick={run} title={active ? '' : '当前页面不匹配该插件'}>
+        <Button variant="secondary" size="sm" loading={running} disabled={!active} onClick={run} title={active ? '' : t('当前页面不匹配该插件')}>
           {!running ? <Play /> : null}
-          在当前页运行
+          {t('在当前页运行')}
         </Button>
       </div>
       <Textarea value={args} onChange={(e) => setArgs(e.target.value)} rows={Math.min(6, args.split('\n').length)} className="mt-3 font-mono text-xs" />
@@ -82,10 +85,10 @@ function FileEditor({ plugin, file, language, onSaved }: { plugin: PluginInfo; f
     try {
       await call('plugins.writeFile', plugin.id, file, content)
       setDirty(false)
-      toast.success(`已保存 ${file}，已重新注入匹配页面`)
+      toast.success(t('已保存 {{v0}}，已重新注入匹配页面', { v0: file }))
       onSaved()
     } catch (e) {
-      toast.error('保存失败', { description: errorMessage(e) })
+      toast.error(t('保存失败'), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -96,10 +99,10 @@ function FileEditor({ plugin, file, language, onSaved }: { plugin: PluginInfo; f
     <div className="flex h-full flex-col">
       <div className="mb-2 flex items-center gap-2">
         <span className="font-mono text-xs text-muted-foreground">{file}</span>
-        {dirty ? <span className="text-xs text-warning">未保存</span> : null}
+        {dirty ? <span className="text-xs text-warning">{t('未保存')}</span> : null}
         <Button variant="primary" size="sm" className="ml-auto" loading={saving} disabled={!dirty} onClick={save}>
           {!saving ? <Save /> : null}
-          保存
+          {t('保存')}
         </Button>
       </div>
       <CodeEditor
@@ -139,27 +142,27 @@ export function PluginsPage() {
       list.reload()
       setSelected(p.id)
     } catch (e) {
-      toast.error('创建失败', { description: errorMessage(e) })
+      toast.error(t('创建失败'), { description: errorMessage(e) })
     }
   }
 
   return (
     <div className="@container flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8">
       <PageHeader
-        title="站点插件"
-        description="为特定网站注入 DOM 脚本并暴露动作。打开匹配的网站时，动作会作为 plugin_* 工具提供给 Agent，比逐步点击更快更稳。"
+        title={t('站点插件')}
+        description={t('为特定网站注入 DOM 脚本并暴露动作。打开匹配的网站时，动作会作为 plugin_* 工具提供给 Agent，比逐步点击更快更稳。')}
         actions={
           <>
-            <Button variant="ghost" size="icon" onClick={async () => (await call('plugins.reload'), list.reload())} aria-label="重新加载">
+            <Button variant="ghost" size="icon" onClick={async () => (await call('plugins.reload'), list.reload())} aria-label={t('重新加载')}>
               <RotateCw />
             </Button>
             <Button variant="secondary" onClick={async () => (await call('plugins.import'), list.reload())}>
               <FolderInput />
-              导入
+              {t('导入')}
             </Button>
             <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus />
-              新建插件
+              {t('新建插件')}
             </Button>
           </>
         }
@@ -172,11 +175,11 @@ export function PluginsPage() {
             empty={
               <EmptyState
                 icon={Puzzle}
-                title="还没有插件"
-                description="新建插件，为你常用的网站编写专属自动化动作。"
+                title={t('还没有插件')}
+                description={t('新建插件，为你常用的网站编写专属自动化动作。')}
                 action={
                   <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-                    新建插件
+                    {t('新建插件')}
                   </Button>
                 }
               />
@@ -201,16 +204,16 @@ export function PluginsPage() {
                         disabled={!!p.error}
                         onClick={(e) => e.stopPropagation()}
                         onCheckedChange={async (v) => (await call('plugins.setEnabled', p.id, v), list.reload())}
-                        aria-label="启用"
+                        aria-label={t('启用')}
                       />
                     </div>
                     <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{p.matches.join(', ') || p.id}</div>
                     {p.error ? (
                       <Badge variant="danger" className="mt-1.5">
-                        配置错误
+                        {t('配置错误')}
                       </Badge>
                     ) : (
-                      <div className="mt-1.5 text-xs text-subtle-foreground">{p.actions.length} 个动作</div>
+                      <div className="mt-1.5 text-xs text-subtle-foreground">{t('{{v0}} 个动作', { v0: p.actions.length })}</div>
                     )}
                   </div>
                 ))}
@@ -226,7 +229,7 @@ export function PluginsPage() {
                 <TabsList className="flex-1">
                   <TabsTrigger value="overview">
                     <Puzzle />
-                    概览
+                    {t('概览')}
                   </TabsTrigger>
                   <TabsTrigger value="script">
                     <FileCode2 />
@@ -244,16 +247,16 @@ export function PluginsPage() {
                   onClick={async () => (await call('plugins.delete', plugin.id), setSelected(null), list.reload())}
                 >
                   <Trash2 />
-                  删除
+                  {t('删除')}
                 </Button>
               </div>
               <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto pt-4">
                 {plugin.error ? <ErrorState error={plugin.error} compact className="mb-4" /> : null}
                 <div className="mb-4 flex items-center gap-2 text-sm">
-                  {isActive(plugin.id) ? <Badge variant="success">当前页面已匹配</Badge> : <Badge>当前页面未匹配</Badge>}
+                  {isActive(plugin.id) ? <Badge variant="success">{t('当前页面已匹配')}</Badge> : <Badge>{t('当前页面未匹配')}</Badge>}
                   <span className="text-xs text-muted-foreground">{plugin.description}</span>
                 </div>
-                <div className="mb-2 text-xs font-medium text-subtle-foreground">匹配规则</div>
+                <div className="mb-2 text-xs font-medium text-subtle-foreground">{t('匹配规则')}</div>
                 <div className="mb-5 flex flex-wrap gap-1.5">
                   {plugin.matches.map((m) => (
                     <code key={m} className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs">
@@ -261,7 +264,7 @@ export function PluginsPage() {
                     </code>
                   ))}
                 </div>
-                <div className="mb-2 text-xs font-medium text-subtle-foreground">动作</div>
+                <div className="mb-2 text-xs font-medium text-subtle-foreground">{t('动作')}</div>
                 <div className="grid gap-2">
                   {plugin.actions.map((a) => (
                     <ActionTester key={a.name} plugin={plugin} action={a} active={isActive(plugin.id)} />
@@ -282,24 +285,24 @@ export function PluginsPage() {
       <Dialog open={creating} onOpenChange={setCreating}>
         {creating ? (
           <DialogContent
-            title="新建站点插件"
+            title={t('新建站点插件')}
             className="w-[460px]"
             footer={
               <>
                 <Button variant="ghost" onClick={() => setCreating(false)}>
-                  取消
+                  {t('取消')}
                 </Button>
                 <Button variant="primary" disabled={!form.id.trim()} onClick={create}>
-                  创建
+                  {t('创建')}
                 </Button>
               </>
             }
           >
             <div className="grid gap-4">
-              <Field label="插件 ID" hint="小写字母、数字和连字符，例如 taobao-helper">
+              <Field label={t('插件 ID')} hint={t('小写字母、数字和连字符，例如 taobao-helper')}>
                 <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} autoFocus className="font-mono" />
               </Field>
-              <Field label="显示名称">
+              <Field label={t('显示名称')}>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </Field>
             </div>

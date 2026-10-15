@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { BrowserState } from '@shared/types'
 import { toast } from 'sonner'
 import { call, on } from '@/lib/ipc'
+import { t } from '@shared/i18n'
 
 interface BrowserStore {
   state: BrowserState
@@ -67,10 +68,10 @@ export function wireBrowserEvents(): void {
   on('browser.state', (state) => useBrowser.setState({ state }))
   on('browser.download', (d) => {
     if (d.state === 'completed') {
-      toast.success(`已下载 ${d.filename}`, { action: { label: '在文件夹中显示', onClick: () => void call('app.showItem', d.path) } })
+      toast.success(t('已下载 {{v0}}', { v0: d.filename }), { action: { label: t('在文件夹中显示'), onClick: () => void call('app.showItem', d.path) } })
     } else if (d.state === 'progressing') {
-      toast(`正在下载 ${d.filename}`, { description: '完成后会保存到「下载」文件夹' })
-    } else toast.error(`下载失败：${d.filename}`)
+      toast(t('正在下载 {{v0}}', { v0: d.filename }), { description: t('完成后会保存到「下载」文件夹') })
+    } else toast.error(t('下载失败：{{v0}}', { v0: d.filename }))
   })
   // the agent is using the browser: an open panel shows it; a collapsed one gets the mini window
   on('browser.reveal', ({ open }) => {

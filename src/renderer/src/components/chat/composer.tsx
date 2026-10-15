@@ -11,6 +11,7 @@ import { useFiles } from '@/stores/files'
 import { useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
 import { useVoice } from '@/hooks/use-voice'
+import { t } from '@shared/i18n'
 
 export function Composer({
   onSend,
@@ -110,7 +111,7 @@ export function Composer({
     try {
       attach((await upload(list)).map((r) => r.id))
     } catch (e) {
-      toast.error('添加文件失败', { description: errorMessage(e) })
+      toast.error(t('添加文件失败'), { description: errorMessage(e) })
     }
   }
 
@@ -152,7 +153,11 @@ export function Composer({
         }}
         disabled={disabled}
         placeholder={
-          disabled ? (disabledReason ?? '暂不可输入') : dragging ? '松开以添加文件' : '描述你想完成的任务，可拖入或粘贴文件；Enter 发送，Shift+Enter 换行'
+          disabled
+            ? (disabledReason ?? t('暂不可输入'))
+            : dragging
+              ? t('松开以添加文件')
+              : t('描述你想完成的任务，可拖入或粘贴文件；Enter 发送，Shift+Enter 换行')
         }
         className="block max-h-[220px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed outline-none placeholder:text-subtle-foreground"
       />
@@ -165,7 +170,7 @@ export function Composer({
             {voice.state === 'recording' ? (
               <>
                 <span className="size-2 shrink-0 animate-pulse rounded-full bg-danger" />
-                <span>正在听</span>
+                <span>{t('正在听')}</span>
                 <span className="flex h-3.5 items-center gap-0.5" aria-hidden>
                   {[0.6, 1, 0.75, 0.9, 0.5].map((k, i) => (
                     <span
@@ -176,31 +181,31 @@ export function Composer({
                   ))}
                 </span>
                 <span className="tabular-nums">{Math.floor(voice.elapsed / 1000)}″</span>
-                <span className="ml-auto truncate text-subtle-foreground">松开或再点一次完成 · Esc 取消</span>
-                <Button variant="ghost" size="icon-sm" className="size-6" aria-label="取消录音" onClick={voice.cancel}>
+                <span className="ml-auto truncate text-subtle-foreground">{t('松开或再点一次完成 · Esc 取消')}</span>
+                <Button variant="ghost" size="icon-sm" className="size-6" aria-label={t('取消录音')} onClick={voice.cancel}>
                   <X />
                 </Button>
               </>
             ) : (
               <>
                 <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                <span className="truncate">{voice.slow ? '正在识别…第一次使用本机识别时要先下载模型，可能需要几分钟' : '正在识别…'}</span>
+                <span className="truncate">{voice.slow ? t('正在识别…第一次使用本机识别时要先下载模型，可能需要几分钟') : t('正在识别…')}</span>
               </>
             )}
           </div>
         ) : (
           <>
-            <Tooltip content="添加文件（PDF、Word、Excel、PPT、图片、代码…）" side="top">
+            <Tooltip content={t('添加文件（PDF、Word、Excel、PPT、图片、代码…）')} side="top">
               <Button
                 variant="ghost"
                 size="icon-sm"
                 onClick={() =>
                   void pick().then(
                     (recs) => attach(recs.map((r) => r.id)),
-                    (e) => toast.error('添加文件失败', { description: errorMessage(e) }),
+                    (e) => toast.error(t('添加文件失败'), { description: errorMessage(e) }),
                   )
                 }
-                aria-label="添加文件"
+                aria-label={t('添加文件')}
                 disabled={disabled}
               >
                 <Paperclip />
@@ -219,11 +224,11 @@ export function Composer({
           </>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <Tooltip content={voice.state === 'recording' ? '完成录音' : '语音输入：按住说话，或点一下开始 · ⌘⇧M'} side="top">
+          <Tooltip content={voice.state === 'recording' ? t('完成录音') : t('语音输入：按住说话，或点一下开始 · ⌘⇧M')} side="top">
             <Button
               variant={voice.state === 'recording' ? 'secondary' : 'ghost'}
               size="icon-sm"
-              aria-label={voice.state === 'recording' ? '完成录音' : '语音输入'}
+              aria-label={voice.state === 'recording' ? t('完成录音') : t('语音输入')}
               aria-pressed={voice.state === 'recording'}
               disabled={disabled || voice.state === 'starting' || voice.state === 'transcribing'}
               onPointerDown={(e) => {
@@ -239,8 +244,8 @@ export function Composer({
             </Button>
           </Tooltip>
           {running ? (
-            <Tooltip content="停止" side="top">
-              <Button variant="secondary" size="icon-sm" onClick={onStop} aria-label="停止">
+            <Tooltip content={t('停止')} side="top">
+              <Button variant="secondary" size="icon-sm" onClick={onStop} aria-label={t('停止')}>
                 <Square className="size-3 fill-current" />
               </Button>
             </Tooltip>
@@ -250,7 +255,7 @@ export function Composer({
               size="icon-sm"
               onClick={() => submit()}
               disabled={disabled || (!text.trim() && !attached.length)}
-              aria-label="发送"
+              aria-label={t('发送')}
               className={cn('rounded-md')}
             >
               <ArrowUp />

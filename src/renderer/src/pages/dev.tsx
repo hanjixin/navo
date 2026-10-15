@@ -11,6 +11,7 @@ import { useAsync } from '@/hooks/use-async'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 function Traces() {
   const traces = useAsync(() => call('dev.traces'))
@@ -18,44 +19,44 @@ function Traces() {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">最近 500 条模型与工具调用（仅在开发者模式下记录）</p>
+        <p className="text-xs text-muted-foreground">{t('最近 500 条模型与工具调用（仅在开发者模式下记录）')}</p>
         <div className="flex gap-1.5">
           <Button variant="ghost" size="sm" onClick={traces.reload}>
-            刷新
+            {t('刷新')}
           </Button>
           <Button variant="ghost" size="sm" onClick={async () => (await call('dev.clearTraces'), traces.reload())}>
             <Trash2 />
-            清空
+            {t('清空')}
           </Button>
         </div>
       </div>
       <AsyncView
         state={traces}
         loading={<ListSkeleton rows={4} />}
-        empty={<EmptyState icon={Activity} title="暂无运行轨迹" description="在对话中运行 Agent 后，这里会记录每次模型调用与工具调用。" />}
+        empty={<EmptyState icon={Activity} title={t('暂无运行轨迹')} description={t('在对话中运行 Agent 后，这里会记录每次模型调用与工具调用。')} />}
       >
         {(list) => (
           <Card className="divide-y divide-border">
-            {list.map((t) => (
-              <div key={t.id}>
+            {list.map((entry) => (
+              <div key={entry.id}>
                 <button
-                  onClick={() => setOpen(open === t.id ? null : t.id)}
+                  onClick={() => setOpen(open === entry.id ? null : entry.id)}
                   className="interactive flex h-10 w-full items-center gap-3 px-4 text-left text-sm hover:bg-accent/50"
                 >
-                  <ChevronRight className={cn('size-3.5 text-subtle-foreground transition-transform duration-150', open === t.id && 'rotate-90')} />
-                  <Badge variant={t.kind === 'llm' ? 'primary' : t.kind === 'error' ? 'danger' : 'neutral'} className="w-12 justify-center">
-                    {t.kind === 'llm' ? 'LLM' : t.kind === 'tool' ? '工具' : '错误'}
+                  <ChevronRight className={cn('size-3.5 text-subtle-foreground transition-transform duration-150', open === entry.id && 'rotate-90')} />
+                  <Badge variant={entry.kind === 'llm' ? 'primary' : entry.kind === 'error' ? 'danger' : 'neutral'} className="w-12 justify-center">
+                    {entry.kind === 'llm' ? 'LLM' : entry.kind === 'tool' ? t('工具') : t('错误')}
                   </Badge>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{t.name}</span>
-                  {t.tokens ? <span className="text-xs text-muted-foreground">{t.tokens} tok</span> : null}
-                  <span className="w-16 text-right font-mono text-xs text-muted-foreground">{t.durationMs} ms</span>
-                  <span className="w-20 text-right text-xs text-subtle-foreground">{timeAgo(t.createdAt)}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                  {entry.tokens ? <span className="text-xs text-muted-foreground">{entry.tokens} tok</span> : null}
+                  <span className="w-16 text-right font-mono text-xs text-muted-foreground">{entry.durationMs} ms</span>
+                  <span className="w-20 text-right text-xs text-subtle-foreground">{timeAgo(entry.createdAt)}</span>
                 </button>
-                {open === t.id ? (
+                {open === entry.id ? (
                   <div className="grid animate-fade-in grid-cols-2 gap-3 border-t border-border bg-background/50 px-4 py-3">
                     {[
-                      ['输入', t.input],
-                      ['输出', t.output],
+                      [t('输入'), entry.input],
+                      [t('输出'), entry.output],
                     ].map(([label, text]) => (
                       <div key={label} className="min-w-0">
                         <div className="mb-1 text-[11px] font-medium text-subtle-foreground">{label}</div>
@@ -82,14 +83,14 @@ function ToolSandbox() {
   const [args, setArgs] = useState('{}')
   const [out, setOut] = useState<{ ok: boolean; text: string } | null>(null)
   const [running, setRunning] = useState(false)
-  const tool = tools.data?.find((t) => t.name === selected)
-  const filtered = useMemo(() => (tools.data ?? []).filter((t) => t.name.includes(q)), [tools.data, q])
+  const tool = tools.data?.find((entry) => entry.name === selected)
+  const filtered = useMemo(() => (tools.data ?? []).filter((entry) => entry.name.includes(q)), [tools.data, q])
 
   const pick = (name: string) => {
     setSelected(name)
     setOut(null)
-    const t = tools.data?.find((x) => x.name === name)
-    const props = (t?.schema as { properties?: Record<string, unknown> })?.properties ?? {}
+    const entry = tools.data?.find((x) => x.name === name)
+    const props = (entry?.schema as { properties?: Record<string, unknown> })?.properties ?? {}
     setArgs(JSON.stringify(Object.fromEntries(Object.keys(props).map((k) => [k, ''])), null, 2))
   }
 
@@ -109,21 +110,21 @@ function ToolSandbox() {
   return (
     <div className="grid grid-cols-[280px_1fr] gap-4">
       <div>
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="筛选工具" className="mb-2 h-7 text-xs" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('筛选工具')} className="mb-2 h-7 text-xs" />
         <AsyncView state={tools} loading={<ListSkeleton rows={5} />}>
           {() => (
             <div className="grid max-h-[560px] gap-px overflow-y-auto">
-              {filtered.map((t) => (
+              {filtered.map((entry) => (
                 <button
-                  key={t.name}
-                  onClick={() => pick(t.name)}
+                  key={entry.name}
+                  onClick={() => pick(entry.name)}
                   className={cn(
                     'interactive flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left',
-                    selected === t.name ? 'bg-accent' : 'hover:bg-accent/60',
+                    selected === entry.name ? 'bg-accent' : 'hover:bg-accent/60',
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{t.name}</span>
-                  <Badge variant="outline">{t.source}</Badge>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                  <Badge variant="outline">{entry.source}</Badge>
                 </button>
               ))}
             </div>
@@ -135,12 +136,12 @@ function ToolSandbox() {
           <Card className="p-4">
             <div className="font-mono text-sm font-medium">{tool.name}</div>
             <p className="mt-1 text-xs text-muted-foreground">{tool.description}</p>
-            <div className="mt-4 mb-1 text-[11px] font-medium text-subtle-foreground">参数 (JSON)</div>
+            <div className="mt-4 mb-1 text-[11px] font-medium text-subtle-foreground">{t('参数 (JSON)')}</div>
             <Textarea value={args} onChange={(e) => setArgs(e.target.value)} rows={6} className="font-mono text-xs" />
             <div className="mt-3 flex justify-end">
               <Button variant="primary" size="sm" loading={running} onClick={invoke}>
                 {!running ? <Play /> : null}
-                调用
+                {t('调用')}
               </Button>
             </div>
             {out ? (
@@ -158,7 +159,7 @@ function ToolSandbox() {
             </details>
           </Card>
         ) : (
-          <EmptyState icon={Wrench} title="选择一个工具" description="直接调用工具以调试浏览器、插件、宏与 MCP 工具，无需经过模型。" />
+          <EmptyState icon={Wrench} title={t('选择一个工具')} description={t('直接调用工具以调试浏览器、插件、宏与 MCP 工具，无需经过模型。')} />
         )}
       </div>
     </div>
@@ -186,7 +187,7 @@ function Logs() {
               {l}
             </div>
           ))
-        : '暂无日志'}
+        : t('暂无日志')}
     </pre>
   )
 }
@@ -196,26 +197,26 @@ export function DevPage() {
   if (devMode === false) {
     return (
       <Page>
-        <EmptyState icon={Code2} title="开发者模式未开启" description="在「设置」中开启开发者模式后可查看运行轨迹、日志并调试工具。" />
+        <EmptyState icon={Code2} title={t('开发者模式未开启')} description={t('在「设置」中开启开发者模式后可查看运行轨迹、日志并调试工具。')} />
       </Page>
     )
   }
   return (
     <Page wide>
-      <PageHeader title="开发者" description="调试 Agent 的运行过程、工具与日志。" />
+      <PageHeader title={t('开发者')} description={t('调试 Agent 的运行过程、工具与日志。')} />
       <Tabs defaultValue="traces">
         <TabsList className="mb-4 w-full">
           <TabsTrigger value="traces">
             <Activity />
-            运行轨迹
+            {t('运行轨迹')}
           </TabsTrigger>
           <TabsTrigger value="tools">
             <Wrench />
-            工具沙盒
+            {t('工具沙盒')}
           </TabsTrigger>
           <TabsTrigger value="logs">
             <ScrollText />
-            日志
+            {t('日志')}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="traces">

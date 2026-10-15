@@ -13,8 +13,9 @@ import { call } from '@/lib/ipc'
 import { errorMessage, timeAgo } from '@/lib/utils'
 import { describeFile, formatFileSize, useFileRecord } from '@/stores/files'
 import { FileIcon } from './file-icon'
+import { t } from '@shared/i18n'
 
-const ENGINE_LABEL: Record<FileEngine, string> = { builtin: '内置引擎', markitdown: 'MarkItDown', docling: 'Docling', mineru: 'MinerU 云端' }
+const ENGINE_LABEL: Record<FileEngine, string> = { builtin: t('内置引擎'), markitdown: 'MarkItDown', docling: 'Docling', mineru: t('MinerU 云端') }
 
 /** Rendered / raw Markdown plus parse details; used on the Files page and from chat attachments. */
 export function FilePreview({ file: initial, onDeleted, compact }: { file: FileRecord; onDeleted?: () => void; compact?: boolean }) {
@@ -37,7 +38,7 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
     try {
       await call('files.reparse', file.id, engine)
     } catch (e) {
-      toast.error('重新解析失败', { description: errorMessage(e) })
+      toast.error(t('重新解析失败'), { description: errorMessage(e) })
     }
   }
 
@@ -63,22 +64,22 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" disabled={file.status === 'parsing' || file.status === 'queued'}>
                   <RotateCw />
-                  重新解析
+                  {t('重新解析')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>选择解析引擎</DropdownMenuLabel>
+                <DropdownMenuLabel>{t('选择解析引擎')}</DropdownMenuLabel>
                 {(engines.data ?? []).map((e) => (
                   <DropdownMenuItem key={e.id} disabled={!e.available} onSelect={() => void reparse(e.id)} className="h-auto items-start py-1.5">
                     <div>
                       <div className="text-sm">{e.name}</div>
-                      <div className="text-xs text-muted-foreground">{e.available ? (e.local ? '本机处理' : '文件会上传') : e.hint}</div>
+                      <div className="text-xs text-muted-foreground">{e.available ? (e.local ? t('本机处理') : t('文件会上传')) : e.hint}</div>
                     </div>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="icon-sm" onClick={() => void call('files.reveal', file.id)} aria-label="在访达中显示">
+            <Button variant="ghost" size="icon-sm" onClick={() => void call('files.reveal', file.id)} aria-label={t('在访达中显示')}>
               <FolderOpen />
             </Button>
             {onDeleted ? (
@@ -86,7 +87,7 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
                 variant="ghost"
                 size="icon-sm"
                 className="hover:text-danger"
-                aria-label="删除"
+                aria-label={t('删除')}
                 onClick={async () => {
                   await call('files.delete', file.id)
                   onDeleted()
@@ -110,14 +111,14 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
         <div className="grid gap-3 rounded-lg border border-border bg-card p-4" aria-busy="true">
           <div className="flex items-center gap-2 text-sm">
             <Loader2 className="size-4 animate-spin text-brand" />
-            {file.progress ?? (file.status === 'queued' ? '排队中…' : '正在解析…')}
+            {file.progress ?? (file.status === 'queued' ? t('排队中…') : t('正在解析…'))}
           </div>
           <Skeleton className="h-3.5 w-11/12" />
           <Skeleton className="h-3.5 w-4/5" />
           <Skeleton className="h-3.5 w-2/3" />
         </div>
       ) : file.status === 'error' ? (
-        <ErrorState error={file.error ?? '解析失败'} onRetry={() => void reparse(file.engine ?? 'builtin')} />
+        <ErrorState error={file.error ?? t('解析失败')} onRetry={() => void reparse(file.engine ?? 'builtin')} />
       ) : error ? (
         <ErrorState error={error} />
       ) : md == null ? (
@@ -125,16 +126,16 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
       ) : (
         <Tabs defaultValue="preview" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="w-full">
-            <TabsTrigger value="preview">预览</TabsTrigger>
+            <TabsTrigger value="preview">{t('预览')}</TabsTrigger>
             <TabsTrigger value="source">Markdown</TabsTrigger>
-            <TabsTrigger value="info">信息</TabsTrigger>
+            <TabsTrigger value="info">{t('信息')}</TabsTrigger>
           </TabsList>
           <TabsContent value="preview" className="min-h-0 flex-1 overflow-y-auto pt-4">
             {picture.data ? (
               <figure className="mb-4">
                 <img src={picture.data} alt={file.name} className="max-h-[50vh] rounded-md border border-border" />
                 <figcaption className="mt-2 text-xs text-muted-foreground">
-                  支持看图的模型会直接收到这张图片；下面是 OCR 识别的文字，供不支持看图的模型使用。
+                  {t('支持看图的模型会直接收到这张图片；下面是 OCR 识别的文字，供不支持看图的模型使用。')}
                 </figcaption>
               </figure>
             ) : null}
@@ -147,23 +148,23 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
           </TabsContent>
           <TabsContent value="info" className="pt-4">
             <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">类型</dt>
+              <dt className="text-muted-foreground">{t('类型')}</dt>
               <dd>{file.kind ?? file.ext}</dd>
-              <dt className="text-muted-foreground">大小</dt>
+              <dt className="text-muted-foreground">{t('大小')}</dt>
               <dd>{formatFileSize(file.size)}</dd>
-              <dt className="text-muted-foreground">内容</dt>
+              <dt className="text-muted-foreground">{t('内容')}</dt>
               <dd>{describeFile(file) || '—'}</dd>
-              <dt className="text-muted-foreground">引擎</dt>
+              <dt className="text-muted-foreground">{t('引擎')}</dt>
               <dd>{file.engine ? ENGINE_LABEL[file.engine] : '—'}</dd>
-              <dt className="text-muted-foreground">Agent 路径</dt>
+              <dt className="text-muted-foreground">{t('Agent 路径')}</dt>
               <dd>
                 <code className="font-mono text-xs break-all">{file.agentPath}</code>
               </dd>
-              <dt className="text-muted-foreground">上传</dt>
+              <dt className="text-muted-foreground">{t('上传')}</dt>
               <dd>{timeAgo(file.createdAt)}</dd>
               {file.ocrPages.length ? (
                 <>
-                  <dt className="text-muted-foreground">OCR 页</dt>
+                  <dt className="text-muted-foreground">{t('OCR 页')}</dt>
                   <dd>
                     {file.ocrPages.map((p) => (
                       <Badge key={p} variant="outline" className="mr-1">

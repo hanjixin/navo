@@ -11,6 +11,7 @@ import type { ToolDescriptor, ToolSource } from '../agent-host/protocol'
 import { isSpawnedConversation, NAVO_TOOLS } from '../mcp-server/tools'
 import { memory } from '../memory/memory-service'
 import { outputs } from '../outputs/outputs-service'
+import { language } from '@shared/i18n'
 
 export interface ToolEntry {
   tool: StructuredToolInterface
@@ -87,6 +88,7 @@ export function systemPrompt(tab: WebContents | null, mem: string | null = null)
   const pluginList = plugins.describe()
   return `你是 Navo —— 一个会自己上网干活的桌面 AI 助手，能够控制一个内置浏览器、调用 MCP/连接器工具、使用 Skill，并通过文件系统管理工作文件。
 当前时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}
+回答使用用户提问所用的语言（用户用英文就用英文回答）${language() === 'en' ? '；用户的界面是英文，无法判断时用英文' : ''}。
 ${tab && !tab.isDestroyed() ? `本对话使用的浏览器标签页: ${tab.getTitle()} (${tab.getURL()})` : ''}
 
 ## 浏览器操作准则

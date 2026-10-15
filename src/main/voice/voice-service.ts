@@ -9,6 +9,7 @@ import { log } from '../core/logger'
 import { getSettings } from '../core/settings'
 import { shellPath } from '../core/shell-env'
 import { providers } from '../models/registry'
+import { t } from '@shared/i18n'
 
 /** Anthropic has no speech-to-text endpoint; OpenAI and OpenAI-compatible services do */
 const canTranscribe = (p: Provider) => p.type !== 'anthropic'
@@ -30,7 +31,7 @@ class VoiceService {
 
   status(): VoiceStatus {
     const v = getSettings().voice
-    if (v.engine === 'local') return { ready: true, engine: 'local', label: `本机 faster-whisper · ${v.localModel}（录音不离开这台电脑）` }
+    if (v.engine === 'local') return { ready: true, engine: 'local', label: t('本机 faster-whisper · {{v0}}（录音不离开这台电脑）', { v0: v.localModel }) }
     const p = this.provider()
     if (!p) return { ready: false, engine: 'provider', reason: '在「设置 → 语音输入」选择识别服务：OpenAI 兼容的服务商，或本机识别' }
     if (!v.model.trim()) return { ready: false, engine: 'provider', reason: '在「设置 → 语音输入」填写识别模型' }
@@ -45,7 +46,7 @@ class VoiceService {
   }
 
   async transcribe(wav: Uint8Array): Promise<{ text: string }> {
-    if (wav.byteLength < 1000) throw new Error('没有录到声音')
+    if (wav.byteLength < 1000) throw new Error(t('没有录到声音'))
     const v = getSettings().voice
     const text = v.engine === 'local' ? await this.local(Buffer.from(wav), v.localModel, v.language) : await this.remote(Buffer.from(wav), v.model, v.language)
     return { text: fullWidthPunctuation(text.trim()) }
@@ -76,7 +77,9 @@ class VoiceService {
           return body
         }
       })()
-      throw new Error(res.status === 404 ? `${p.name} 不支持语音识别（/audio/transcriptions）` : `语音识别失败：${String(msg).slice(0, 200)}`)
+      throw new Error(
+        res.status === 404 ? t('{{v0}} 不支持语音识别（/audio/transcriptions）', { v0: p.name }) : t('语音识别失败：{{v0}}', { v0: String(msg).slice(0, 200) }),
+      )
     }
     try {
       return JSON.parse(body).text ?? ''
@@ -116,8 +119,8 @@ class VoiceService {
             reject(
               new Error(
                 missing
-                  ? '本机识别需要 uv：先安装 uv（https://docs.astral.sh/uv/），或改用服务商识别'
-                  : `本机识别失败：${stderr.trim().split('\n').pop() ?? err.message}`,
+                  ? t('本机识别需要 uv：先安装 uv（https://docs.astral.sh/uv/），或改用服务商识别')
+                  : t('本机识别失败：{{v0}}', { v0: stderr.trim().split('\n').pop() ?? err.message }),
               ),
             )
             return

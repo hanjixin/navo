@@ -12,6 +12,7 @@ import { trackedModel } from '../usage/usage-service'
 import { consolidationDue, mergeTarget, parsePlan, planMessages, reviewGroups, type PlanOp } from './consolidate'
 import { extractionMessages, parseJournal, parseOps, userTexts, type Exchange } from './extract'
 import { findDuplicate, findSecret, hostOf, KIND_LABEL, MemoryIndex, memoryPrompt, normalizeScope, quotedFrom, siteMatches } from './recall'
+import { t } from '@shared/i18n'
 
 const KINDS: MemoryKind[] = ['profile', 'preference', 'knowledge', 'site']
 const MAX_TITLE = 60
@@ -109,17 +110,17 @@ class MemoryService {
 
   /** Validates and normalises input; throws with a message the agent / UI can show. */
   private clean(input: MemoryInput): Required<Pick<MemoryInput, 'kind' | 'title' | 'content'>> & { scope: string | null } {
-    if (!KINDS.includes(input.kind)) throw new Error(`未知的记忆类型：${input.kind}`)
+    if (!KINDS.includes(input.kind)) throw new Error(t('未知的记忆类型：{{v0}}', { v0: input.kind }))
     const title = input.title?.trim().replace(/\s+/g, ' ')
     const content = input.content?.trim()
-    if (!title) throw new Error('记忆需要标题')
-    if (!content) throw new Error('记忆内容不能为空')
-    if (title.length > MAX_TITLE) throw new Error(`标题太长（最多 ${MAX_TITLE} 字）`)
-    if (content.length > MAX_CONTENT) throw new Error(`内容太长（最多 ${MAX_CONTENT} 字），请只保留要点`)
+    if (!title) throw new Error(t('记忆需要标题'))
+    if (!content) throw new Error(t('记忆内容不能为空'))
+    if (title.length > MAX_TITLE) throw new Error(t('标题太长（最多 {{v0}} 字）', { v0: MAX_TITLE }))
+    if (content.length > MAX_CONTENT) throw new Error(t('内容太长（最多 {{v0}} 字），请只保留要点', { v0: MAX_CONTENT }))
     const secret = findSecret(`${title}\n${content}`)
-    if (secret) throw new Error(`记忆中不能保存${secret}等敏感信息`)
+    if (secret) throw new Error(t('记忆中不能保存{{v0}}等敏感信息', { v0: secret }))
     const scope = input.kind === 'site' ? normalizeScope(input.scope) : null
-    if (input.kind === 'site' && !scope) throw new Error('站点经验需要指定网站域名')
+    if (input.kind === 'site' && !scope) throw new Error(t('站点经验需要指定网站域名'))
     return { kind: input.kind, title, content, scope }
   }
 
@@ -134,7 +135,7 @@ class MemoryService {
     const c = this.clean(input)
     const now = Date.now()
     const target = input.id ? this.get(input.id) : findDuplicate(this.list(), c)
-    if (input.id && !target) throw new Error('记忆不存在')
+    if (input.id && !target) throw new Error(t('记忆不存在'))
     // unverified input never rewrites what the user already has
     if (target && opts.keepExisting && !input.id) return { memory: target, op: 'none', before: target }
     if (target) {
@@ -199,7 +200,7 @@ class MemoryService {
   /** Reverts an automatic learning batch: added memories are removed, updated / deleted ones restored. */
   undo(batchId: string): void {
     const batch = this.batches.get(batchId)
-    if (!batch) throw new Error('这次记忆已无法撤销')
+    if (!batch) throw new Error(t('这次记忆已无法撤销'))
     db().transaction(() => {
       for (const u of [...batch].reverse()) {
         db().prepare('DELETE FROM memories WHERE id = ?').run(u.id)
@@ -329,7 +330,7 @@ class MemoryService {
     // nothing to learn from pleasantries: skip the model call entirely
     const turns = [...(ex.earlier ?? []), ex]
     const said = userTexts(ex)
-    if (turns.every((t) => t.userText.trim().length < 2 || (isSmallTalk(t.userText) && !t.actions.length))) return null
+    if (turns.every((note) => note.userText.trim().length < 2 || (isSmallTalk(note.userText) && !note.actions.length))) return null
     this.learning.add(threadId)
     try {
       const all = this.list()
@@ -558,7 +559,7 @@ class MemoryService {
   /** Puts the memories back exactly as they were before a tidy-up step. */
   undoMerge(id: string): void {
     const m = this.merges(1000).find((x) => x.id === id)
-    if (!m || m.undoneAt) throw new Error('这一步已经撤销或不存在')
+    if (!m || m.undoneAt) throw new Error(t('这一步已经撤销或不存在'))
     db().transaction(() => {
       if (m.kind !== 'conflict') for (const src of m.sources) this.putBack(src)
       db().prepare('UPDATE memory_merges SET undone_at = ? WHERE id = ?').run(Date.now(), id)
@@ -569,9 +570,9 @@ class MemoryService {
   /** The user decides a contradiction: the memories to keep stay, the others are archived. */
   resolveConflict(id: string, keepIds: string[]): void {
     const m = this.merges(1000).find((x) => x.id === id && x.kind === 'conflict')
-    if (!m || m.resolvedAt) throw new Error('这个问题已经处理过了')
+    if (!m || m.resolvedAt) throw new Error(t('这个问题已经处理过了'))
     const keep = m.sources.filter((s) => keepIds.includes(s.id))
-    if (!keep.length) throw new Error('至少保留一条')
+    if (!keep.length) throw new Error(t('至少保留一条'))
     const now = Date.now()
     db().transaction(() => {
       for (const s of m.sources)
@@ -633,13 +634,13 @@ class MemoryService {
   }
 
   editDay(day: string, threadId: string, text: string): void {
-    const t = text.trim()
-    if (!t) return this.deleteDay(day, threadId)
-    const secret = findSecret(t)
-    if (secret) throw new Error(`日记中不能保存${secret}等敏感信息`)
+    const note = text.trim()
+    if (!note) return this.deleteDay(day, threadId)
+    const secret = findSecret(note)
+    if (secret) throw new Error(t('日记中不能保存{{v0}}等敏感信息', { v0: secret }))
     const e = this.dayEntry(day, threadId)
-    if (!e) throw new Error('这条日记不存在')
-    this.writeDay(day, threadId, e.threadTitle, t.slice(0, 200))
+    if (!e) throw new Error(t('这条日记不存在'))
+    this.writeDay(day, threadId, e.threadTitle, note.slice(0, 200))
   }
 
   deleteDay(day: string, threadId: string): void {
@@ -687,7 +688,7 @@ class MemoryService {
         }
       }
     }
-    if (!imported.length && !this.list().length) imported.push({ kind: 'preference', title: '回复语言', content: '默认使用中文回复。' })
+    if (!imported.length && !this.list().length) imported.push({ kind: 'preference', title: t('回复语言'), content: t('默认使用中文回复。') })
     for (const m of imported) {
       try {
         this.save(m)

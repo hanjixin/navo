@@ -6,6 +6,7 @@ import { db } from '../core/db'
 import { paths } from '../core/paths'
 import { skillVersions } from './versions'
 import { addCustomSource, parseFrontmatter, removeCustomSource, scanSources, sourceInfo, tildify, type SkillMount } from './sources'
+import { t } from '@shared/i18n'
 
 export { parseFrontmatter }
 
@@ -111,7 +112,7 @@ export const skills = {
     const ext = findExternal(id)
     if (ext) return readFileSync(join(ext.mount.root, ext.dir, 'SKILL.md'), 'utf8')
     const loc = locate(id)
-    if (!loc) throw new Error(`Skill 不存在: ${id}`)
+    if (!loc) throw new Error(t('Skill 不存在: {{v0}}', { v0: id }))
     return readFileSync(join(loc.root, id, 'SKILL.md'), 'utf8')
   },
 
@@ -120,15 +121,15 @@ export const skills = {
    * kept as version 1), so it can be compared and rolled back.
    */
   save(name: string, content: string, meta: { source?: SkillVersionSource; reason?: string; threadId?: string | null } = {}): void {
-    if (name.startsWith('ext:')) throw new Error('外部 Skill 是只读的，请先复制到本地')
-    if (!NAME_RE.test(name)) throw new Error('Skill 名称只能包含小写字母、数字和连字符')
+    if (name.startsWith('ext:')) throw new Error(t('外部 Skill 是只读的，请先复制到本地'))
+    if (!NAME_RE.test(name)) throw new Error(t('Skill 名称只能包含小写字母、数字和连字符'))
     const fm = parseFrontmatter(content)
-    if (!fm.name || !fm.description) throw new Error('SKILL.md 需要包含 frontmatter 字段 name 和 description')
-    if (fm.name !== name) throw new Error(`frontmatter 中的 name (${fm.name}) 必须与目录名 (${name}) 一致`)
+    if (!fm.name || !fm.description) throw new Error(t('SKILL.md 需要包含 frontmatter 字段 name 和 description'))
+    if (fm.name !== name) throw new Error(t('frontmatter 中的 name ({{v0}}) 必须与目录名 ({{v1}}) 一致', { v0: fm.name, v1: name }))
     const loc = locate(name)
     const dir = join(loc?.root ?? paths.skills, name)
     const file = join(dir, 'SKILL.md')
-    if (existsSync(file) && !skillVersions.latest(name)) skillVersions.record(name, readFileSync(file, 'utf8'), 'import', '开始记录版本前的内容')
+    if (existsSync(file) && !skillVersions.latest(name)) skillVersions.record(name, readFileSync(file, 'utf8'), 'import', t('开始记录版本前的内容'))
     mkdirSync(dir, { recursive: true })
     writeFileSync(file, content)
     skillVersions.record(name, content, meta.source ?? 'user', meta.reason ?? '', meta.threadId ?? null)
@@ -137,8 +138,8 @@ export const skills = {
   /** Makes an earlier version current again (recorded as a new version). */
   rollback(name: string, version: number): void {
     const v = skillVersions.get(name, version)
-    if (!v) throw new Error('这个版本不存在')
-    this.save(name, v.content, { source: 'rollback', reason: `回滚到版本 ${version}` })
+    if (!v) throw new Error(t('这个版本不存在'))
+    this.save(name, v.content, { source: 'rollback', reason: t('回滚到版本 {{v0}}', { v0: version }) })
   },
 
   exists(id: string): boolean {
@@ -146,7 +147,7 @@ export const skills = {
   },
 
   delete(id: string): void {
-    if (id.startsWith('ext:')) throw new Error('外部 Skill 不能在这里删除，可以禁用它')
+    if (id.startsWith('ext:')) throw new Error(t('外部 Skill 不能在这里删除，可以禁用它'))
     const loc = locate(id)
     if (loc) rmSync(join(loc.root, id), { recursive: true, force: true })
     skillVersions.forget(id)
@@ -166,17 +167,17 @@ export const skills = {
 
   copyToLocal(id: string): Skill {
     const ext = findExternal(id)
-    if (!ext) throw new Error('Skill 不存在')
+    if (!ext) throw new Error(t('Skill 不存在'))
     const src = join(ext.mount.root, ext.dir)
     const fm = parseFrontmatter(readFileSync(join(src, 'SKILL.md'), 'utf8'))
     const name = fm.name && NAME_RE.test(fm.name) ? fm.name : ext.dir.toLowerCase().replace(/[^a-z0-9-]/g, '-')
-    if (locate(name)) throw new Error(`本地已存在同名 Skill：${name}`)
+    if (locate(name)) throw new Error(t('本地已存在同名 Skill：{{v0}}', { v0: name }))
     cpSync(src, join(paths.skills, name), { recursive: true, dereference: true })
     return readLocal(paths.skills, name, true)!
   },
 
   async import(): Promise<Skill[]> {
-    const res = await dialog.showOpenDialog({ title: '选择包含 SKILL.md 的文件夹', properties: ['openDirectory', 'multiSelections'] })
+    const res = await dialog.showOpenDialog({ title: t('选择包含 SKILL.md 的文件夹'), properties: ['openDirectory', 'multiSelections'] })
     const imported: Skill[] = []
     for (const src of res.filePaths) {
       if (!existsSync(join(src, 'SKILL.md'))) continue
@@ -202,11 +203,11 @@ export const skills = {
   },
 
   sources(): SkillSource[] {
-    return [{ id: 'local', label: '本地', path: tildify(paths.skills), builtin: true, exists: true, skillCount: listLocal().length }, ...sourceInfo()]
+    return [{ id: 'local', label: t('本地'), path: tildify(paths.skills), builtin: true, exists: true, skillCount: listLocal().length }, ...sourceInfo()]
   },
 
   async addSource(): Promise<SkillSource | null> {
-    const res = await dialog.showOpenDialog({ title: '选择 Skill 目录（其中每个子文件夹包含一个 SKILL.md）', properties: ['openDirectory'] })
+    const res = await dialog.showOpenDialog({ title: t('选择 Skill 目录（其中每个子文件夹包含一个 SKILL.md）'), properties: ['openDirectory'] })
     const p = res.filePaths[0]
     if (!p) return null
     const src = addCustomSource(p)

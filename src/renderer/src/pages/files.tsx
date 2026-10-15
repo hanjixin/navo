@@ -18,8 +18,9 @@ import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { describeFile, formatFileSize, useFiles } from '@/stores/files'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
-const SUPPORTED = 'PDF（含扫描件 OCR）、Word、Excel / CSV、PowerPoint、OpenDocument、EPUB、HTML、Markdown / 文本、代码、JSON / YAML、图片、ZIP'
+const SUPPORTED = t('PDF（含扫描件 OCR）、Word、Excel / CSV、PowerPoint、OpenDocument、EPUB、HTML、Markdown / 文本、代码、JSON / YAML、图片、ZIP')
 
 function EnginesDialog({ onClose }: { onClose: () => void }) {
   const { settings, update } = useSettings()
@@ -29,12 +30,12 @@ function EnginesDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="解析引擎"
-        description="默认使用内置引擎（离线、文件不离开本机）。复杂 PDF（多栏、公式、复杂表格）可以换用高质量引擎重新解析。"
+        title={t('解析引擎')}
+        description={t('默认使用内置引擎（离线、文件不离开本机）。复杂 PDF（多栏、公式、复杂表格）可以换用高质量引擎重新解析。')}
         className="w-[600px]"
         footer={
           <Button variant="primary" onClick={onClose}>
-            完成
+            {t('完成')}
           </Button>
         }
       >
@@ -61,8 +62,8 @@ function EnginesDialog({ onClose }: { onClose: () => void }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {e.name}
-                      <Badge variant={e.local ? 'outline' : 'warning'}>{e.local ? '本机' : '云端'}</Badge>
-                      {!e.available ? <Badge variant="neutral">未就绪</Badge> : null}
+                      <Badge variant={e.local ? 'outline' : 'warning'}>{e.local ? t('本机') : t('云端')}</Badge>
+                      {!e.available ? <Badge variant="neutral">{t('未就绪')}</Badge> : null}
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">{e.description}</div>
                     {e.hint ? <div className="mt-1 text-xs text-subtle-foreground">{e.hint}</div> : null}
@@ -72,13 +73,13 @@ function EnginesDialog({ onClose }: { onClose: () => void }) {
               )
             })}
             <div className="mt-2 grid gap-3 rounded-lg border border-border p-4">
-              <Field label="MinerU API Token" hint="在 mineru.net 申请。使用 MinerU 时文件会上传到其服务器。">
+              <Field label="MinerU API Token" hint={t('在 mineru.net 申请。使用 MinerU 时文件会上传到其服务器。')}>
                 <div className="flex gap-2">
                   <Input
                     type="password"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
-                    placeholder={cfg.mineruTokenSet ? '已保存' : '粘贴 Token'}
+                    placeholder={cfg.mineruTokenSet ? t('已保存') : t('粘贴 Token')}
                     className="font-mono text-xs"
                   />
                   <Button
@@ -88,17 +89,17 @@ function EnginesDialog({ onClose }: { onClose: () => void }) {
                       await update({ mineruToken: token })
                       setToken('')
                       engines.reload()
-                      toast.success('已保存 MinerU Token')
+                      toast.success(t('已保存 MinerU Token'))
                     }}
                   >
-                    保存
+                    {t('保存')}
                   </Button>
                 </div>
               </Field>
               <label className="flex items-center justify-between gap-4 text-sm">
                 <span>
-                  扫描件与图片 OCR
-                  <span className="block text-xs text-muted-foreground">内置引擎识别没有文字层的 PDF 页面和图片（中英文，语言包已内置，离线可用）</span>
+                  {t('扫描件与图片 OCR')}
+                  <span className="block text-xs text-muted-foreground">{t('内置引擎识别没有文字层的 PDF 页面和图片（中英文，语言包已内置，离线可用）')}</span>
                 </span>
                 <Switch checked={cfg.ocr} onCheckedChange={(v) => void update({ files: { ...cfg, ocr: v } })} />
               </label>
@@ -115,7 +116,7 @@ function StatusLine({ f }: { f: FileRecord }) {
     return (
       <span className="flex items-center gap-1 text-xs text-brand">
         <Loader2 className="size-3 animate-spin" />
-        <span className="truncate">{f.progress ?? '排队中…'}</span>
+        <span className="truncate">{f.progress ?? t('排队中…')}</span>
       </span>
     )
   if (f.status === 'error') return <span className="truncate text-xs text-danger">{f.error}</span>
@@ -149,7 +150,7 @@ export function FilesPage() {
       const recs = await addFiles(list)
       if (recs[0]) setSelected(recs[0].id)
     } catch (err) {
-      toast.error('上传失败', { description: errorMessage(err) })
+      toast.error(t('上传失败'), { description: errorMessage(err) })
     }
   }
 
@@ -171,17 +172,17 @@ export function FilesPage() {
       onDrop={(e) => void onDrop(e)}
     >
       <PageHeader
-        title="文件"
-        description="上传的文件会被解析为保留结构的 Markdown（标题、列表、表格、页码），供 Agent 阅读和引用。"
+        title={t('文件')}
+        description={t('上传的文件会被解析为保留结构的 Markdown（标题、列表、表格、页码），供 Agent 阅读和引用。')}
         actions={
           <>
             <Button variant="secondary" onClick={() => setEnginesOpen(true)}>
               <Cpu />
-              解析引擎
+              {t('解析引擎')}
             </Button>
             <Button variant="primary" onClick={() => void pick().then((r) => r[0] && setSelected(r[0].id))}>
               <Upload />
-              上传文件
+              {t('上传文件')}
             </Button>
           </>
         }
@@ -193,12 +194,12 @@ export function FilesPage() {
         <ListSkeleton rows={4} />
       ) : !items.length ? (
         <button onClick={() => void pick()} className="card-hover flex-1 rounded-lg border border-dashed border-border bg-card">
-          <EmptyState icon={FileUp} title="拖入文件，或点击上传" description={`支持 ${SUPPORTED}`} />
+          <EmptyState icon={FileUp} title={t('拖入文件，或点击上传')} description={t('支持 {{v0}}', { v0: SUPPORTED })} />
         </button>
       ) : (
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex w-60 shrink-0 flex-col @4xl:w-72">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索文件" className="mb-3 h-7 text-xs" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('搜索文件')} className="mb-3 h-7 text-xs" />
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="grid gap-1">
                 {filtered.map((f) => (
@@ -218,7 +219,7 @@ export function FilesPage() {
                     <span className="shrink-0 text-[11px] text-subtle-foreground">{timeAgo(f.createdAt)}</span>
                   </button>
                 ))}
-                {!filtered.length ? <p className="px-2 py-6 text-center text-xs text-muted-foreground">没有匹配的文件</p> : null}
+                {!filtered.length ? <p className="px-2 py-6 text-center text-xs text-muted-foreground">{t('没有匹配的文件')}</p> : null}
               </div>
             </div>
           </div>
@@ -230,7 +231,7 @@ export function FilesPage() {
                   <div className="mt-3 flex justify-end border-t border-border pt-3">
                     <Button variant="secondary" size="sm" onClick={() => void startChatWith(current)}>
                       <MessageSquarePlus />
-                      在新对话中使用
+                      {t('在新对话中使用')}
                     </Button>
                   </div>
                 ) : null}
@@ -244,7 +245,7 @@ export function FilesPage() {
         <div className="pointer-events-none absolute inset-3 flex animate-fade-in items-center justify-center rounded-lg border-2 border-dashed border-primary bg-info-soft/80 backdrop-blur-[1px]">
           <div className="flex items-center gap-2 text-sm font-medium text-brand">
             <FileUp className="size-5" />
-            松开即可上传
+            {t('松开即可上传')}
           </div>
         </div>
       ) : null}

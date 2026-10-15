@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 const isMac = window.api.platform === 'darwin'
 
@@ -62,9 +63,9 @@ export function ShortcutInput({ value, onChange, invalid }: { value: string; onC
         'interactive h-8 min-w-28 rounded-md border px-3 font-mono text-xs',
         recording ? 'border-primary text-brand' : invalid ? 'border-danger/50 text-danger' : 'border-border hover:border-input',
       )}
-      aria-label="修改快捷键"
+      aria-label={t('修改快捷键')}
     >
-      {recording ? '按下新的快捷键…' : value ? formatAccelerator(value) : '未设置'}
+      {recording ? t('按下新的快捷键…') : value ? formatAccelerator(value) : t('未设置')}
     </button>
   )
 }

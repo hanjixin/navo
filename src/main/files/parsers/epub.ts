@@ -2,13 +2,14 @@ import JSZip from 'jszip'
 import { posix } from 'node:path'
 import { parseHtml } from './html'
 import { tidyMarkdown } from '../text-utils'
+import { t } from '@shared/i18n'
 
 /** EPUB: chapters in spine (reading) order, each XHTML chapter converted to Markdown. */
 export async function parseEpub(buf: Buffer): Promise<{ markdown: string; title?: string; chapters: number }> {
   const zip = await JSZip.loadAsync(buf)
   const container = await zip.file('META-INF/container.xml')?.async('string')
   const opfPath = container && /full-path="([^"]+)"/.exec(container)?.[1]
-  if (!opfPath) throw new Error('无效的 EPUB：缺少 container.xml')
+  if (!opfPath) throw new Error(t('无效的 EPUB：缺少 container.xml'))
   const opf = await zip.file(opfPath)!.async('string')
   const base = posix.dirname(opfPath)
   const title = /<dc:title[^>]*>([\s\S]*?)<\/dc:title>/.exec(opf)?.[1]?.trim()

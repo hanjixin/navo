@@ -11,21 +11,22 @@ import { lineDiff } from '@/lib/diff'
 import { call } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 const KIND_LABEL: Record<SkillProposal['kind'], string> = {
-  create: '建议新建',
-  rewrite: '建议重写',
-  patch: '建议修改',
-  fork: '建议保存改进后的本地副本',
-  rollback: '建议回滚',
+  create: t('建议新建'),
+  rewrite: t('建议重写'),
+  patch: t('建议修改'),
+  fork: t('建议保存改进后的本地副本'),
+  rollback: t('建议回滚'),
 }
 const SOURCE_LABEL: Record<SkillVersion['source'], string> = {
-  user: '你编辑',
-  import: '原始内容',
-  'agent-patch': '自动改进',
-  'agent-proposal': '你批准的建议',
-  experience: '由经验整理',
-  rollback: '回滚',
+  user: t('你编辑'),
+  import: t('原始内容'),
+  'agent-patch': t('自动改进'),
+  'agent-proposal': t('你批准的建议'),
+  experience: t('由经验整理'),
+  rollback: t('回滚'),
 }
 
 // ---------- diff view
@@ -59,10 +60,10 @@ export function ProposalCards({ proposals }: { proposals: SkillProposal[] }) {
   const decide = (p: SkillProposal, approve: boolean) =>
     void call('skills.resolveProposal', p.id, approve).then(
       () => {
-        toast.success(approve ? `已应用到 Skill「${p.skill}」` : '已忽略这条建议')
+        toast.success(approve ? t('已应用到 Skill「{{v0}}」', { v0: p.skill }) : t('已忽略这条建议'))
         setOpen(null)
       },
-      (e) => toast.error('操作失败', { description: errorMessage(e) }),
+      (e) => toast.error(t('操作失败'), { description: errorMessage(e) }),
     )
   if (!proposals.length) return null
   return (
@@ -81,18 +82,18 @@ export function ProposalCards({ proposals }: { proposals: SkillProposal[] }) {
               <span className="text-xs font-normal text-subtle-foreground">{timeAgo(p.at)}</span>
             </div>
             {p.reason ? <p className="mt-0.5 text-sm text-muted-foreground">{p.reason}</p> : null}
-            {p.evidence ? <p className="mt-0.5 line-clamp-2 text-xs text-subtle-foreground">依据：{p.evidence}</p> : null}
+            {p.evidence ? <p className="mt-0.5 line-clamp-2 text-xs text-subtle-foreground">{t('依据：{{v0}}', { v0: p.evidence })}</p> : null}
           </div>
           <div className="flex shrink-0 gap-1">
             <Button variant="ghost" size="sm" onClick={() => setOpen(p)}>
               <GitCompareArrows />
-              查看改动
+              {t('查看改动')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => decide(p, true)}>
               <Check />
-              批准
+              {t('批准')}
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="忽略这条建议" onClick={() => decide(p, false)}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('忽略这条建议')} onClick={() => decide(p, false)}>
               <X />
             </Button>
           </div>
@@ -107,10 +108,10 @@ export function ProposalCards({ proposals }: { proposals: SkillProposal[] }) {
             footer={
               <>
                 <Button variant="ghost" onClick={() => decide(open, false)}>
-                  忽略
+                  {t('忽略')}
                 </Button>
                 <Button variant="primary" onClick={() => decide(open, true)}>
-                  批准并应用
+                  {t('批准并应用')}
                 </Button>
               </>
             }
@@ -145,11 +146,16 @@ export function SkillHistoryDialog({ skill, stats, onClose, onChanged }: { skill
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title={`版本记录 · ${skill}`}
+        title={t('版本记录 · {{v0}}', { v0: skill })}
         description={
           stats?.uses
-            ? `用过 ${stats.uses} 次：${stats.ok} 次顺利${stats.corrected ? `，${stats.corrected} 次被纠正` : ''}${stats.failed ? `，${stats.failed} 次没完成` : ''}`
-            : '还没有使用记录'
+            ? t('用过 {{v0}} 次：{{v1}} 次顺利{{v2}}{{v3}}', {
+                v0: stats.uses,
+                v1: stats.ok,
+                v2: stats.corrected ? t('，{{v0}} 次被纠正', { v0: stats.corrected }) : '',
+                v3: stats.failed ? t('，{{v0}} 次没完成', { v0: stats.failed }) : '',
+              })
+            : t('还没有使用记录')
         }
         className="h-[78vh] w-[min(980px,calc(100vw-48px))]"
       >
@@ -158,7 +164,7 @@ export function SkillHistoryDialog({ skill, stats, onClose, onChanged }: { skill
         ) : !versions ? (
           <ListSkeleton rows={4} />
         ) : !versions.length ? (
-          <EmptyState icon={History} title="还没有版本记录" description="这个 Skill 被修改后，每次改动都会记在这里，可以对比和回滚。" />
+          <EmptyState icon={History} title={t('还没有版本记录')} description={t('这个 Skill 被修改后，每次改动都会记在这里，可以对比和回滚。')} />
         ) : (
           <div className="flex h-full min-h-0 gap-4">
             <div className="w-64 shrink-0 overflow-y-auto">
@@ -171,8 +177,8 @@ export function SkillHistoryDialog({ skill, stats, onClose, onChanged }: { skill
                     className={cn('interactive rounded-md px-3 py-2 text-left', picked === v.version ? 'bg-accent' : 'hover:bg-accent/60')}
                   >
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">版本 {v.version}</span>
-                      {v.version === latest ? <Badge variant="primary">当前</Badge> : null}
+                      <span className="font-medium">{t('版本 {{v0}}', { v0: v.version })}</span>
+                      {v.version === latest ? <Badge variant="primary">{t('当前')}</Badge> : null}
                       <span className="ml-auto text-xs text-subtle-foreground">{timeAgo(v.at)}</span>
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">{SOURCE_LABEL[v.source]}</div>
@@ -185,7 +191,7 @@ export function SkillHistoryDialog({ skill, stats, onClose, onChanged }: { skill
               {cur ? (
                 <>
                   <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                    {prev ? `与版本 ${prev.version} 相比的改动` : '最早的版本'}
+                    {prev ? t('与版本 {{v0}} 相比的改动', { v0: prev.version }) : t('最早的版本')}
                     {cur.version !== latest ? (
                       <Button
                         variant="secondary"
@@ -194,17 +200,17 @@ export function SkillHistoryDialog({ skill, stats, onClose, onChanged }: { skill
                         onClick={() =>
                           void call('skills.rollback', skill, cur.version).then(
                             () => {
-                              toast.success(`已回到版本 ${cur.version}`)
+                              toast.success(t('已回到版本 {{v0}}', { v0: cur.version }))
                               setPicked(null)
                               load()
                               onChanged()
                             },
-                            (e) => toast.error('回滚失败', { description: errorMessage(e) }),
+                            (e) => toast.error(t('回滚失败'), { description: errorMessage(e) }),
                           )
                         }
                       >
                         <Undo2 />
-                        回滚到这个版本
+                        {t('回滚到这个版本')}
                       </Button>
                     ) : null}
                   </div>
@@ -236,36 +242,36 @@ export function EvolutionSettingsDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="Skill 自迭代"
-        description="Navo 会在对话空闲时回看刚做完的事：Skill 用得不顺就修正它，做成了的多步任务可以沉淀成新 Skill。"
+        title={t('Skill 自迭代')}
+        description={t('Navo 会在对话空闲时回看刚做完的事：Skill 用得不顺就修正它，做成了的多步任务可以沉淀成新 Skill。')}
         footer={
           <Button variant="primary" onClick={onClose}>
-            完成
+            {t('完成')}
           </Button>
         }
       >
         <div className="grid gap-5">
           {row(
-            '开启自迭代',
-            '关闭后不再回看对话，也不会产生改进或建议（会少一次后台模型调用）。',
+            t('开启自迭代'),
+            t('关闭后不再回看对话，也不会产生改进或建议（会少一次后台模型调用）。'),
             cfg.selfImprove,
             (v) => void update({ skills: { ...cfg, selfImprove: v } }),
           )}
           {row(
-            '小改动自动生效',
-            '给本地 Skill 补一条注意事项、修正一个步骤这类小改动直接生效并记版本，可随时回滚。关闭后所有改动都先等你确认。',
+            t('小改动自动生效'),
+            t('给本地 Skill 补一条注意事项、修正一个步骤这类小改动直接生效并记版本，可随时回滚。关闭后所有改动都先等你确认。'),
             cfg.autoApplySmall,
             (v) => void update({ skills: { ...cfg, autoApplySmall: v } }),
             !cfg.selfImprove,
           )}
           {row(
-            '经验自动整理成 Skill',
-            '同一类多步任务顺利做过两次以上，或一个网站积累了 3 条以上站点经验时，自动整理成 Skill。关闭后只给出建议。',
+            t('经验自动整理成 Skill'),
+            t('同一类多步任务顺利做过两次以上，或一个网站积累了 3 条以上站点经验时，自动整理成 Skill。关闭后只给出建议。'),
             cfg.autoCreateFromExperience,
             (v) => void update({ skills: { ...cfg, autoCreateFromExperience: v } }),
             !cfg.selfImprove,
           )}
-          <p className="text-xs text-subtle-foreground">新建 Skill、大幅改写、以及对共享只读 Skill 的改进，始终先作为建议等你批准。</p>
+          <p className="text-xs text-subtle-foreground">{t('新建 Skill、大幅改写、以及对共享只读 Skill 的改进，始终先作为建议等你批准。')}</p>
         </div>
       </DialogContent>
     </Dialog>

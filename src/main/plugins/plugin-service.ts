@@ -10,6 +10,7 @@ import { paths } from '../core/paths'
 import { browser } from '../browser/browser-service'
 import { EXAMPLE_PLUGINS } from './examples'
 import { matchPattern, validateManifest } from './manifest'
+import { t } from '@shared/i18n'
 
 function wrap(p: PluginInfo, source: string): string {
   return `(() => {
@@ -114,7 +115,7 @@ class PluginService {
 
   get(id: string): PluginInfo {
     const p = this.list().find((x) => x.id === id)
-    if (!p) throw new Error(`插件不存在: ${id}`)
+    if (!p) throw new Error(t('插件不存在: {{v0}}', { v0: id }))
     return p
   }
 
@@ -128,7 +129,7 @@ class PluginService {
   private file(id: string, file: string): string {
     const dir = join(paths.plugins, id)
     const full = resolve(dir, file)
-    if (!full.startsWith(dir + sep)) throw new Error('非法路径')
+    if (!full.startsWith(dir + sep)) throw new Error(t('非法路径'))
     return full
   }
 
@@ -158,7 +159,7 @@ class PluginService {
       ],
     })
     const dir = join(paths.plugins, id)
-    if (existsSync(dir)) throw new Error('插件 id 已存在')
+    if (existsSync(dir)) throw new Error(t('插件 id 已存在'))
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2))
     writeFileSync(
@@ -176,7 +177,7 @@ class PluginService {
   }
 
   async import(): Promise<PluginInfo[]> {
-    const res = await dialog.showOpenDialog({ title: '选择插件文件夹（包含 manifest.json）', properties: ['openDirectory', 'multiSelections'] })
+    const res = await dialog.showOpenDialog({ title: t('选择插件文件夹（包含 manifest.json）'), properties: ['openDirectory', 'multiSelections'] })
     for (const src of res.filePaths) {
       const m = validateManifest(JSON.parse(readFileSync(join(src, 'manifest.json'), 'utf8')))
       cpSync(src, join(paths.plugins, m.id || basename(src)), { recursive: true })
@@ -219,7 +220,7 @@ class PluginService {
 
   async runAction(id: string, action: string, args: Record<string, unknown>, wc = browser.active()): Promise<unknown> {
     const p = this.get(id)
-    if (!p.matches.some((m) => matchPattern(m, wc.getURL()))) throw new Error(`当前页面不匹配插件 ${p.name}`)
+    if (!p.matches.some((m) => matchPattern(m, wc.getURL()))) throw new Error(t('当前页面不匹配插件 {{v0}}', { v0: p.name }))
     const world = this.world(id)
     const inWorld = (code: string) => wc.executeJavaScriptInIsolatedWorld(world, [{ code }], true)
     const ready = await inWorld(`!!(window.__agentPlugins && window.__agentPlugins[${JSON.stringify(id)}])`)

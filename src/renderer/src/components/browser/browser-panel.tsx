@@ -10,6 +10,7 @@ import { useBrowser } from '@/stores/browser'
 import { BROWSER_DEFAULT, BROWSER_MIN, browserMax, sidebarCollapsed, useLayout } from '@/stores/layout'
 import { useOverlayStore } from '@/stores/overlay'
 import { useSettings } from '@/stores/settings'
+import { t } from '@shared/i18n'
 
 const GUTTER = 6
 /** Dragging this far below the minimum width collapses the panel on release. */
@@ -27,7 +28,7 @@ export function BrowserPanel() {
   const [snapshot, setSnapshot] = useState<string | null>(null)
   const [hidden, setHidden] = useState(false)
   const frame = useRef(0)
-  const active = state.tabs.find((t) => t.active)
+  const active = state.tabs.find((tab) => tab.active)
   const [address, setAddress] = useState('')
   const [editing, setEditing] = useState(false)
   const navigate = useNavigate()
@@ -135,16 +136,16 @@ export function BrowserPanel() {
       if (state.recording) {
         const macro = await call('macros.stopRecording')
         if (macro) {
-          toast.success('已保存录制宏', {
-            description: `${macro.steps.length} 个步骤`,
-            action: { label: '编辑', onClick: () => navigate(`/macros?id=${macro.id}`) },
+          toast.success(t('已保存录制宏'), {
+            description: t('{{v0}} 个步骤', { v0: macro.steps.length }),
+            action: { label: t('编辑'), onClick: () => navigate(`/macros?id=${macro.id}`) },
           })
-        } else toast('未录制到任何操作')
+        } else toast(t('未录制到任何操作'))
       } else {
         await call('macros.startRecording')
       }
     } catch (e) {
-      toast.error('录制失败', { description: errorMessage(e) })
+      toast.error(t('录制失败'), { description: errorMessage(e) })
     }
   }
 
@@ -154,12 +155,12 @@ export function BrowserPanel() {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="调整浏览器宽度（双击恢复默认，拖到最窄以收起）"
+        aria-label={t('调整浏览器宽度（双击恢复默认，拖到最窄以收起）')}
         aria-valuemin={BROWSER_MIN}
         aria-valuemax={max}
         aria-valuenow={effective}
         tabIndex={0}
-        title="拖动调整宽度 · 双击恢复默认"
+        title={t('拖动调整宽度 · 双击恢复默认')}
         className="group relative flex w-[6px] shrink-0 cursor-col-resize justify-center bg-background outline-none"
         onPointerEnter={primeSnapshot}
         onPointerDown={onHandleDown}
@@ -187,54 +188,54 @@ export function BrowserPanel() {
       <div className="flex min-w-0 flex-1 flex-col bg-card">
         {/* tabs */}
         <div className="flex h-9 shrink-0 items-end gap-px overflow-x-auto border-b border-border bg-sidebar px-1.5">
-          {state.tabs.map((t) => (
+          {state.tabs.map((tab) => (
             <div
-              key={t.id}
-              onClick={() => void call('browser.activate', t.id)}
+              key={tab.id}
+              onClick={() => void call('browser.activate', tab.id)}
               className={cn(
                 'interactive group flex h-7 max-w-44 min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-t-md border border-b-0 px-2 text-xs',
-                t.active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:bg-sidebar-active/60',
+                tab.active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:bg-sidebar-active/60',
               )}
             >
-              {t.loading ? (
+              {tab.loading ? (
                 <Loader2 className="size-3 shrink-0 animate-spin" />
-              ) : t.favicon ? (
-                <img src={t.favicon} className="size-3 shrink-0" alt="" />
+              ) : tab.favicon ? (
+                <img src={tab.favicon} className="size-3 shrink-0" alt="" />
               ) : (
                 <Globe className="size-3 shrink-0" />
               )}
-              <span className="truncate">{t.title}</span>
-              {t.agent ? (
-                <Tooltip content={`${t.agent.running ? 'Agent 正在使用' : '由对话使用'}：${t.agent.title}`}>
-                  <span className={cn('size-1.5 shrink-0 rounded-full', t.agent.running ? 'animate-pulse bg-brand' : 'bg-subtle-foreground/60')} />
+              <span className="truncate">{tab.title}</span>
+              {tab.agent ? (
+                <Tooltip content={`${tab.agent.running ? t('Agent 正在使用') : t('由对话使用')}：${tab.agent.title}`}>
+                  <span className={cn('size-1.5 shrink-0 rounded-full', tab.agent.running ? 'animate-pulse bg-brand' : 'bg-subtle-foreground/60')} />
                 </Tooltip>
               ) : null}
               <button
                 className="interactive ml-auto shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"
                 onClick={(e) => {
                   e.stopPropagation()
-                  void call('browser.closeTab', t.id)
+                  void call('browser.closeTab', tab.id)
                 }}
-                aria-label="关闭标签页"
+                aria-label={t('关闭标签页')}
               >
                 <X className="size-3" />
               </button>
             </div>
           ))}
-          <Button variant="ghost" size="icon-sm" className="mb-0.5 size-6" onClick={() => void call('browser.newTab')} aria-label="新建标签页">
+          <Button variant="ghost" size="icon-sm" className="mb-0.5 size-6" onClick={() => void call('browser.newTab')} aria-label={t('新建标签页')}>
             <Plus />
           </Button>
         </div>
 
         {/* toolbar */}
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
-          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoBack} onClick={() => void call('browser.back')} aria-label="后退">
+          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoBack} onClick={() => void call('browser.back')} aria-label={t('后退')}>
             <ArrowLeft />
           </Button>
-          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoForward} onClick={() => void call('browser.forward')} aria-label="前进">
+          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoForward} onClick={() => void call('browser.forward')} aria-label={t('前进')}>
             <ArrowRight />
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.reload')} aria-label="刷新">
+          <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.reload')} aria-label={t('刷新')}>
             <RotateCw />
           </Button>
           <form
@@ -243,7 +244,7 @@ export function BrowserPanel() {
               e.preventDefault()
               setEditing(false)
               ;(document.activeElement as HTMLElement)?.blur()
-              void call('browser.navigate', address).catch((err) => toast.error('无法打开页面', { description: errorMessage(err) }))
+              void call('browser.navigate', address).catch((err) => toast.error(t('无法打开页面'), { description: errorMessage(err) }))
             }}
           >
             <input
@@ -254,35 +255,35 @@ export function BrowserPanel() {
                 e.target.select()
               }}
               onBlur={() => setEditing(false)}
-              placeholder="输入网址或搜索"
+              placeholder={t('输入网址或搜索')}
               className="interactive h-7 w-full rounded-md border border-transparent bg-muted px-2.5 text-xs text-foreground outline-none placeholder:text-subtle-foreground hover:border-border focus:border-primary/50 focus:bg-card focus:ring-2 focus:ring-ring"
             />
           </form>
-          <Tooltip content="在系统浏览器中打开">
+          <Tooltip content={t('在系统浏览器中打开')}>
             <Button
               variant="ghost"
               size="icon-sm"
               disabled={!active?.url.startsWith('http')}
               onClick={() => active && void call('app.openExternal', active.url)}
-              aria-label="在系统浏览器中打开"
+              aria-label={t('在系统浏览器中打开')}
             >
               <ExternalLink />
             </Button>
           </Tooltip>
-          <Tooltip content={state.recording ? '停止录制并保存为宏' : '录制操作为宏'}>
+          <Tooltip content={state.recording ? t('停止录制并保存为宏') : t('录制操作为宏')}>
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={toggleRecording}
-              aria-label="录制"
+              aria-label={t('录制')}
               className={cn(state.recording && 'text-danger hover:text-danger')}
             >
               {state.recording ? <Square className="fill-current" /> : <Circle />}
             </Button>
           </Tooltip>
           {devMode ? (
-            <Tooltip content="打开页面开发者工具">
-              <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.openDevTools')} aria-label="开发者工具">
+            <Tooltip content={t('打开页面开发者工具')}>
+              <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.openDevTools')} aria-label={t('开发者工具')}>
                 <SquareTerminal />
               </Button>
             </Tooltip>
@@ -300,16 +301,16 @@ export function BrowserPanel() {
             {state.recording ? (
               <>
                 <span className="size-1.5 animate-pulse rounded-full bg-danger" />
-                <span className="font-medium">录制中 · {recordingSteps} 步</span>
+                <span className="font-medium">{t('录制中 · {{v0}} 步', { v0: recordingSteps })}</span>
                 <span className="truncate text-muted-foreground">{lastRecorded}</span>
               </>
             ) : (
               <>
                 <Loader2 className="size-3 animate-spin" />
-                <span className="font-medium">Agent 正在操作</span>
+                <span className="font-medium">{t('Agent 正在操作')}</span>
                 <Button variant="link" size="sm" className="ml-auto h-auto text-xs" onClick={() => void call('browser.takeOver')}>
                   <Hand className="size-3" />
-                  接管
+                  {t('接管')}
                 </Button>
               </>
             )}
@@ -332,7 +333,7 @@ export function BrowserPanel() {
           ) : null}
           {collapseIntent ? (
             <div className="absolute inset-0 flex animate-fade-in items-center justify-center bg-background/70 text-sm font-medium text-muted-foreground backdrop-blur-[2px]">
-              松开以收起浏览器
+              {t('松开以收起浏览器')}
             </div>
           ) : null}
         </div>

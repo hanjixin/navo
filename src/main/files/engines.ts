@@ -8,6 +8,7 @@ import { parseFile } from './parse'
 import { normalizeCjk, tidyMarkdown } from './text-utils'
 import type { ParseOptions, ParseResult } from './types'
 import { writeVisual } from './visuals'
+import { t } from '@shared/i18n'
 
 export interface EngineJob {
   path: string
@@ -24,7 +25,8 @@ const TEN_MIN = 10 * 60_000
 function run(cmd: string, args: string[], shellPath: string, timeout = TEN_MIN): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { env: { ...process.env, PATH: shellPath }, timeout, maxBuffer: 256 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`${basename(cmd)} 运行失败：${(stderr || err.message).toString().trim().split('\n').slice(-3).join(' ')}`))
+      if (err)
+        reject(new Error(t('{{v0}} 运行失败：{{v1}}', { v0: basename(cmd), v1: (stderr || err.message).toString().trim().split('\n').slice(-3).join(' ') })))
       else resolve(stdout)
     })
   })
@@ -51,7 +53,7 @@ async function markitdown(job: EngineJob): Promise<ParseResult> {
   const direct = await which('markitdown', job.shellPath)
   if (direct) return external(await run(direct, [job.path], job.shellPath), 'markitdown')
   const uvx = await which('uvx', job.shellPath)
-  if (!uvx) throw new Error('未找到 markitdown 或 uv。请先安装 uv（https://docs.astral.sh/uv/），或 `pipx install "markitdown[all]"`')
+  if (!uvx) throw new Error(t('未找到 markitdown 或 uv。请先安装 uv（https://docs.astral.sh/uv/），或 `pipx install "markitdown[all]"`'))
   job.options.onProgress?.('正在通过 uvx 运行 MarkItDown（首次会自动安装）…')
   return external(await run(uvx, ['--from', 'markitdown[all]', 'markitdown', job.path], job.shellPath), 'markitdown')
 }
@@ -65,12 +67,12 @@ async function docling(job: EngineJob): Promise<ParseResult> {
     if (direct) await run(direct, args, job.shellPath, 30 * 60_000)
     else {
       const uvx = await which('uvx', job.shellPath)
-      if (!uvx) throw new Error('未找到 docling 或 uv。请先安装 uv（https://docs.astral.sh/uv/），或 `pipx install docling`')
+      if (!uvx) throw new Error(t('未找到 docling 或 uv。请先安装 uv（https://docs.astral.sh/uv/），或 `pipx install docling`'))
       job.options.onProgress?.('正在通过 uvx 运行 Docling（首次需下载模型，可能需要几分钟）…')
       await run(uvx, ['--from', 'docling', 'docling', ...args], job.shellPath, 30 * 60_000)
     }
     const md = readdirSync(out).find((f) => f.endsWith('.md'))
-    if (!md) throw new Error('Docling 没有输出 Markdown')
+    if (!md) throw new Error(t('Docling 没有输出 Markdown'))
     return external(readFileSync(join(out, md), 'utf8'), 'docling')
   } finally {
     rmSync(out, { recursive: true, force: true })
@@ -82,7 +84,7 @@ async function docling(job: EngineJob): Promise<ParseResult> {
  * read full.md from the result archive. The file leaves this computer.
  */
 async function mineru(job: EngineJob): Promise<ParseResult> {
-  if (!job.mineruToken) throw new Error('请先在「文件 → 解析引擎」中填写 MinerU API Token')
+  if (!job.mineruToken) throw new Error(t('请先在「文件 → 解析引擎」中填写 MinerU API Token'))
   const base = (job.mineruBase || 'https://mineru.net').replace(/\/+$/, '')
   const headers = { Authorization: `Bearer ${job.mineruToken}`, 'Content-Type': 'application/json' }
   const json = async (res: Response) => {
@@ -105,9 +107,9 @@ async function mineru(job: EngineJob): Promise<ParseResult> {
   )
   const uploadUrl = (batch.file_urls as string[] | undefined)?.[0]
   const batchId = batch.batch_id as string | undefined
-  if (!uploadUrl || !batchId) throw new Error('MinerU 没有返回上传地址')
+  if (!uploadUrl || !batchId) throw new Error(t('MinerU 没有返回上传地址'))
   const up = await fetch(uploadUrl, { method: 'PUT', body: readFileSync(job.path) })
-  if (!up.ok) throw new Error(`MinerU 上传失败：HTTP ${up.status}`)
+  if (!up.ok) throw new Error(t('MinerU 上传失败：HTTP {{v0}}', { v0: up.status }))
   const deadline = Date.now() + 20 * 60_000
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3000))
@@ -117,17 +119,17 @@ async function mineru(job: EngineJob): Promise<ParseResult> {
         { state: string; err_msg?: string; full_zip_url?: string; extract_progress?: { extracted_pages?: number; total_pages?: number } }[] | undefined
     )?.[0]
     if (!r) continue
-    if (r.state === 'failed') throw new Error(`MinerU 解析失败：${r.err_msg ?? '未知错误'}`)
+    if (r.state === 'failed') throw new Error(t('MinerU 解析失败：{{v0}}', { v0: r.err_msg ?? t('未知错误') }))
     if (r.state === 'done' && r.full_zip_url) {
       const zip = await JSZip.loadAsync(Buffer.from(await (await fetch(r.full_zip_url)).arrayBuffer()))
       const md = zip.file('full.md') ?? Object.values(zip.files).find((f) => f.name.endsWith('.md'))
-      if (!md) throw new Error('MinerU 结果中没有 Markdown')
+      if (!md) throw new Error(t('MinerU 结果中没有 Markdown'))
       return external(await md.async('string'), 'mineru')
     }
     const pr = r.extract_progress
     job.options.onProgress?.(pr?.total_pages ? `MinerU 解析中 ${pr.extracted_pages ?? 0}/${pr.total_pages} 页` : 'MinerU 排队解析中…')
   }
-  throw new Error('MinerU 解析超时')
+  throw new Error(t('MinerU 解析超时'))
 }
 
 export async function runEngine(job: EngineJob): Promise<ParseResult> {

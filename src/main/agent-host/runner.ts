@@ -13,6 +13,7 @@ import { UsageHandler } from '../models/usage-callback'
 import { ScopedSkillBackend } from '../skills/scoped-backend'
 import { startTracing } from './langfuse'
 import type { RunRequest, RunResult, ToolCallRequest, ToolDescriptor, UsageEvent } from './protocol'
+import { t } from '@shared/i18n'
 
 /** Returned by forkPoint when the branch starts from an empty conversation. */
 export const RESET = '__reset__'
@@ -172,7 +173,7 @@ export class Runner {
 
   async run(req: RunRequest): Promise<RunResult> {
     const { threadId, runId } = req
-    if (this.running.has(threadId)) throw new Error('该会话正在运行中')
+    if (this.running.has(threadId)) throw new Error(t('该会话正在运行中'))
     const controller = new AbortController()
     this.running.set(threadId, controller)
     const emit = this.deps.emit

@@ -708,6 +708,8 @@ export interface TraceEntry {
 
 export interface Settings {
   theme: 'system' | 'light' | 'dark'
+  /** interface language; system = Chinese for a Chinese macOS, English otherwise */
+  language: 'system' | 'zh' | 'en'
   devMode: boolean
   systemPrompt: string
   langsmithApiKeySet?: boolean

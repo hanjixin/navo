@@ -39,12 +39,13 @@ import { useAsync } from '@/hooks/use-async'
 import { useSettings } from '@/stores/settings'
 import { useFlowDialog } from '@/stores/flows'
 import { OutputsDialog } from '@/components/outputs/outputs-dialog'
+import { t } from '@shared/i18n'
 
 const SUGGESTIONS = [
-  { icon: Newspaper, text: '打开 Hacker News，总结今天排名前 5 的文章' },
-  { icon: Search, text: '在必应搜索 “LangGraph deepagents”，整理 3 个最有用的链接' },
-  { icon: Globe, text: '读取当前浏览器页面，提炼要点并保存到 /workspace/notes.md' },
-  { icon: Sparkles, text: '记住：我偏好简洁的中文回答，并写入长期记忆' },
+  { icon: Newspaper, text: t('打开 Hacker News，总结今天排名前 5 的文章') },
+  { icon: Search, text: t('在必应搜索 “LangGraph deepagents”，整理 3 个最有用的链接') },
+  { icon: Globe, text: t('读取当前浏览器页面，提炼要点并保存到 /workspace/notes.md') },
+  { icon: Sparkles, text: t('记住：我偏好简洁的中文回答，并写入长期记忆') },
 ]
 
 function ThreadList() {
@@ -52,15 +53,15 @@ function ThreadList() {
   const [q, setQ] = useState('')
   const [renaming, setRenaming] = useState<Thread | null>(null)
   const [title, setTitle] = useState('')
-  const filtered = useMemo(() => (threads ?? []).filter((t) => t.title.toLowerCase().includes(q.toLowerCase())), [threads, q])
+  const filtered = useMemo(() => (threads ?? []).filter((item) => item.title.toLowerCase().includes(q.toLowerCase())), [threads, q])
 
-  const remove = async (t: Thread) => {
+  const remove = async (item: Thread) => {
     try {
-      await call('threads.delete', t.id)
-      if (activeId === t.id) select(null)
+      await call('threads.delete', item.id)
+      if (activeId === item.id) select(null)
       await loadThreads()
     } catch (e) {
-      toast.error('删除失败', { description: errorMessage(e) })
+      toast.error(t('删除失败'), { description: errorMessage(e) })
     }
   }
 
@@ -69,9 +70,9 @@ function ThreadList() {
       <div className="flex items-center gap-1.5 p-3">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索对话" className="h-7 pl-7 text-xs" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('搜索对话')} className="h-7 pl-7 text-xs" />
         </div>
-        <Button variant="secondary" size="icon-sm" onClick={() => void newThread()} aria-label="新建对话">
+        <Button variant="secondary" size="icon-sm" onClick={() => void newThread()} aria-label={t('新建对话')}>
           <Plus />
         </Button>
       </div>
@@ -85,28 +86,28 @@ function ThreadList() {
             ))}
           </div>
         ) : !filtered.length ? (
-          <p className="px-3 py-8 text-center text-xs text-muted-foreground">{q ? '没有匹配的对话' : '还没有对话'}</p>
+          <p className="px-3 py-8 text-center text-xs text-muted-foreground">{q ? t('没有匹配的对话') : t('还没有对话')}</p>
         ) : (
           <div className="grid gap-px">
-            {filtered.map((t) => {
-              const running = views[t.id]?.running
+            {filtered.map((item) => {
+              const running = views[item.id]?.running
               return (
                 <div
-                  key={t.id}
-                  onClick={() => select(t.id)}
+                  key={item.id}
+                  onClick={() => select(item.id)}
                   className={cn(
                     'interactive group flex h-9 cursor-default items-center gap-2 rounded-md pr-1 pl-2.5 text-sm',
-                    activeId === t.id ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                    activeId === item.id ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                   )}
                 >
                   {running ? <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" /> : null}
-                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                  <span className="shrink-0 text-[11px] text-subtle-foreground group-hover:hidden">{timeAgo(t.updatedAt)}</span>
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  <span className="shrink-0 text-[11px] text-subtle-foreground group-hover:hidden">{timeAgo(item.updatedAt)}</span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                       <button
                         className="interactive hidden rounded-sm p-1 text-muted-foreground group-hover:block hover:bg-card data-[state=open]:block"
-                        aria-label="更多"
+                        aria-label={t('更多')}
                       >
                         <MoreHorizontal className="size-3.5" />
                       </button>
@@ -114,17 +115,17 @@ function ThreadList() {
                     <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenuItem
                         onSelect={() => {
-                          setTitle(t.title)
-                          setRenaming(t)
+                          setTitle(item.title)
+                          setRenaming(item)
                         }}
                       >
                         <Pencil />
-                        重命名
+                        {t('重命名')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem danger onSelect={() => void remove(t)}>
+                      <DropdownMenuItem danger onSelect={() => void remove(item)}>
                         <Trash2 />
-                        删除
+                        {t('删除')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -137,12 +138,12 @@ function ThreadList() {
       <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
         {renaming ? (
           <DialogContent
-            title="重命名对话"
+            title={t('重命名对话')}
             className="w-[400px]"
             footer={
               <>
                 <Button variant="ghost" onClick={() => setRenaming(null)}>
-                  取消
+                  {t('取消')}
                 </Button>
                 <Button
                   variant="primary"
@@ -152,7 +153,7 @@ function ThreadList() {
                     void loadThreads()
                   }}
                 >
-                  保存
+                  {t('保存')}
                 </Button>
               </>
             }
@@ -170,10 +171,10 @@ function SaveFlowButton({ threadId, messages }: { threadId: string; messages: nu
   const info = useAsync(() => call('flows.traceInfo', threadId), [threadId, messages])
   if (!info.data) return null
   return (
-    <Tooltip content={`把刚才的 ${info.data.actions} 步浏览器操作保存成固定流程，下次直接回放、不调用模型`}>
+    <Tooltip content={t('把刚才的 {{v0}} 步浏览器操作保存成固定流程，下次直接回放、不调用模型', { v0: info.data.actions })}>
       <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => useFlowDialog.getState().open(threadId)}>
         <Workflow />
-        固化流程
+        {t('固化流程')}
       </Button>
     </Tooltip>
   )
@@ -195,10 +196,10 @@ function OutputsButton({ threadId, messages }: { threadId: string; messages: num
   if (!n) return null
   return (
     <>
-      <Tooltip content="这个对话产出的文件：预览、导出为 Word / PDF / Excel">
+      <Tooltip content={t('这个对话产出的文件：预览、导出为 Word / PDF / Excel')}>
         <Button data-testid="outputs-button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
           <PackageOpen />
-          产出 {n}
+          {t('产出 {{v0}}', { v0: n })}
         </Button>
       </Tooltip>
       {open ? <OutputsDialog threadId={threadId} onClose={() => setOpen(false)} /> : null}
@@ -213,20 +214,20 @@ function ThreadMemoryToggle({ threadId }: { threadId: string }) {
   if (!globalOn || state.data == null) return null
   const on = state.data
   return (
-    <Tooltip content={on ? '本对话会使用并学习记忆，点击关闭' : '本对话不读取、也不学习记忆，点击开启'}>
+    <Tooltip content={on ? t('本对话会使用并学习记忆，点击关闭') : t('本对话不读取、也不学习记忆，点击开启')}>
       <Button
         variant="ghost"
         size="sm"
         className={cn('h-7 gap-1 px-2 text-xs', on ? 'text-muted-foreground' : 'text-warning')}
         aria-pressed={on}
-        aria-label={on ? '关闭本对话的记忆' : '开启本对话的记忆'}
+        aria-label={on ? t('关闭本对话的记忆') : t('开启本对话的记忆')}
         onClick={async () => {
           await call('memory.setThreadEnabled', threadId, !on)
           state.reload()
         }}
       >
         <Brain className={cn(!on && 'opacity-60')} />
-        {on ? '记忆' : '记忆已关闭'}
+        {on ? t('记忆') : t('记忆已关闭')}
       </Button>
     </Tooltip>
   )
@@ -241,7 +242,7 @@ export function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const view = activeId ? views[activeId] : undefined
-  const thread = threads?.find((t) => t.id === activeId)
+  const thread = threads?.find((item) => item.id === activeId)
 
   useEffect(() => {
     void loadThreads()
@@ -268,7 +269,7 @@ export function ChatPage() {
     try {
       await call('chat.resume', activeId, decisions, alwaysAllow)
     } catch (e) {
-      toast.error('提交失败', { description: errorMessage(e) })
+      toast.error(t('提交失败'), { description: errorMessage(e) })
     }
   }
 
@@ -279,23 +280,23 @@ export function ChatPage() {
       {showThreads ? <ThreadList /> : null}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <Tooltip content={showThreads ? '收起对话列表' : '展开对话列表'}>
-            <Button variant="ghost" size="icon-sm" onClick={toggleThreads} aria-label="切换对话列表" aria-expanded={showThreads}>
+          <Tooltip content={showThreads ? t('收起对话列表') : t('展开对话列表')}>
+            <Button variant="ghost" size="icon-sm" onClick={toggleThreads} aria-label={t('切换对话列表')} aria-expanded={showThreads}>
               {showThreads ? <PanelLeftClose /> : <PanelLeftOpen />}
             </Button>
           </Tooltip>
-          <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium">{thread?.title ?? '新对话'}</span>
+          <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium">{thread?.title ?? t('新对话')}</span>
           {view?.running ? (
             <span className="flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
               <span className="size-1.5 animate-pulse rounded-full bg-brand" />
-              运行中
+              {t('运行中')}
             </span>
           ) : null}
           {thread ? <OutputsButton threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
           {thread && !view?.running ? <SaveFlowButton threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
           {thread ? <ThreadMemoryToggle threadId={thread.id} /> : null}
           {view?.traceUrl && !view.running ? (
-            <Tooltip content="在 Langfuse 中查看本次运行">
+            <Tooltip content={t('在 Langfuse 中查看本次运行')}>
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => void call('app.openExternal', view.traceUrl!)}>
                 <Activity />
                 Trace
@@ -303,8 +304,8 @@ export function ChatPage() {
             </Tooltip>
           ) : null}
           {!showThreads ? (
-            <Tooltip content="新建对话">
-              <Button variant="ghost" size="icon-sm" onClick={() => void useChat.getState().newThread()} aria-label="新建对话">
+            <Tooltip content={t('新建对话')}>
+              <Button variant="ghost" size="icon-sm" onClick={() => void useChat.getState().newThread()} aria-label={t('新建对话')}>
                 <Plus />
               </Button>
             </Tooltip>
@@ -322,11 +323,11 @@ export function ChatPage() {
             {noModels ? (
               <EmptyState
                 icon={Cpu}
-                title="还没有可用的模型"
-                description="添加 Anthropic、OpenAI（Chat / Responses）或兼容 OpenAI 接口的提供方后即可开始对话。"
+                title={t('还没有可用的模型')}
+                description={t('添加 Anthropic、OpenAI（Chat / Responses）或兼容 OpenAI 接口的提供方后即可开始对话。')}
                 action={
                   <Button variant="primary" onClick={() => navigate('/models')}>
-                    添加模型
+                    {t('添加模型')}
                   </Button>
                 }
                 className="pt-24"
@@ -347,8 +348,8 @@ export function ChatPage() {
                 <div className="mb-1 flex size-9 items-center justify-center rounded-lg border border-border bg-card">
                   <MessageSquare className="size-4 stroke-[1.75] text-muted-foreground" />
                 </div>
-                <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">今天想让我完成什么？</h2>
-                <p className="mt-1 text-sm text-muted-foreground">我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。</p>
+                <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">{t('今天想让我完成什么？')}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t('我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。')}</p>
                 <div className="mt-6 grid grid-cols-1 gap-2 @xl:grid-cols-2">
                   {SUGGESTIONS.map((s) => (
                     <button
@@ -377,13 +378,13 @@ export function ChatPage() {
           {view?.interrupt ? <InterruptCard interrupt={view.interrupt} onDecide={decide} /> : null}
           {view?.todos.length ? <TodoPanel todos={view.todos} /> : null}
           <Composer
-            onSend={(t, fileIds) => void send(t, [], fileIds)}
+            onSend={(item, fileIds) => void send(item, [], fileIds)}
             onStop={() => activeId && void call('chat.stop', activeId)}
             running={!!view?.running}
             modelId={thread?.modelId ?? null}
             onModelChange={onModelChange}
             disabled={noModels || !!view?.interrupt}
-            disabledReason={noModels ? '请先在「模型」页面配置模型' : '请先处理上方的确认'}
+            disabledReason={noModels ? t('请先在「模型」页面配置模型') : t('请先处理上方的确认')}
           />
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { ToolCall, UIMessage } from '@shared/types'
 import { cn } from '@/lib/utils'
 import { argSummary, toolMeta } from './tool-meta'
+import { t } from '@shared/i18n'
 
 export function ToolCard({ call, result, pending }: { call: ToolCall; result?: UIMessage; pending: boolean }) {
   const [open, setOpen] = useState(false)
@@ -33,18 +34,18 @@ export function ToolCard({ call, result, pending }: { call: ToolCall; result?: U
       {open ? (
         <div className="grid animate-fade-in gap-2 border-t border-border px-3 py-2.5">
           <div>
-            <div className="mb-1 text-[11px] font-medium text-subtle-foreground">参数</div>
+            <div className="mb-1 text-[11px] font-medium text-subtle-foreground">{t('参数')}</div>
             <pre className="selectable max-h-48 overflow-auto rounded-sm bg-muted px-2 py-1.5 font-mono text-[11.5px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap">
               {JSON.stringify(call.args, null, 2)}
             </pre>
           </div>
           {result ? (
             <div>
-              <div className="mb-1 text-[11px] font-medium text-subtle-foreground">结果</div>
+              <div className="mb-1 text-[11px] font-medium text-subtle-foreground">{t('结果')}</div>
               {result.images?.length ? (
                 <div className="mb-2 flex flex-wrap gap-2">
                   {result.images.map((src, i) => (
-                    <img key={i} src={src} className="max-h-56 rounded-sm border border-border" alt="截图" />
+                    <img key={i} src={src} className="max-h-56 rounded-sm border border-border" alt={t('截图')} />
                   ))}
                 </div>
               ) : null}

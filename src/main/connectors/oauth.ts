@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http'
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
 import { secrets } from '../core/secrets'
+import { t } from '@shared/i18n'
 
 /** Loopback redirect (RFC 8252) — works in dev and packaged builds without protocol registration. */
 export const OAUTH_PORT = 38765
@@ -56,7 +57,7 @@ export class StoredOAuthProvider implements OAuthClientProvider {
   }
   codeVerifier() {
     const v = this.load().verifier
-    if (!v) throw new Error('缺少 PKCE code verifier')
+    if (!v) throw new Error(t('缺少 PKCE code verifier'))
     return v
   }
   invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery') {
@@ -80,7 +81,7 @@ export function waitForAuthCode(timeoutMs = 5 * 60_000): Promise<string> {
       if (err) reject(err)
       else resolve(code!)
     }
-    const timer = setTimeout(() => finish(new Error('授权超时')), timeoutMs)
+    const timer = setTimeout(() => finish(new Error(t('授权超时'))), timeoutMs)
     server = createServer((req, res) => {
       const url = new URL(req.url ?? '/', REDIRECT_URL)
       if (url.pathname !== '/oauth/callback') {
@@ -92,10 +93,10 @@ export function waitForAuthCode(timeoutMs = 5 * 60_000): Promise<string> {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(
         `<html><body style="font-family:system-ui;background:#0B1220;color:#E6EAF0;display:grid;place-items:center;height:100vh;margin:0">
-          <div style="text-align:center"><h2 style="font-weight:600">${code ? '授权成功' : '授权失败'}</h2>
-          <p style="color:#8A94A6">${code ? '可以关闭此页面并返回 Navo。' : (error ?? '')}</p></div></body></html>`,
+          <div style="text-align:center"><h2 style="font-weight:600">${code ? t('授权成功') : t('授权失败')}</h2>
+          <p style="color:#8A94A6">${code ? t('可以关闭此页面并返回 Navo。') : (error ?? '')}</p></div></body></html>`,
       )
-      finish(code ? null : new Error(error ?? '授权失败'), code ?? undefined)
+      finish(code ? null : new Error(error ?? t('授权失败')), code ?? undefined)
     })
     server.on('error', (e) => finish(e))
     server.listen(OAUTH_PORT, '127.0.0.1')
