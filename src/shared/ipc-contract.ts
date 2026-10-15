@@ -26,6 +26,7 @@ import type {
   ProviderInput,
   McpServerStatus,
   Settings,
+  QuickStatus,
   Skill,
   SkillEvolved,
   SkillProposal,
@@ -96,6 +97,13 @@ export interface Api {
   'skills.removeSource': (id: string) => void
   /** Copies an external skill into the local library so it can be edited */
   'skills.copyToLocal': (id: string) => Skill
+  // quick ask
+  'quick.status': () => QuickStatus
+  'quick.show': () => void
+  'quick.hide': () => void
+  'quick.screenshot': () => void
+  /** shows the main window (and opens the conversation there) */
+  'quick.openInMain': (threadId: string | null) => void
   /** every recorded state of a local skill, newest first */
   'skills.versions': (name: string) => SkillVersion[]
   'skills.rollback': (name: string, version: number) => void
@@ -226,6 +234,11 @@ export interface Events {
   /** a skill was improved / created by itself, or a suggestion is waiting */
   'skills.evolved': SkillEvolved
   'skills.changed': void
+  /** to the quick window when it opens: what it may use as context */
+  'quick.opened': { clipboard: string | null; fileIds: string[] }
+  /** to the main window: show this conversation */
+  'quick.openThread': string
+  'quick.status': QuickStatus
   'memory.consolidated': { changed: number; conflicts: number }
   'chat.event': ChatEvent
   'threads.changed': void

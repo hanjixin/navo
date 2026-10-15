@@ -11,6 +11,7 @@ import { sessions } from './browser/agent-session'
 import { browser } from './browser/browser-service'
 import { skills } from './skills/skill-service'
 import { memory } from './memory/memory-service'
+import { quick } from './quick/quick-service'
 import { skillEvolution } from './skills/evolution'
 import { skillVersions } from './skills/versions'
 import { mcp } from './mcp/mcp-service'
@@ -90,6 +91,11 @@ export function registerHandlers(): void {
     'skills.addSource': () => skills.addSource(),
     'skills.removeSource': (id) => skills.removeSource(id),
     'skills.copyToLocal': (id) => skills.copyToLocal(id),
+    'quick.status': () => quick.getStatus(),
+    'quick.show': () => void quick.show(),
+    'quick.hide': () => quick.hide(),
+    'quick.screenshot': () => void quick.screenshotAsk(),
+    'quick.openInMain': (threadId) => quick.openInMain(threadId),
     'skills.versions': (name) => skillVersions.history(name),
     'skills.rollback': (name, version) => skills.rollback(name, version),
     'skills.proposals': () => skillEvolution.proposals(),
@@ -167,6 +173,7 @@ export function registerHandlers(): void {
       const s = setSettings(patch)
       agent.refreshHost()
       if (patch.mcpServer) void navoMcpServer.apply()
+      if (patch.quick) quick.apply()
       return s
     },
     'langfuse.test': () => testLangfuse(),

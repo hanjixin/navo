@@ -1,8 +1,9 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import type { Settings } from '@shared/types'
+import type { QuickStatus, Settings } from '@shared/types'
 import { Page, PageHeader } from '@/components/layout/page'
+import { ShortcutInput } from '@/components/settings/shortcut-input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { Select } from '@/components/ui/select'
 import { ErrorState, Skeleton } from '@/components/ui/states'
 import { Switch } from '@/components/ui/switch'
 import { useAsync } from '@/hooks/use-async'
-import { call } from '@/lib/ipc'
+import { call, on } from '@/lib/ipc'
 import { cn, errorMessage } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 
@@ -32,6 +33,47 @@ function Row({ title, description, children, className }: { title: string; descr
       </div>
       <div className="shrink-0">{children}</div>
     </div>
+  )
+}
+
+/** Quick ask: global shortcuts and the menu-bar icon. */
+function QuickSection({ settings, patch }: { settings: Settings; patch: (p: Partial<Settings>) => Promise<void> }) {
+  const cfg = settings.quick
+  const [status, setStatus] = useState<QuickStatus>({ registered: [], failed: [] })
+  useEffect(() => {
+    void call('quick.status').then(setStatus)
+    return on('quick.status', setStatus)
+  }, [])
+  const set = (p: Partial<typeof cfg>) => void patch({ quick: { ...cfg, ...p } })
+  const failed = (acc: string) => cfg.enabled && status.failed.includes(acc)
+  return (
+    <>
+      <h2 className="mb-2 text-sm font-semibold">快问</h2>
+      <Card className="mb-8 divide-y divide-border">
+        <Row title="全局快捷键" description="在任何应用里按快捷键，弹出小窗直接问 Navo；刚复制过内容时可以一键带上">
+          <Switch checked={cfg.enabled} onCheckedChange={(v) => set({ enabled: v })} />
+        </Row>
+        <Row
+          title="打开快问"
+          description={failed(cfg.shortcut) ? <span className="text-danger">这个快捷键被其他应用占用了，换一个试试</span> : '点击后按下新的组合键'}
+          className={cn(!cfg.enabled && 'opacity-60')}
+        >
+          <ShortcutInput value={cfg.shortcut} onChange={(v) => set({ shortcut: v })} invalid={failed(cfg.shortcut)} />
+        </Row>
+        <Row
+          title="截图提问"
+          description={
+            failed(cfg.screenshotShortcut) ? <span className="text-danger">这个快捷键被其他应用占用了，换一个试试</span> : '框选屏幕上的一块区域，带着截图提问'
+          }
+          className={cn(!cfg.enabled && 'opacity-60')}
+        >
+          <ShortcutInput value={cfg.screenshotShortcut} onChange={(v) => set({ screenshotShortcut: v })} invalid={failed(cfg.screenshotShortcut)} />
+        </Row>
+        <Row title="关闭窗口后留在菜单栏" description="关掉主窗口后 Navo 继续在后台运行：快捷键可用、任务照常执行，菜单栏图标显示正在运行的任务">
+          <Switch checked={cfg.keepInTray} onCheckedChange={(v) => set({ keepInTray: v })} />
+        </Row>
+      </Card>
+    </>
   )
 }
 
@@ -213,6 +255,8 @@ export function SettingsPage() {
           </div>
         </Row>
       </Card>
+
+      <QuickSection settings={settings} patch={patch} />
 
       <h2 className="mb-2 text-sm font-semibold">Agent</h2>
       <Card className="mb-8 divide-y divide-border">

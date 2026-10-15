@@ -360,3 +360,10 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* the quick window is transparent and draws its own rounded card */
+html.quick,
+html.quick body,
+html.quick #root {
+  background: transparent;
+}

@@ -22,6 +22,10 @@ import { MacrosPage } from '@/pages/macros'
 import { ModelsPage } from '@/pages/models'
 import { DevPage } from '@/pages/dev'
 import { SettingsPage } from '@/pages/settings'
+import { QuickPage } from '@/pages/quick'
+
+/** this renderer is the quick window (global shortcut), not the main window */
+const isQuick = window.location.hash.startsWith('#/quick')
 
 export function App() {
   useTheme()
@@ -30,6 +34,8 @@ export function App() {
   useEffect(() => {
     void load()
     wireChatEvents()
+    // the quick window only needs the conversation; the app's toasts belong to the main window
+    if (isQuick) return
     wireBrowserEvents()
     wireMemoryEvents()
     wireSkillEvents()
@@ -39,7 +45,11 @@ export function App() {
     <TooltipProvider>
       <HashRouter>
         {/* until settings load we render nothing (avoids flashing the app before onboarding) */}
-        {!settings ? null : !settings.onboarded ? (
+        {!settings ? null : isQuick ? (
+          <Routes>
+            <Route path="/quick" element={<QuickPage />} />
+          </Routes>
+        ) : !settings.onboarded ? (
           <Onboarding />
         ) : (
           <Routes>

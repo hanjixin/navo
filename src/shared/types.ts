@@ -187,6 +187,25 @@ export interface DiscoveredMcp {
   imported: boolean
 }
 
+// ---------- Quick ask ----------
+
+export interface QuickSettings {
+  /** global shortcuts on */
+  enabled: boolean
+  /** opens the quick window (Electron accelerator, e.g. "Alt+Space") */
+  shortcut: string
+  /** pick a region of the screen and ask about it */
+  screenshotShortcut: string
+  /** closing the main window keeps Navo in the menu bar (shortcuts keep working) */
+  keepInTray: boolean
+}
+
+export interface QuickStatus {
+  registered: string[]
+  /** taken by another app, or not a valid shortcut */
+  failed: string[]
+}
+
 // ---------- Skill self-improvement ----------
 
 /** who / what wrote a version of a skill */
@@ -515,6 +534,7 @@ export interface Settings {
   langfuse: LangfuseSettings
   memory: MemorySettings
   skills: SkillSettings
+  quick: QuickSettings
 }
 
 export interface LangfuseSettings {

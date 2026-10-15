@@ -12,6 +12,7 @@ import { browser } from './browser/browser-service'
 import { plugins } from './plugins/plugin-service'
 import { recorder } from './recorder/recorder-service'
 import { learning } from './learning'
+import { quick } from './quick/quick-service'
 import { memory } from './memory/memory-service'
 import { mcp } from './mcp/mcp-service'
 import { connectors } from './connectors/connector-service'
@@ -28,8 +29,13 @@ if (process.env.AB_DOWNLOADS) app.setPath('downloads', process.env.AB_DOWNLOADS)
 // One instance per profile: two processes would share the SQLite database, checkpoints and browser storage.
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
+/** The main window (not the quick window, which also loads the renderer). */
+let mainWin: BrowserWindow | null = null
+/** set while quitting, so closing the main window then really closes it */
+let quitting = false
+
 app.on('second-instance', () => {
-  const win = BrowserWindow.getAllWindows()[0]
+  const win = mainWin
   if (!win) return
   if (win.isMinimized()) win.restore()
   win.show()
@@ -56,6 +62,17 @@ function createWindow(): BrowserWindow {
     },
   })
   win.once('ready-to-show', () => win.show())
+  // with "keep in the menu bar", closing the window hides it: shortcuts and running tasks keep going
+  win.on('close', (e) => {
+    if (!quitting && getSettings().quick.keepInTray) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
+  win.on('closed', () => {
+    if (mainWin === win) mainWin = null
+  })
+  mainWin = win
   // links in the app UI (e.g. in agent replies) open as tabs in the built-in browser panel
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
@@ -109,12 +126,18 @@ app.whenReady().then(async () => {
   // scripts/agent-eval.mjs: browser tasks against the real model, then quit
   if (process.env.NAVO_AGENT_EVAL) void runAgentEval(process.env.NAVO_AGENT_EVAL)
 
+  // global shortcuts, quick window, menu bar
+  quick.init(() => mainWin)
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) browser.init(createWindow())
+    if (mainWin) mainWin.show()
+    else browser.init(createWindow())
   })
 })
 
 app.on('before-quit', () => {
+  quitting = true
+  quick.shutdown()
   agent.shutdown()
   files.shutdown()
   tasks.stopAll()

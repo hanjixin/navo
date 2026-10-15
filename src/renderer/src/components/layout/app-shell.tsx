@@ -18,13 +18,15 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react'
-import { NavLink, Outlet, useLocation } from 'react-router'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
 import { BrowserMini } from '@/components/browser/browser-mini'
 import { BrowserPanel } from '@/components/browser/browser-panel'
 import { Logo, PRODUCT_NAME } from '@/components/brand/logo'
+import { on } from '@/lib/ipc'
 import { cn } from '@/lib/utils'
+import { useChat } from '@/stores/chat'
 import { useBrowser } from '@/stores/browser'
 import { useSettings } from '@/stores/settings'
 import { SIDEBAR_COLLAPSED, SIDEBAR_EXPANDED, sidebarCollapsed, useLayout, useWindowWidthTracker } from '@/stores/layout'
@@ -111,6 +113,7 @@ export function AppShell() {
   const setMainWidth = useLayout((s) => s.setMainWidth)
   const mainRef = useRef<HTMLElement>(null)
   const location = useLocation()
+  const navigate = useNavigate()
   const current = ALL.find((i) => location.pathname.startsWith(i.to))
   const isMac = window.api.platform === 'darwin'
   const mod = isMac ? '⌘' : 'Ctrl+'
@@ -124,6 +127,19 @@ export function AppShell() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [setMainWidth])
+
+  // "continue in Navo" from the quick window
+  useEffect(
+    () =>
+      on('quick.openThread', (id) => {
+        void useChat
+          .getState()
+          .loadThreads()
+          .then(() => useChat.getState().select(id))
+        navigate('/chat')
+      }),
+    [navigate],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -14,6 +14,7 @@ const DEFAULTS: Settings = {
   onboarded: false,
   mcpServer: { enabled: false, port: 38800, allowRun: true, allowWrite: false, allowMemory: false },
   files: { defaultEngine: 'builtin', ocr: true },
+  quick: { enabled: true, shortcut: 'Alt+Space', screenshotShortcut: 'Alt+Shift+Space', keepInTray: true },
   skills: { selfImprove: true, autoApplySmall: true, autoCreateFromExperience: true },
   memory: { enabled: true, autoLearn: true, review: false, daily: true, modelId: null, idleMinutes: 3, consolidate: true },
   langfuse: {
@@ -35,6 +36,7 @@ export function getSettings(): Settings {
     mcpServer: { ...DEFAULTS.mcpServer, ...(stored.mcpServer ?? {}) },
     memory: { ...DEFAULTS.memory, ...(stored.memory ?? {}) },
     skills: { ...DEFAULTS.skills, ...(stored.skills ?? {}) },
+    quick: { ...DEFAULTS.quick, ...(stored.quick ?? {}) },
     files: { ...DEFAULTS.files, ...(stored.files ?? {}), mineruTokenSet: secrets.has('mineru.token') },
     langsmithApiKeySet: secrets.has('langsmith'),
   }
