@@ -10,5 +10,8 @@
     <!-- native modules (better-sqlite3) are not signed by Apple -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <!-- voice input: the hardened runtime blocks the microphone without it -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>

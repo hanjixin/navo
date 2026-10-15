@@ -724,6 +724,30 @@ export interface Settings {
   skills: SkillSettings
   quick: QuickSettings
   usage: UsageSettings
+  voice: VoiceSettings
+}
+
+export interface VoiceSettings {
+  /** provider: an OpenAI-compatible /audio/transcriptions endpoint · local: faster-whisper on this Mac (via uvx) */
+  engine: 'provider' | 'local'
+  /** the provider whose /audio/transcriptions is used; null = the first one that can */
+  providerId: string | null
+  /** the provider's speech model, e.g. whisper-1, gpt-4o-mini-transcribe, FunAudioLLM/SenseVoiceSmall */
+  model: string
+  /** local engine's model size */
+  localModel: 'tiny' | 'base' | 'small' | 'medium'
+  language: 'auto' | 'zh' | 'en'
+  /** send the message as soon as it is transcribed */
+  autoSend: boolean
+}
+
+export interface VoiceStatus {
+  ready: boolean
+  /** what to set up when not ready */
+  reason?: string
+  engine: VoiceSettings['engine']
+  /** e.g. 「OpenAI · whisper-1」 */
+  label?: string
 }
 
 export interface UsageSettings {

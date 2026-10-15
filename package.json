@@ -17,7 +17,7 @@
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-vite build && electron-builder --publish never",
     "postdist": "electron-builder install-app-deps",
-    "test:e2e": "electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/connectors-cn.mjs",
+    "test:e2e": "electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/connectors-cn.mjs && node e2e/voice.mjs",
     "test:agent": "electron-vite build && node e2e/agent.mjs",
     "screenshots": "electron-vite build && node e2e/smoke.mjs",
     "icon": "node e2e/render-icon.mjs",

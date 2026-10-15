@@ -43,6 +43,7 @@ import type {
   MonitorSummary,
   ModelPricing,
   UsageReport,
+  VoiceStatus,
   OutputFile,
   OutputPreview,
   ExportFormat,
@@ -224,6 +225,11 @@ export interface Api {
   'outputs.saveAs': (id: string) => string | null
   'outputs.reveal': (id: string) => void
   'outputs.open': (id: string) => void
+  'voice.status': () => VoiceStatus
+  /** asks the system for the microphone (macOS); false when denied */
+  'voice.prepare': () => boolean
+  /** a 16 kHz mono WAV recording → text */
+  'voice.transcribe': (wav: Uint8Array) => { text: string }
   'usage.report': (days?: number) => UsageReport
   'models.setPricing': (id: string, pricing: ModelPricing | null) => void
   'monitor.check': (taskId: string) => MonitorCheck

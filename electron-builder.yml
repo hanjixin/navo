@@ -35,6 +35,8 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Navo 需要使用麦克风来进行语音输入。
   # Signing uses a "Developer ID Application" certificate (keychain, or CSC_LINK / CSC_KEY_PASSWORD).
   # Notarization runs when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID (or APPLE_API_KEY*)
   # are set, and is skipped with a warning otherwise — see README「发布」.

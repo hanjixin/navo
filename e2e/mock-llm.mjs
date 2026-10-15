@@ -21,6 +21,8 @@ export function startMock(port = 38999) {
   const consolidations = []
   // skill coach passes (looking back at a stretch to improve / distil skills)
   const reflections = []
+  // speech-to-text requests (voice input)
+  const transcriptions = []
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url.endsWith('/models')) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -28,6 +30,18 @@ export function startMock(port = 38999) {
     }
     let body = ''
     for await (const c of req) body += c
+    if (req.url.endsWith('/audio/transcriptions')) {
+      const field = (name) => new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`).exec(body)?.[1]
+      transcriptions.push({
+        model: field('model'),
+        language: field('language') ?? null,
+        prompt: field('prompt') ?? null,
+        wav: /RIFF[\s\S]{4}WAVE/.test(body),
+        bytes: body.length,
+      })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ text: '帮我查一下明天北京的天气' }))
+    }
     if (!req.url.endsWith('/chat/completions')) return res.writeHead(404).end()
     const json = JSON.parse(body)
     const sys0 = text(json.messages[0]?.content)
@@ -419,5 +433,5 @@ export function startMock(port = 38999) {
     return say(['页面的', '主标题是', '「Hello Agent」', '，已写入 /workspace/answer.txt。'])
   })
   server.listen(port)
-  return { server, requests, extractions, consolidations, reflections, url: `http://127.0.0.1:${port}/v1` }
+  return { server, requests, extractions, consolidations, reflections, transcriptions, url: `http://127.0.0.1:${port}/v1` }
 }

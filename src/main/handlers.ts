@@ -22,6 +22,7 @@ import { recorder } from './recorder/recorder-service'
 import { tasks } from './tasks/task-service'
 import { monitor } from './monitor/monitor-service'
 import { usage } from './usage/usage-service'
+import { voice } from './voice/voice-service'
 import { outputs } from './outputs/outputs-service'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
@@ -194,6 +195,9 @@ export function registerHandlers(): void {
     'outputs.saveAs': (id) => outputs.saveAs(id),
     'outputs.reveal': (id) => outputs.reveal(id),
     'outputs.open': (id) => outputs.open(id),
+    'voice.status': () => voice.status(),
+    'voice.prepare': () => voice.prepare(),
+    'voice.transcribe': (wav) => voice.transcribe(wav),
     'usage.report': (days) => usage.report(days),
     'models.setPricing': (id, pricing) => models.setPricing(id, pricing),
     'monitor.check': (taskId) => tasks.check(tasks.get(taskId)),

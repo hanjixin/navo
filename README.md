@@ -83,6 +83,13 @@ agentPlugin.register('list_stories', async ({ limit = 30 } = {}) =>
 
 浏览器工具栏或「录制宏」页点击录制 → 在右侧浏览器操作 → 停止。步骤可编辑、重排；在值中写 `{{name}}` 即成为参数。开启「作为 Agent 工具」后以 `macro_*` 暴露；回放失败可一键交给 Agent 继续；也可导出为 Skill。
 
+## 语音输入
+
+输入框和快问窗口里按住麦克风说话（或点一下开始、再点一下结束，`⌘⇧M` 也可以），松开后文字填进输入框，也可以设为识别后直接发送。识别方式在「设置 → 语音输入」：
+
+- **服务商识别**：任意 OpenAI 兼容服务的 `/audio/transcriptions`，如 OpenAI（gpt-4o-mini-transcribe、whisper-1）、硅基流动（SenseVoice）、Groq。
+- **本机识别**：用 [uv](https://docs.astral.sh/uv/) 运行 faster-whisper（whisper-ctranslate2），录音不离开这台电脑；第一次使用会下载识别引擎和模型。
+
 ## 国内办公连接器
 
 「连接器」页的「国内办公」：

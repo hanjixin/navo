@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, session, shell } from 'electron'
 import { appFile } from './core/app-dir'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { emit, registerIpc } from './core/ipc'
@@ -109,6 +109,14 @@ app.whenReady().then(async () => {
 
   registerIpc()
   registerHandlers()
+  // Navo's own windows (the browser tabs have their own session): the microphone for voice input, audio only
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+    const url = wc.getURL()
+    const own = url.startsWith('file://') || (!!process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))
+    if (!own) return cb(false)
+    if (permission === 'media') return cb(((details as { mediaTypes?: string[] }).mediaTypes ?? ['audio']).every((t) => t === 'audio'))
+    cb(true)
+  })
 
   const win = createWindow()
   browser.init(win)

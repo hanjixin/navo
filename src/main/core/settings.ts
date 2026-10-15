@@ -16,6 +16,7 @@ const DEFAULTS: Settings = {
   files: { defaultEngine: 'builtin', ocr: true },
   quick: { enabled: true, shortcut: 'Alt+Space', screenshotShortcut: 'Alt+Shift+Space', keepInTray: true },
   usage: { dailyBudget: null, currency: 'CNY', pauseBackground: false },
+  voice: { engine: 'provider', providerId: null, model: 'whisper-1', localModel: 'small', language: 'auto', autoSend: false },
   skills: { selfImprove: true, autoApplySmall: true, autoCreateFromExperience: true },
   memory: { enabled: true, autoLearn: true, review: false, daily: true, modelId: null, idleMinutes: 3, consolidate: true },
   langfuse: {
@@ -39,6 +40,7 @@ export function getSettings(): Settings {
     skills: { ...DEFAULTS.skills, ...(stored.skills ?? {}) },
     quick: { ...DEFAULTS.quick, ...(stored.quick ?? {}) },
     usage: { ...DEFAULTS.usage, ...(stored.usage ?? {}) },
+    voice: { ...DEFAULTS.voice, ...(stored.voice ?? {}) },
     files: { ...DEFAULTS.files, ...(stored.files ?? {}), mineruTokenSet: secrets.has('mineru.token') },
     langsmithApiKeySet: secrets.has('langsmith'),
   }

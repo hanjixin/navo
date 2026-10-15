@@ -77,6 +77,122 @@ function QuickSection({ settings, patch }: { settings: Settings; patch: (p: Part
   )
 }
 
+/** suggested speech models by service (matched on the provider's address) */
+function suggestedModels(baseURL?: string | null): string[] {
+  if (baseURL && /siliconflow/i.test(baseURL)) return ['FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR']
+  if (baseURL && /dashscope|aliyuncs/i.test(baseURL)) return ['paraformer-realtime-v2']
+  if (baseURL && /groq/i.test(baseURL)) return ['whisper-large-v3-turbo', 'whisper-large-v3']
+  return ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1']
+}
+
+/** Voice input: which engine turns speech into text, and what happens with it. */
+function VoiceSection({ settings, patch }: { settings: Settings; patch: (p: Partial<Settings>) => Promise<void> }) {
+  const cfg = settings.voice
+  const providers = useAsync(() => call('providers.list'), [])
+  const status = useAsync(() => call('voice.status'), [cfg.engine, cfg.providerId, cfg.model])
+  const usable = (providers.data ?? []).filter((p) => p.type !== 'anthropic')
+  const provider = usable.find((p) => p.id === cfg.providerId) ?? usable[0]
+  const [model, setModel] = useState(cfg.model)
+  useEffect(() => setModel(cfg.model), [cfg.model])
+  const set = (p: Partial<typeof cfg>) => void patch({ voice: { ...cfg, ...p } })
+  return (
+    <>
+      <h2 className="mb-2 text-sm font-semibold">语音输入</h2>
+      <Card className="mb-8 divide-y divide-border" data-testid="voice-settings">
+        <Row
+          title="识别方式"
+          description={
+            status.data ? (
+              status.data.ready ? (
+                <span>当前：{status.data.label}。输入框里按住麦克风说话，或按 ⌘⇧M</span>
+              ) : (
+                <span className="text-warning">{status.data.reason}</span>
+              )
+            ) : undefined
+          }
+        >
+          <div className="w-56">
+            <Select
+              value={cfg.engine}
+              onChange={(v) => set({ engine: v as typeof cfg.engine })}
+              options={[
+                { value: 'provider', label: '服务商识别（OpenAI 兼容）' },
+                { value: 'local', label: '本机识别（faster-whisper）' },
+              ]}
+            />
+          </div>
+        </Row>
+        {cfg.engine === 'provider' ? (
+          <>
+            <Row title="服务商" description="使用它的 /audio/transcriptions 接口，如 OpenAI、硅基流动（SenseVoice）、Groq">
+              <div className="w-56">
+                <Select
+                  value={provider?.id}
+                  placeholder={usable.length ? '选择服务商' : '先在「模型」页添加 OpenAI 兼容的服务商'}
+                  onChange={(v) => set({ providerId: v })}
+                  options={usable.map((p) => ({ value: p.id, label: p.name }))}
+                />
+              </div>
+            </Row>
+            <Row
+              title="识别模型"
+              description={
+                <span className="flex flex-wrap items-center gap-1">
+                  常用：
+                  {suggestedModels(provider?.baseURL).map((m) => (
+                    <button key={m} className="interactive rounded px-1 font-mono text-brand hover:bg-info-soft" onClick={() => set({ model: m })}>
+                      {m}
+                    </button>
+                  ))}
+                </span>
+              }
+            >
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={() => model.trim() !== cfg.model && set({ model: model.trim() })}
+                className="w-56 font-mono text-xs"
+                aria-label="识别模型"
+              />
+            </Row>
+          </>
+        ) : (
+          <Row title="模型大小" description="在本机运行，录音不离开这台电脑。第一次使用会通过 uv 下载识别引擎和模型（small 约 500 MB），需要几分钟">
+            <div className="w-56">
+              <Select
+                value={cfg.localModel}
+                onChange={(v) => set({ localModel: v as typeof cfg.localModel })}
+                options={[
+                  { value: 'tiny', label: 'tiny · 最快，准确率较低' },
+                  { value: 'base', label: 'base · 快' },
+                  { value: 'small', label: 'small · 推荐' },
+                  { value: 'medium', label: 'medium · 更准，较慢' },
+                ]}
+              />
+            </div>
+          </Row>
+        )}
+        <Row title="语言" description="自动识别适合中英混说；固定语言更准">
+          <div className="w-56">
+            <Select
+              value={cfg.language}
+              onChange={(v) => set({ language: v as typeof cfg.language })}
+              options={[
+                { value: 'auto', label: '自动' },
+                { value: 'zh', label: '中文' },
+                { value: 'en', label: 'English' },
+              ]}
+            />
+          </div>
+        </Row>
+        <Row title="识别后直接发送" description="关闭时文字先填进输入框，确认后再发送">
+          <Switch checked={cfg.autoSend} onCheckedChange={(v) => set({ autoSend: v })} aria-label="识别后直接发送" />
+        </Row>
+      </Card>
+    </>
+  )
+}
+
 const LANGFUSE_HOSTS = [
   { value: 'https://cloud.langfuse.com', label: 'Langfuse Cloud · EU' },
   { value: 'https://us.cloud.langfuse.com', label: 'Langfuse Cloud · US' },
@@ -257,6 +373,7 @@ export function SettingsPage() {
       </Card>
 
       <QuickSection settings={settings} patch={patch} />
+      <VoiceSection settings={settings} patch={patch} />
 
       <h2 className="mb-2 text-sm font-semibold">Agent</h2>
       <Card className="mb-8 divide-y divide-border">
