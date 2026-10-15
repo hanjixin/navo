@@ -9,6 +9,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # bundling the renderer (Monaco and friends) needs more than Node's default heap on the runners
+  NODE_OPTIONS: --max-old-space-size=6144
+
 jobs:
   check:
     name: Typecheck · Lint · Unit tests · Build
