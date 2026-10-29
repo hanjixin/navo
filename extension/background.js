@@ -132,8 +132,10 @@ const info = (tab) => ({ tabId: tab.id, url: tab.url ?? tab.pendingUrl ?? '', ti
 
 async function handle(method, p) {
   switch (method) {
-    case 'tabs.list':
-      return (await chrome.tabs.query({})).filter((t) => t.id != null).map(info)
+    case 'tabs.list': {
+      const handed = await handedTabs()
+      return (await chrome.tabs.query({})).filter((t) => t.id != null).map((t) => ({ ...info(t), handed: handed.includes(t.id) }))
+    }
     case 'tabs.create': {
       const tab = await chrome.tabs.create({ url: p.url || 'about:blank', active: true })
       return info(tab)

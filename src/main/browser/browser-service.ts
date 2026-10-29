@@ -7,15 +7,15 @@ import { join } from 'node:path'
 import type { Bounds, BrowserState, BrowserTab, DownloadInfo } from '@shared/types'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
-import { pageRuntime } from './page-runtime'
+import { HOME, normalizeUrl, RUNTIME_SRC } from './page-source'
 import type { PageDriver } from './page-driver'
+
+export { normalizeUrl, RUNTIME_SRC } from './page-source'
 import { t } from '@shared/i18n'
 
 /** Isolated world shared by the tab preload, agent runtime, plugins and recorder. */
 export const AGENT_WORLD = 999
 const PARTITION = 'persist:agent'
-const HOME = 'https://www.bing.com'
-export const RUNTIME_SRC = `(${pageRuntime.toString()})();`
 
 type DomReadyHook = (wc: WebContents) => void | Promise<void>
 
@@ -602,14 +602,6 @@ const KEYS: Record<string, { key: string; code: string; keyCode: number; text?: 
   Home: { key: 'Home', code: 'Home', keyCode: 36 },
   End: { key: 'End', code: 'End', keyCode: 35 },
   Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
-}
-
-export function normalizeUrl(input: string): string {
-  const s = input.trim()
-  if (!s) return HOME
-  if (/^(https?|file|about|data):/i.test(s)) return s
-  if (/^localhost(:\d+)?(\/|$)/.test(s) || /^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(s)) return `https://${s}`
-  return `https://www.bing.com/search?q=${encodeURIComponent(s)}`
 }
 
 export const browser = new BrowserService()
