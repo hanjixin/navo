@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 14px;
+        font:
+          13px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          sans-serif;
+        color: #1f1f1f;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+      .muted {
+        color: #6b6b6b;
+      }
+      .code {
+        margin: 6px 0;
+        font:
+          600 22px/1.2 ui-monospace,
+          Menlo,
+          monospace;
+        letter-spacing: 4px;
+      }
+      button {
+        width: 100%;
+        margin-top: 10px;
+        padding: 7px;
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
+        background: #fff;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #1f1f1f;
+        border-color: #1f1f1f;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Navo</h1>
+    <div id="status" class="muted">正在查找 Navo…</div>
+    <div id="code" class="code" hidden></div>
+    <button id="toggle" class="primary" hidden></button>
+    <script src="popup.js"></script>
+  </body>
+</html>
