@@ -199,6 +199,12 @@ export function registerHandlers(): void {
     'outputs.reveal': (id) => outputs.reveal(id),
     'outputs.open': (id) => outputs.open(id),
     'computerUse.status': () => computerUse.status(),
+    'computerUse.refreshDesktop': () => computerUse.refreshDesktop(),
+    'computerUse.openPermission': (kind) => computerUse.openPermission(kind),
+    'computerUse.restart': () => computerUse.restart(),
+    'computerUse.consent': (id, decision) => computerUse.consent(id, decision),
+    'computerUse.pendingConsent': () => computerUse.pendingConsent(),
+    'computerUse.stop': () => computerUse.stop(),
     'computerUse.confirmPairing': (approve) => computerUse.confirmPairing(approve),
     'computerUse.installExtension': () => ({ dir: computerUse.ensureExtension().dir }),
     'computerUse.openExtensionsPage': (b) => computerUse.openExtensionsPage(b),
@@ -248,9 +254,9 @@ export function registerHandlers(): void {
     'navoMcp.installAgents': () => navoMcpServer.installAgents(),
     'dev.traces': (threadId) => traces.list(threadId),
     'dev.clearTraces': () => traces.clear(),
-    'dev.tools': () => describeTools(collectTools(activeTabCtx)),
+    'dev.tools': () => describeTools(collectTools(activeTabCtx, true)),
     'dev.invokeTool': async (name, args) => {
-      const entry = collectTools(activeTabCtx).find((e) => e.tool.name === name)
+      const entry = collectTools(activeTabCtx, true).find((e) => e.tool.name === name)
       if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: name }))
       clearTimeout(sandboxRelease)
       try {

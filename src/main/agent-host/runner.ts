@@ -29,6 +29,10 @@ export interface RunnerDeps {
 
 /** Tools that legitimately repeat with identical arguments (the page may have changed in between). */
 const REPEAT_OK = new Set([
+  'desktop_snapshot',
+  'desktop_scroll',
+  'desktop_wait_for',
+  'desktop_screenshot',
   'browser_snapshot',
   'browser_scroll',
   'browser_press_key',

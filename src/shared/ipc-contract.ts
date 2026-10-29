@@ -27,6 +27,8 @@ import type {
   McpServerStatus,
   Settings,
   ComputerUseStatus,
+  DesktopConsentRequest,
+  DesktopConsentDecision,
   LiveFrame,
   FlowDraft,
   FlowRunResult,
@@ -229,6 +231,12 @@ export interface Api {
   'outputs.open': (id: string) => void
   // computer use: the user's own browser
   'computerUse.status': () => ComputerUseStatus
+  'computerUse.refreshDesktop': () => ComputerUseStatus
+  'computerUse.openPermission': (kind: 'accessibility' | 'screenRecording') => void
+  'computerUse.restart': () => void
+  'computerUse.consent': (id: string, decision: DesktopConsentDecision) => void
+  'computerUse.pendingConsent': () => DesktopConsentRequest | null
+  'computerUse.stop': () => void
   /** the user compared the pairing code the extension shows */
   'computerUse.confirmPairing': (approve: boolean) => void
   /** copies the extension to its folder (if needed) and returns the folder to load */
@@ -329,6 +337,7 @@ export interface Events {
   /** settings changed from anywhere (UI, onboarding, MCP) */
   'settings.changed': Settings
   'computerUse.changed': ComputerUseStatus
+  'computerUse.consent': DesktopConsentRequest | null
   /** the agent wanted the user's browser but the extension isn't connected: show the import guide */
   'computerUse.guide': void
   /** the agent's tab in the user's browser; null when it stopped working there */

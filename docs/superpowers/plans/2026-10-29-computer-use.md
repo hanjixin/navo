@@ -80,11 +80,13 @@ e2e/my-browser.mjs  e2e/desktop.mjs
 ```
 
 ---
+
 ## 阶段一：浏览器层改为 PageDriver（行为不变）
 
 ### Task 1: PageDriver 接口与内置浏览器实现
 
 **Files:**
+
 - Create: `src/main/browser/page-driver.ts`
 - Modify: `src/main/browser/browser-service.ts:17`（导出 `RUNTIME_SRC`）、`:505-573`（`clickRef`…`screenshot` 改收 `PageDriver`）
 - Modify: `src/main/browser/agent-session.ts:12-20`（导出 `DIALOG_SHIM`、`RESTORE`），`:176-210`（抽出 `dialogNotice`、`chooserNotice`）
@@ -93,23 +95,27 @@ e2e/my-browser.mjs  e2e/desktop.mjs
 - Test: `tests/page-driver.test.ts`
 
 **Interfaces:**
+
 - Produces（`page-driver.ts`）：
   ```ts
   export type CdpFn = <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
-  export interface DialogPolicy { confirm: boolean; prompt: string | null }
+  export interface DialogPolicy {
+    confirm: boolean
+    prompt: string | null
+  }
   export interface PageDriver {
-    readonly id: string                 // 'builtin:<wc.id>' | 'ext:<tabId>'
+    readonly id: string // 'builtin:<wc.id>' | 'ext:<tabId>'
     readonly kind: 'builtin' | 'external'
     url(): string
     title(): string
-    evalIn<T = unknown>(code: string): Promise<T>     // agent 隔离环境，page-runtime 已就位
+    evalIn<T = unknown>(code: string): Promise<T> // agent 隔离环境，page-runtime 已就位
     evalMain<T = unknown>(script: string): Promise<T> // 页面主环境（browser_eval）
     cdp: CdpFn
-    navigate(url: string): Promise<void>              // 内部做 normalizeUrl
-    history(action: 'back' | 'forward'): Promise<boolean>  // false = 无法后退/前进
+    navigate(url: string): Promise<void> // 内部做 normalizeUrl
+    history(action: 'back' | 'forward'): Promise<boolean> // false = 无法后退/前进
     waitForLoad(timeout?: number): Promise<void>
-    prepare(): Promise<void>            // 每次工具操作前：弹窗接管、控制标记
-    bringToFront(): Promise<void>       // 截图前
+    prepare(): Promise<void> // 每次工具操作前：弹窗接管、控制标记
+    bringToFront(): Promise<void> // 截图前
     takeNotices(): string[]
     chooser(): { backendNodeId: number } | null
     clearChooser(): void
@@ -174,11 +180,13 @@ git commit -m "refactor(browser): tools drive a PageDriver instead of WebContent
 ```
 
 ---
+
 ## 阶段二：使用用户的浏览器
 
 ### Task 2: Navo 浏览器扩展
 
 **Files:**
+
 - Create: `extension/manifest.json`、`extension/background.js`、`extension/popup.html`、`extension/popup.js`、`extension/icons/{16,48,128}.png`（由 `resources/icon.png` 缩放）
 - Create: `scripts/gen-extension-key.mjs`、`scripts/build-extension.mjs`
 - Create: `src/shared/extension.ts`
@@ -186,6 +194,7 @@ git commit -m "refactor(browser): tools drive a PageDriver instead of WebContent
 - Test: `tests/ext-bridge.test.ts`（本任务只放 ID 测试，Task 3 继续加）
 
 **Interfaces:**
+
 - Produces（`src/shared/extension.ts`）：`export const EXTENSION_ID: string`、`export const BRIDGE_PORTS: number[]`（38810…38819）、`export function extensionIdFromKey(base64Der: string): string`。
 - Produces（线上协议，Task 3 的 `protocol.ts` 用 TS 写同一份；扩展侧是手写 JS，两边以这里为准）：
   - 扩展 → Navo：`{ t: 'hello', version: string, browser: string, token: string | null }`、`{ t: 'res', id: number, ok: true, result } | { t: 'res', id, ok: false, error: string }`、`{ t: 'evt', name, payload }`、`{ t: 'pong' }`
@@ -237,17 +246,21 @@ git commit -m "feat(extension): Navo browser extension that relays CDP to Navo"
 ```
 
 ---
+
 ### Task 3: 扩展桥接（WebSocket、Origin 校验、配对）
 
 **Files:**
+
 - Create: `src/main/external-browser/protocol.ts`、`src/main/external-browser/bridge.ts`
 - Modify: `package.json`（`pnpm add -D ws @types/ws`；主进程依赖由 electron-vite 打包，放 devDependencies 与现有依赖一致）
 - Test: `tests/ext-bridge.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 的线上协议、`EXTENSION_ID`、`BRIDGE_PORTS`。
 - Produces（`protocol.ts`）：`ExtMethod`、`ExtEventName`、`ExtToNavo`、`NavoToExt` 联合类型。
 - Produces（`bridge.ts`）：
+
   ```ts
   export interface Link {
     readonly browser: string
@@ -255,24 +268,30 @@ git commit -m "feat(extension): Navo browser extension that relays CDP to Navo"
     on(name: ExtEventName, fn: (payload: any) => void): () => void
     readonly closed: boolean
   }
-  export interface BridgeStatus { connected: boolean; paired: boolean; browser: string | null; pairingCode: string | null }
+  export interface BridgeStatus {
+    connected: boolean
+    paired: boolean
+    browser: string | null
+    pairingCode: string | null
+  }
   export interface BridgeOptions {
-    ports: number[]; extensionId: string
+    ports: number[]
+    extensionId: string
     tokens: { get(): string | null; set(token: string): void }
-    timeoutMs?: number  // 默认 15000
-    pingMs?: number     // 默认 20000
+    timeoutMs?: number // 默认 15000
+    pingMs?: number // 默认 20000
   }
   export class Bridge {
     constructor(opts: BridgeOptions)
-    start(): Promise<number>          // 返回实际监听的端口
+    start(): Promise<number> // 返回实际监听的端口
     stop(): Promise<void>
-    link(): Link | null               // 已配对的当前连接
+    link(): Link | null // 已配对的当前连接
     waitForLink(ms: number): Promise<Link | null>
     status(): BridgeStatus
     confirmPairing(approve: boolean): void
     onChange(fn: (s: BridgeStatus) => void): () => void
   }
-  export const bridge: Bridge  // BRIDGE_PORTS、EXTENSION_ID、tokens 存 secrets 'extension.token'
+  export const bridge: Bridge // BRIDGE_PORTS、EXTENSION_ID、tokens 存 secrets 'extension.token'
   ```
 
 - [ ] **Step 1: 写失败的测试**（追加到 `tests/ext-bridge.test.ts`，用 `ws` 客户端模拟扩展，端口用 `[39810, 39811]` 避开真实端口）
@@ -331,39 +350,50 @@ git commit -m "feat(my-browser): local bridge the extension pairs with"
 ```
 
 ---
+
 ### Task 4: 外部标签页驱动（ExternalPageDriver、ExtTabs）
 
 **Files:**
+
 - Create: `src/main/external-browser/ext-tabs.ts`
 - Test: `tests/ext-driver.test.ts`
 
 **Interfaces:**
+
 - Consumes: `PageDriver`、`DialogPolicy`（Task 1）；`RUNTIME_SRC`、`normalizeUrl`（`browser-service.ts`）；`DIALOG_SHIM`、`dialogNotice`、`chooserNotice`（Task 1）；`Link`（Task 3）。
 - Produces：
+
   ```ts
   export type GetLink = (waitMs: number) => Promise<Link | null>
-  export interface ExtTabInfo { tabId: number; url: string; title: string; owned: boolean }
-  export class ExternalPageDriver implements PageDriver {   // id = 'ext:<tabId>', kind = 'external'
+  export interface ExtTabInfo {
+    tabId: number
+    url: string
+    title: string
+    owned: boolean
+  }
+  export class ExternalPageDriver implements PageDriver {
+    // id = 'ext:<tabId>', kind = 'external'
     readonly tabId: number
     detach(): Promise<void>
   }
   export class ExtTabs {
     constructor(getLink: GetLink)
-    create(url?: string): Promise<ExternalPageDriver>   // owned
-    list(): Promise<ExtTabInfo[]>                       // 只含可用标签页（owned 或 handed）
-    handed(): ExtTabInfo[]                              // 用户交给 Navo、按交出时间倒序
-    driver(tabId: number): ExternalPageDriver           // 不可用时抛「这个标签页没有交给 Navo」
+    create(url?: string): Promise<ExternalPageDriver> // owned
+    list(): Promise<ExtTabInfo[]> // 只含可用标签页（owned 或 handed）
+    handed(): ExtTabInfo[] // 用户交给 Navo、按交出时间倒序
+    driver(tabId: number): ExternalPageDriver // 不可用时抛「这个标签页没有交给 Navo」
     close(tabId: number): Promise<void>
-    downloads(): { filename: string; url: string }[]    // 最近 10 个
+    downloads(): { filename: string; url: string }[] // 最近 10 个
   }
-  export const extTabs: ExtTabs   // getLink = (ms) => bridge.link() ? Promise.resolve(bridge.link()) : bridge.waitForLink(ms)
+  export const extTabs: ExtTabs // getLink = (ms) => bridge.link() ? Promise.resolve(bridge.link()) : bridge.waitForLink(ms)
   ```
 
 - [ ] **Step 1: 写失败的测试** `tests/ext-driver.test.ts`。写一个 `fakeLink()`：记录 `request(method, params)`，按 method 返回预设结果（`tabs.create` → `{tabId: 7, url, title: ''}`；`cdp.send` 的 `Page.getFrameTree` → `{ frameTree: { frame: { id: 'F1' } } }`；`Page.createIsolatedWorld` → `{ executionContextId: ++n }`；`Runtime.evaluate` → `{ result: { value: 42 } }`），并能 `emit(name, payload)`、`close()`。
 
 ```ts
 it('evaluates in a navo-agent isolated world, created once per document', async () => {
-  const link = fakeLink(); const tabs = new ExtTabs(async () => link)
+  const link = fakeLink()
+  const tabs = new ExtTabs(async () => link)
   const p = await tabs.create('https://a.test')
   expect(await p.evalIn('1')).toBe(42)
   await p.evalIn('2')
@@ -426,9 +456,11 @@ git commit -m "feat(my-browser): page driver for tabs in the user's browser"
 ```
 
 ---
+
 ### Task 5: 浏览器目标切换与工具接入（browser_switch）
 
 **Files:**
+
 - Create: `src/main/external-browser/targets.ts`、`src/main/external-browser/tools.ts`、`src/main/computer-use.ts`
 - Modify: `src/shared/types.ts`（`Settings.computerUse`、`ComputerUseSettings`、`ComputerUseStatus`）
 - Modify: `src/main/core/settings.ts:7-31`（默认值）、`:39-53`（合并 `computerUse`）
@@ -441,14 +473,24 @@ git commit -m "feat(my-browser): page driver for tabs in the user's browser"
 - Test: `tests/ext-driver.test.ts`（追加 targets 用例）、`e2e/my-browser.mjs`
 
 **Interfaces:**
+
 - Consumes: `builtinDriver`、`pageOf`、`ToolCtx`（Task 1）；`bridge`（Task 3）；`extTabs`、`ExternalPageDriver`（Task 4）。
 - Produces（`src/shared/types.ts`）：
   ```ts
-  export interface ComputerUseSettings { desktop: boolean; myBrowser: boolean; blockedApps: string[] }
-  export interface DesktopStatus { supported: boolean; accessibility: boolean; screenRecording: boolean; helper: 'ok' | 'missing' | 'failed' }
+  export interface ComputerUseSettings {
+    desktop: boolean
+    myBrowser: boolean
+    blockedApps: string[]
+  }
+  export interface DesktopStatus {
+    supported: boolean
+    accessibility: boolean
+    screenRecording: boolean
+    helper: 'ok' | 'missing' | 'failed'
+  }
   export interface ComputerUseStatus {
     browser: { connected: boolean; paired: boolean; browser: string | null; pairingCode: string | null; extensionDir: string }
-    desktop: DesktopStatus | null   // Task 12 填充；之前恒为 null
+    desktop: DesktopStatus | null // Task 12 填充；之前恒为 null
   }
   ```
 - Produces（`targets.ts`）：
@@ -457,11 +499,11 @@ git commit -m "feat(my-browser): page driver for tabs in the user's browser"
   export const SANDBOX = '__sandbox__'
   export const targets: {
     get(threadId: string): BrowserTarget
-    page(threadId: string): PageDriver          // builtin → builtinDriver(sessions.tabFor / browser.active)；mine → 该对话的外部标签页
-    useMine(threadId: string): Promise<ExternalPageDriver>   // 选标签页并设为 mine；扩展未连接时抛 NeedExtension
+    page(threadId: string): PageDriver // builtin → builtinDriver(sessions.tabFor / browser.active)；mine → 该对话的外部标签页
+    useMine(threadId: string): Promise<ExternalPageDriver> // 选标签页并设为 mine；扩展未连接时抛 NeedExtension
     useTab(threadId: string, tabId: number): ExternalPageDriver
-    useBuiltin(threadId: string): Promise<void>  // detach 外部标签页
-    endRun(threadId: string): Promise<void>      // detach，但保留 'mine' 选择
+    useBuiltin(threadId: string): Promise<void> // detach 外部标签页
+    endRun(threadId: string): Promise<void> // detach，但保留 'mine' 选择
   }
   export class NeedExtension extends Error {}
   ```
@@ -539,9 +581,11 @@ git commit -m "feat(my-browser): browser_switch — browser tools work in the us
 ```
 
 ---
+
 ### Task 6: 扩展安装、导入引导、配对确认与设置页（浏览器部分）
 
 **Files:**
+
 - Create: `src/main/external-browser/install.ts`
 - Create: `src/renderer/src/components/browser/extension-guide.tsx`、`src/renderer/src/components/settings/computer-use-section.tsx`
 - Modify: `src/main/computer-use.ts`（`extensionDir` 改用 `install.ts`；新增 IPC 处理）、`src/shared/ipc-contract.ts`、`src/main/handlers.ts`
@@ -550,12 +594,16 @@ git commit -m "feat(my-browser): browser_switch — browser tools work in the us
 - Test: `tests/ext-install.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ComputerUseStatus`（Task 5）；`bridge`（Task 3）。
 - Produces（`install.ts`）：
   ```ts
-  export interface InstallResult { dir: string; updated: boolean }
-  export function installExtension(src: string, dest: string): InstallResult   // 纯文件操作，可单测
-  export function ensureExtension(): InstallResult  // src = app.isPackaged ? join(process.resourcesPath, 'extension') : appFile('dist/extension'); dest = join(paths.userData, 'browser-extension')
+  export interface InstallResult {
+    dir: string
+    updated: boolean
+  }
+  export function installExtension(src: string, dest: string): InstallResult // 纯文件操作，可单测
+  export function ensureExtension(): InstallResult // src = app.isPackaged ? join(process.resourcesPath, 'extension') : appFile('dist/extension'); dest = join(paths.userData, 'browser-extension')
   ```
 - Produces（IPC）：`'computerUse.installExtension': () => { dir: string }`、`'computerUse.openExtensionsPage': (browser: 'chrome' | 'edge' | 'other') => { opened: boolean; url: string }`；事件 `'computerUse.guide': void` 已在 Task 5 定义。
 - Produces（renderer）：`export function ExtensionGuide({ status, onClose }: { status: ComputerUseStatus; onClose: () => void })`、`export function ExtensionGuideHost()`、`export function ComputerUseSection({ settings, patch }: { settings: Settings; patch: (p: Partial<Settings>) => Promise<void> })`。
@@ -586,7 +634,7 @@ it('replaces files when the version changes, keeping the folder', () => {
   1. `在浏览器里打开扩展程序页面` + 按钮「在 Chrome 中打开」「在 Edge 中打开」，未能打开时显示地址 `chrome://extensions` 与「复制」按钮
   2. `打开右上角的「开发者模式」`
   3. `点「加载已解压的扩展程序」，选择这个文件夹` + 路径 + 按钮「在访达中显示」（`app.showItemInFolder`）
-  
+
   底部说明：`如果浏览器启动时提示停用开发者模式扩展，点关闭即可，扩展会继续可用。需要上传文件时，请在扩展详情里打开「允许访问文件网址」。`
 
   `status.browser.pairingCode` 出现后切换为配对确认：`浏览器扩展请求连接 Navo。请确认扩展弹出页里显示的配对码与下面一致：` + 大号配对码 + 「确认连接」「拒绝」（`computerUse.confirmPairing`）。`paired` 后显示 `已连接 <browser>` 并在 1.5 秒后关闭。`ExtensionGuideHost` 监听 `computerUse.guide` 与 `computerUse.changed`：收到 guide 或出现 `pairingCode` 时打开对话框（打开前调用 `computerUse.installExtension`）。
@@ -608,4 +656,5 @@ git commit -m "feat(my-browser): import guide, pairing and settings for the brow
 ```
 
 ---
+
 <!-- TASKS -->

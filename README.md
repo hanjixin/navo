@@ -127,6 +127,21 @@ Agent 靠模型摸索着在某个系统（常见是老旧的内部系统）上�
 
 ## 开发
 
+### 电脑操作
+
+「设置 → 电脑操作」可以开启浏览器扩展或 macOS 桌面应用控制。桌面控制要求 macOS 14+，默认关闭：
+
+- 点击「辅助功能 → 前往授权」，在系统设置中允许 Navo 读取控件、点击和输入。开发模式下系统可能显示 Electron 或桌面 helper；以系统申请提示为准。
+- 使用窗口截图时还需要「屏幕录制」权限；仅使用元素树的模型无需这项权限。授权后如仍提示未授权，点击「重新启动 Navo」。
+- 首次操作每个 App 时选择「本对话允许」「仅这一次」或「拒绝」。系统设置、钥匙串、终端和 Navo 默认在禁止操作列表中。
+- 控制期间有独立置顶提示条；按 Esc、移动真实鼠标超过 20 像素或点击停止即可中止当前运行。一次只允许一个对话控制桌面。
+
+桌面工具包含应用列表、启动/切换、元素树、点击、Unicode 输入、组合键、滚动、等待与截图。截图工具仅向支持视觉的模型提供；坐标使用最近截图内的像素。每次快照刷新元素引用，旧引用失效。
+
+macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。`pnpm dev` 自动编译本机架构的 Swift helper，`pnpm build` / `pnpm dist` 编译 arm64 + x86_64；Windows/Linux 构建跳过桌面 helper。打包时 helper 随 App 签名。
+
+`pnpm test:desktop` 使用隔离配置和 helper 的 `--fake` 模式验证授权与工具链路，不操作真实桌面。`pnpm eval:desktop` 显示本机测试说明；授予系统权限后运行 `node scripts/desktop-eval.mjs --run`，在 TextEdit 新建文档并输入中文，验证元素树、截图和坐标。加 `--stop-test` 可手动验证 Esc 急停。测试文档会保留为未保存状态。
+
 开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试；推送 `v*` 标签触发三平台发布。
 
 E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。

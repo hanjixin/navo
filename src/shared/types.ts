@@ -730,9 +730,9 @@ export interface Settings {
   computerUse: ComputerUseSettings
 }
 
-/** Letting the agent work in the user's own browser (and, later, other apps). */
+/** Letting the agent work in the user's own browser and macOS apps. */
 export interface ComputerUseSettings {
-  /** desktop apps (not implemented yet) */
+  /** macOS desktop apps; requires per-app consent */
   desktop: boolean
   /** the user's own Chrome / Edge, through the Navo extension */
   myBrowser: boolean
@@ -750,9 +750,25 @@ export interface ComputerUseStatus {
     /** the folder to pick in "Load unpacked" */
     extensionDir: string
   }
-  /** desktop apps: not implemented yet */
-  desktop: null
+  desktop: DesktopStatus
 }
+
+export interface DesktopStatus {
+  supported: boolean
+  accessibility: boolean
+  screenRecording: boolean
+  helper: 'ok' | 'missing' | 'failed'
+  active: { threadId: string; bundleId: string; app: string } | null
+}
+
+export interface DesktopConsentRequest {
+  id: string
+  threadId: string
+  app: string
+  bundleId: string
+}
+
+export type DesktopConsentDecision = 'session' | 'once' | 'deny'
 
 /** A picture of the tab the agent works on in the user's browser. */
 export interface LiveFrame {

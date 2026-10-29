@@ -26,6 +26,7 @@ import { DevPage } from '@/pages/dev'
 import { SettingsPage } from '@/pages/settings'
 import { QuickPage } from '@/pages/quick'
 import { ExtensionGuideHost } from '@/components/browser/extension-guide'
+import { DesktopConsentHost } from '@/components/chat/desktop-consent'
 
 /** this renderer is the quick window (global shortcut), not the main window */
 const isQuick = window.location.hash.startsWith('#/quick')
@@ -76,6 +77,7 @@ export function App() {
           </Routes>
         )}
         {settings && !isQuick && settings.onboarded ? <ExtensionGuideHost /> : null}
+        {settings && !isQuick && settings.onboarded ? <DesktopConsentHost /> : null}
       </HashRouter>
       <Toaster />
     </TooltipProvider>

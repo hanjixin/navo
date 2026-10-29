@@ -10,6 +10,7 @@
 2. **桌面软件**：操作微信、Office、访达、Safari 等任意 App。
 
 成功标准：
+
 - 用户导入扩展后，Agent 能在用户的 Chrome 里新开标签页完成「打开网页 → 读取 → 点击 → 输入」，沿用现有 `browser_*` 工具。
 - 授权后，Agent 能在 TextEdit 中新建文档、输入一段中文并保存；非视觉模型（如 DeepSeek）仅靠元素树也能完成。
 - 用户随时可按 Esc、移动鼠标或点提示条立即停止。
@@ -17,14 +18,14 @@
 
 ## 已确定的约束
 
-| 项 | 决定 |
-| --- | --- |
-| 范围 | 浏览器与桌面一起规划，一份 spec |
-| 平台 | 一期只做 macOS 的桌面控制；外部浏览器扩展本身跨平台，但一期只在 macOS 上验证 |
-| 授权 | 按 App 授权：每个对话首次操作某 App 时询问一次；控制期间显示提示条；Esc / 鼠标移动急停 |
-| 外部浏览器接入 | Navo 浏览器扩展（MV3），使用前引导用户「加载已解压的扩展程序」导入；不上架商店 |
-| 桌面控制实现 | 随 App 打包的 Swift 命令行小程序：截屏 + 模拟输入 + 辅助功能（AX）元素树 |
-| 模型 | 与提供方无关；截图工具只在模型支持视觉时注册。Anthropic 原生 `computer_*` 工具不在本期 |
+| 项             | 决定                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------- |
+| 范围           | 浏览器与桌面一起规划，一份 spec                                                        |
+| 平台           | 一期只做 macOS 的桌面控制；外部浏览器扩展本身跨平台，但一期只在 macOS 上验证           |
+| 授权           | 按 App 授权：每个对话首次操作某 App 时询问一次；控制期间显示提示条；Esc / 鼠标移动急停 |
+| 外部浏览器接入 | Navo 浏览器扩展（MV3），使用前引导用户「加载已解压的扩展程序」导入；不上架商店         |
+| 桌面控制实现   | 随 App 打包的 Swift 命令行小程序：截屏 + 模拟输入 + 辅助功能（AX）元素树               |
+| 模型           | 与提供方无关；截图工具只在模型支持视觉时注册。Anthropic 原生 `computer_*` 工具不在本期 |
 
 ## 不做（本期）
 
@@ -55,7 +56,7 @@ Agent 进程不改：新工具与现有工具一样在主进程执行，经 RPC 
 
 ```ts
 interface PageDriver {
-  id: string                       // 'builtin:<wcId>' | 'ext:<tabId>'
+  id: string // 'builtin:<wcId>' | 'ext:<tabId>'
   kind: 'builtin' | 'external'
   url(): string
   title(): string
@@ -102,22 +103,23 @@ MV3 扩展，只做薄转发层，Agent 逻辑全部留在 Navo：
 
 - `helper/`（Swift 源码，Swift Package）编译出 `navo-desktop`（arm64 + x64 universal），放进 `extraResources`，随 App 签名、公证。协议为逐行 JSON：`{"id":1,"cmd":"click","args":{...}}` → `{"id":1,"ok":true,"result":...}`。命令：
 
-  | 命令 | 实现 |
-  | --- | --- |
-  | `permissions` | `AXIsProcessTrusted`、`CGPreflightScreenCaptureAccess` |
-  | `apps` | `NSWorkspace.runningApplications` + `CGWindowListCopyWindowInfo` |
-  | `activate` | `NSRunningApplication.activate` / `NSWorkspace.openApplication` |
-  | `ax_tree` | `AXUIElement` 遍历前台窗口，返回角色、名称、值、位置、可操作性 |
-  | `screenshot` | ScreenCaptureKit 截取窗口，JPEG，长边 ≤ 1568px，返回缩放比 |
-  | `click` / `scroll` | `CGEvent` 鼠标事件，或对 AX 元素执行 `AXPress` |
-  | `type` | `CGEventKeyboardSetUnicodeString`，不经输入法、不占用剪贴板 |
-  | `key` | `CGEvent` 键盘事件，支持组合键 |
-  | `window_at` | 屏幕坐标下的窗口所属 App（bundle ID） |
-  | `watch_user_input` | 监听真实鼠标移动和 Esc，事件流式上报 |
+  | 命令               | 实现                                                             |
+  | ------------------ | ---------------------------------------------------------------- |
+  | `permissions`      | `AXIsProcessTrusted`、`CGPreflightScreenCaptureAccess`           |
+  | `apps`             | `NSWorkspace.runningApplications` + `CGWindowListCopyWindowInfo` |
+  | `activate`         | `NSRunningApplication.activate` / `NSWorkspace.openApplication`  |
+  | `ax_tree`          | `AXUIElement` 遍历前台窗口，返回角色、名称、值、位置、可操作性   |
+  | `screenshot`       | ScreenCaptureKit 截取窗口，JPEG，长边 ≤ 1568px，返回缩放比       |
+  | `click` / `scroll` | `CGEvent` 鼠标事件，或对 AX 元素执行 `AXPress`                   |
+  | `type`             | `CGEventKeyboardSetUnicodeString`，不经输入法、不占用剪贴板      |
+  | `key`              | `CGEvent` 键盘事件，支持组合键                                   |
+  | `window_at`        | 屏幕坐标下的窗口所属 App（bundle ID）                            |
+  | `watch_user_input` | 监听真实鼠标移动和 Esc，事件流式上报                             |
 
   注入事件带自定义 `eventSourceUserData` 标记，`watch_user_input` 据此区分 Agent 注入的事件与用户的真实输入。
 
   `--fake` 模式：返回固定的元素树、截图和权限状态，供测试使用。
+
 - `desktop-service.ts`：启动和守护子进程（崩溃自动重启；单条命令 10 秒超时；连续失败 3 次后本次运行暂停桌面工具）；维护每个对话的元素引用表（`[dN]` → AX 元素路径）；把元素树转成带长度预算的文本，规则与浏览器快照一致；计算两次快照的变化。
 - `consent.ts`：按对话 + bundle ID 记录授权；黑名单检查。
 - `overlay.ts`：控制期间的提示条和急停。
@@ -187,23 +189,24 @@ MV3 扩展，只做薄转发层，Agent 逻辑全部留在 Navo：
 - `browser_switch({ target: 'builtin' | 'mine' })`：切换当前对话的浏览器目标，返回目标标签页的 URL 与标题。
 
 外部目标下：
+
 - `browser_tabs` 只列出可用标签页，新建标签页时在用户浏览器中新建。
 - `plugin_*`、`macro_*`、固定流程回放返回「请先 `browser_switch('builtin')`」。
 - `browser_eval`、`browser_upload_file` 的审批规则不变。
 
 ### 桌面
 
-| 工具 | 参数 | 说明 |
-| --- | --- | --- |
-| `desktop_apps` | — | 运行中的 App 与窗口（名称、bundle ID、窗口标题） |
-| `desktop_activate` | `app` | 启动或切换到 App；首次触发授权 |
-| `desktop_snapshot` | `app?` | 前台窗口元素树，`[dN]` 引用，有长度预算 |
-| `desktop_click` | `ref` 或 `x,y`；`button?`、`double?` | 点击元素或坐标 |
-| `desktop_type` | `text`、`ref?` | 输入文字（Unicode，支持中文） |
-| `desktop_key` | `combo` | 按键 / 组合键，如 `cmd+f`、`enter` |
-| `desktop_scroll` | `ref` 或 `x,y`；`dx`、`dy` | 滚动 |
-| `desktop_wait_for` | `text`、`timeout?` | 等待窗口中出现文字 |
-| `desktop_screenshot` | `app?` | 截取窗口；仅当前模型 `supportsVision` 时注册 |
+| 工具                 | 参数                                 | 说明                                             |
+| -------------------- | ------------------------------------ | ------------------------------------------------ |
+| `desktop_apps`       | —                                    | 运行中的 App 与窗口（名称、bundle ID、窗口标题） |
+| `desktop_activate`   | `app`                                | 启动或切换到 App；首次触发授权                   |
+| `desktop_snapshot`   | `app?`                               | 前台窗口元素树，`[dN]` 引用，有长度预算          |
+| `desktop_click`      | `ref` 或 `x,y`；`button?`、`double?` | 点击元素或坐标                                   |
+| `desktop_type`       | `text`、`ref?`                       | 输入文字（Unicode，支持中文）                    |
+| `desktop_key`        | `combo`                              | 按键 / 组合键，如 `cmd+f`、`enter`               |
+| `desktop_scroll`     | `ref` 或 `x,y`；`dx`、`dy`           | 滚动                                             |
+| `desktop_wait_for`   | `text`、`timeout?`                   | 等待窗口中出现文字                               |
+| `desktop_screenshot` | `app?`                               | 截取窗口；仅当前模型 `supportsVision` 时注册     |
 
 - 操作类工具返回元素树变化，而非整棵树。
 - 坐标以截图坐标为准，helper 按返回的缩放比换算为屏幕坐标（含 Retina）。
@@ -219,16 +222,16 @@ MV3 扩展，只做薄转发层，Agent 逻辑全部留在 Navo：
 
 ## 错误处理
 
-| 情况 | 处理 |
-| --- | --- |
-| helper 崩溃 / 无响应 | 自动重启；单条命令 10 秒超时；连续失败 3 次后本次运行暂停桌面工具并告知 Agent |
-| 缺少系统权限 | 返回明确错误，Agent 转告用户去设置页授权 |
-| 扩展未安装 / 未连接 | `browser_switch('mine')` 返回引导提示，同时界面弹出导入引导 |
-| 运行中扩展断开 | 等待 15 秒重连；超时报错。不自动退回内置浏览器 |
-| 外部标签页被用户关闭 | 下一次调用返回「标签页已被关闭」 |
-| 用户在 Chrome 提示条上取消调试 | 扩展上报 detach，视为用户收回该标签页 |
-| 目标窗口不在前台 / 最小化 / 在其他桌面空间 | 操作前自动 activate 并检查窗口；仍不可见则报错 |
-| 点击落点所在窗口不属于已授权 App | 每次坐标操作前用 `window_at` 检查归属，不匹配则拒绝并说明 |
+| 情况                                       | 处理                                                                          |
+| ------------------------------------------ | ----------------------------------------------------------------------------- |
+| helper 崩溃 / 无响应                       | 自动重启；单条命令 10 秒超时；连续失败 3 次后本次运行暂停桌面工具并告知 Agent |
+| 缺少系统权限                               | 返回明确错误，Agent 转告用户去设置页授权                                      |
+| 扩展未安装 / 未连接                        | `browser_switch('mine')` 返回引导提示，同时界面弹出导入引导                   |
+| 运行中扩展断开                             | 等待 15 秒重连；超时报错。不自动退回内置浏览器                                |
+| 外部标签页被用户关闭                       | 下一次调用返回「标签页已被关闭」                                              |
+| 用户在 Chrome 提示条上取消调试             | 扩展上报 detach，视为用户收回该标签页                                         |
+| 目标窗口不在前台 / 最小化 / 在其他桌面空间 | 操作前自动 activate 并检查窗口；仍不可见则报错                                |
+| 点击落点所在窗口不属于已授权 App           | 每次坐标操作前用 `window_at` 检查归属，不匹配则拒绝并说明                     |
 
 ## 安全
 

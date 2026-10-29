@@ -152,6 +152,7 @@ class AgentService {
   async deleteThread(id: string): Promise<void> {
     outputs.forget(id)
     this.stop(id)
+    computerUse.forget(id)
     db().prepare('DELETE FROM threads WHERE id = ?').run(id)
     kv.set(`thread.allow.${id}`, [])
     sessions.forget(id)
@@ -182,6 +183,7 @@ class AgentService {
   }
 
   stop(threadId: string): void {
+    computerUse.stopRun(threadId)
     if (this.runs.has(threadId)) void this.rpc?.call('run.abort', { threadId }).catch(() => undefined)
   }
 
@@ -259,16 +261,18 @@ class AgentService {
     trace.start(threadId)
     outputs.onRunStart(threadId)
     const ctx = { threadId, tab: () => sessions.tabFor(threadId), page: () => targets.page(threadId) }
-    const entries = collectTools(ctx)
-    const runState = { runId, tools: new Map(entries.map((e) => [e.tool.name, e])), usedMemoryTools: false }
+    computerUse.beginRun(threadId)
+    const runState = { runId, tools: new Map<string, ToolEntry>(), usedMemoryTools: false }
     this.runs.set(threadId, runState)
     this.send({ type: 'run_start', threadId, runId })
     this.touch(threadId)
 
     let result: RunResult
     try {
-      const allowed = new Set(this.allowList(threadId))
       const resolved = resolveModel(thread.modelId)
+      const entries = collectTools(ctx, resolved.supportsVision)
+      runState.tools = new Map(entries.map((e) => [e.tool.name, e]))
+      const allowed = new Set(this.allowList(threadId))
       // memory: picked from the conversation (title, the user's previous two messages and this one —
       // "那它用什么打包" alone says nothing) and the site the conversation's tab is on
       const page = this.pageInfo(threadId)
@@ -301,9 +305,9 @@ class AgentService {
       this.send({ type: 'error', threadId, error })
       result = { finalText: '', interrupted: false, error }
     } finally {
+      const cleaned = await Promise.allSettled([sessions.end(threadId), computerUse.endRun(threadId)])
+      for (const cleanup of cleaned) if (cleanup.status === 'rejected') log.warn(`[agent] cleanup failed: ${String(cleanup.reason)}`)
       this.runs.delete(threadId)
-      await sessions.end(threadId)
-      await computerUse.endRun(threadId)
       this.touch(threadId)
       emit('threads.changed')
     }
