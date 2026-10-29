@@ -200,6 +200,8 @@ export function registerHandlers(): void {
     'outputs.open': (id) => outputs.open(id),
     'computerUse.status': () => computerUse.status(),
     'computerUse.confirmPairing': (approve) => computerUse.confirmPairing(approve),
+    'computerUse.installExtension': () => ({ dir: computerUse.ensureExtension().dir }),
+    'computerUse.openExtensionsPage': (b) => computerUse.openExtensionsPage(b),
     'voice.status': () => voice.status(),
     'voice.prepare': () => voice.prepare(),
     'voice.transcribe': (wav) => voice.transcribe(wav),

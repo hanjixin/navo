@@ -230,6 +230,9 @@ export interface Api {
   'computerUse.status': () => ComputerUseStatus
   /** the user compared the pairing code the extension shows */
   'computerUse.confirmPairing': (approve: boolean) => void
+  /** copies the extension to its folder (if needed) and returns the folder to load */
+  'computerUse.installExtension': () => { dir: string }
+  'computerUse.openExtensionsPage': (browser: 'chrome' | 'edge' | 'other') => { opened: boolean; url: string }
   'voice.status': () => VoiceStatus
   /** asks the system for the microphone (macOS); false when denied */
   'voice.prepare': () => boolean

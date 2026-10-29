@@ -4,7 +4,7 @@
 import { _electron as electron, chromium } from 'playwright'
 import { mainWindow } from './helpers.mjs'
 import { createServer } from 'node:http'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -51,6 +51,11 @@ try {
 
   const before = await tool('browser_switch', { target: 'mine' })
   ok(before.includes('还没有连接 Navo 浏览器扩展'), 'without the extension the agent is told to ask the user')
+  const guide = await page.waitForSelector('[data-testid="extension-guide"]', { timeout: 10000 }).catch(() => null)
+  ok(!!guide, 'the import guide opens for the user')
+  const dir = (await api('computerUse.status')).browser.extensionDir
+  ok(existsSync(join(dir, 'manifest.json')), `the extension is copied for "Load unpacked" (${dir})`)
+  await page.keyboard.press('Escape')
 
   const ext = resolve('dist/extension')
   browser = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'ab-chrome-')), {
@@ -60,7 +65,10 @@ try {
   })
   const pairing = await waitFor(async () => (await api('computerUse.status')).browser.pairingCode)
   ok(/^\d{6}$/.test(pairing ?? ''), `the extension asks to pair (${pairing})`)
-  await api('computerUse.confirmPairing', true)
+  // the main window asks the user to compare the code
+  const shown = await page.waitForSelector('[data-testid="pairing-code"]', { timeout: 10000 }).catch(() => null)
+  ok((await shown?.textContent())?.trim() === pairing, 'the pairing code is shown for the user to confirm')
+  await page.getByRole('button', { name: '确认连接' }).click()
   const paired = await waitFor(async () => (await api('computerUse.status')).browser.paired)
   ok(paired, 'paired after the user confirms')
 
