@@ -8,13 +8,14 @@ import type { Bounds, BrowserState, BrowserTab, DownloadInfo } from '@shared/typ
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { pageRuntime } from './page-runtime'
+import type { PageDriver } from './page-driver'
 import { t } from '@shared/i18n'
 
 /** Isolated world shared by the tab preload, agent runtime, plugins and recorder. */
 export const AGENT_WORLD = 999
 const PARTITION = 'persist:agent'
 const HOME = 'https://www.bing.com'
-const RUNTIME_SRC = `(${pageRuntime.toString()})();`
+export const RUNTIME_SRC = `(${pageRuntime.toString()})();`
 
 type DomReadyHook = (wc: WebContents) => void | Promise<void>
 
@@ -503,68 +504,68 @@ class BrowserService {
    * input doesn't arrive — the tab isn't being drawn, e.g. it works in the background — the element
    * is clicked in the page instead. Navigation started by the click is not awaited here.
    */
-  async clickRef(wc: WebContents, ref: string, opts: { double?: boolean } = {}): Promise<void> {
-    await this.evalIn(wc, `__agent.armClick(${JSON.stringify(ref)})`)
-    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
-    if (await this.routed(wc, x, y)) await this.click(wc, x, y, { clickCount: opts.double ? 2 : 1 })
+  async clickRef(p: PageDriver, ref: string, opts: { double?: boolean } = {}): Promise<void> {
+    await p.evalIn(`__agent.armClick(${JSON.stringify(ref)})`)
+    const { x, y } = await p.evalIn<{ x: number; y: number }>(`__agent.center(${JSON.stringify(ref)})`)
+    if (await this.routed(p, x, y)) await this.click(p, x, y, { clickCount: opts.double ? 2 : 1 })
     // the page may already be navigating away (the click arrived): nothing left to check
-    await this.evalIn(wc, `__agent.settleClick(${opts.double ? 'true' : 'false'})`).catch(() => undefined)
+    await p.evalIn(`__agent.settleClick(${opts.double ? 'true' : 'false'})`).catch(() => undefined)
   }
 
   /**
    * Input to a tab that isn't drawn (in the background, or the window is covered) waits ~5s for an
    * acknowledgement that never comes, and is dropped. A harmless mouse move tells quickly.
    */
-  private routed(wc: WebContents, x: number, y: number): Promise<boolean> {
+  private routed(p: PageDriver, x: number, y: number): Promise<boolean> {
     return Promise.race([
-      this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).then(() => true),
+      p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }).then(() => true),
       new Promise<boolean>((r) => setTimeout(() => r(false), 400)),
     ])
   }
 
   /** Types into an element like a person would; when input can't reach the tab, sets the text in the page. */
-  async typeRef(wc: WebContents, ref: string, text: string, clear = true): Promise<void> {
-    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
-    await this.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, ${clear})`)
-    if (await this.routed(wc, x, y)) await this.insertText(wc, text)
-    else await this.evalIn(wc, `__agent.typeInto(${JSON.stringify(ref)}, ${JSON.stringify(text)}, ${clear})`)
+  async typeRef(p: PageDriver, ref: string, text: string, clear = true): Promise<void> {
+    const { x, y } = await p.evalIn<{ x: number; y: number }>(`__agent.center(${JSON.stringify(ref)})`)
+    await p.evalIn(`__agent.focus(${JSON.stringify(ref)}, ${clear})`)
+    if (await this.routed(p, x, y)) await this.insertText(p, text)
+    else await p.evalIn(`__agent.typeInto(${JSON.stringify(ref)}, ${JSON.stringify(text)}, ${clear})`)
   }
 
   /** Enter in a field (submits its form); falls back to submitting in the page when input can't reach it. */
-  async submitRef(wc: WebContents, ref: string): Promise<void> {
-    const { x, y } = await this.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(ref)})`)
-    if (await this.routed(wc, x, y)) await this.pressKey(wc, 'Enter')
-    else await this.evalIn(wc, `__agent.submit(${JSON.stringify(ref)})`)
+  async submitRef(p: PageDriver, ref: string): Promise<void> {
+    const { x, y } = await p.evalIn<{ x: number; y: number }>(`__agent.center(${JSON.stringify(ref)})`)
+    if (await this.routed(p, x, y)) await this.pressKey(p, 'Enter')
+    else await p.evalIn(`__agent.submit(${JSON.stringify(ref)})`)
   }
 
-  async click(wc: WebContents, x: number, y: number, opts: { button?: 'left' | 'right'; clickCount?: number } = {}): Promise<void> {
+  async click(p: PageDriver, x: number, y: number, opts: { button?: 'left' | 'right'; clickCount?: number } = {}): Promise<void> {
     const base = { x, y, button: opts.button ?? 'left', clickCount: opts.clickCount ?? 1 }
-    await this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
-    await this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...base })
-    await this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...base })
+    await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+    await p.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', ...base })
+    await p.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base })
   }
 
-  async hover(wc: WebContents, x: number, y: number): Promise<void> {
-    await this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
+  async hover(p: PageDriver, x: number, y: number): Promise<void> {
+    await p.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
   }
 
-  async insertText(wc: WebContents, text: string): Promise<void> {
-    await this.cdp(wc, 'Input.insertText', { text })
+  async insertText(p: PageDriver, text: string): Promise<void> {
+    await p.cdp('Input.insertText', { text })
   }
 
-  async pressKey(wc: WebContents, key: string): Promise<void> {
+  async pressKey(p: PageDriver, key: string): Promise<void> {
     const def = KEYS[key] ?? { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key, keyCode: key.toUpperCase().charCodeAt(0) }
     const common = { key: def.key, code: def.code, windowsVirtualKeyCode: def.keyCode, nativeVirtualKeyCode: def.keyCode }
-    await this.cdp(wc, 'Input.dispatchKeyEvent', { type: 'keyDown', ...common, text: def.text })
-    await this.cdp(wc, 'Input.dispatchKeyEvent', { type: 'keyUp', ...common })
+    await p.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...common, text: def.text })
+    await p.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...common })
   }
 
-  async scroll(wc: WebContents, dx: number, dy: number): Promise<void> {
-    await this.cdp(wc, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: 200, y: 200, deltaX: dx, deltaY: dy })
+  async scroll(p: PageDriver, dx: number, dy: number): Promise<void> {
+    await p.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 200, y: 200, deltaX: dx, deltaY: dy })
   }
 
-  async screenshot(wc: WebContents, fullPage = false): Promise<string> {
-    const res = await this.cdp<{ data: string }>(wc, 'Page.captureScreenshot', {
+  async screenshot(p: PageDriver, fullPage = false): Promise<string> {
+    const res = await p.cdp<{ data: string }>('Page.captureScreenshot', {
       format: 'jpeg',
       quality: 70,
       captureBeyondViewport: fullPage,

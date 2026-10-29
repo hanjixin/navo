@@ -7,6 +7,7 @@ import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
 import { browser } from '../browser/browser-service'
+import { builtinDriver } from '../browser/page-driver'
 import { skills } from '../skills/skill-service'
 import { recorderScript } from './recorder-script'
 import { appendEvent, fillTemplate, placeholders, type RawEvent } from './steps'
@@ -157,14 +158,14 @@ class RecorderService {
         return
       case 'click': {
         const ref = await this.find(wc, s.selectors ?? [], timeout)
-        await browser.clickRef(wc, ref)
+        await browser.clickRef(builtinDriver(wc), ref)
         await sleep(300)
         await browser.waitForLoad(wc)
         return
       }
       case 'type': {
         const ref = await this.find(wc, s.selectors ?? [], timeout)
-        await browser.typeRef(wc, ref, fillTemplate(s.value, values))
+        await browser.typeRef(builtinDriver(wc), ref, fillTemplate(s.value, values))
         return
       }
       case 'select': {
@@ -177,8 +178,8 @@ class RecorderService {
           const ref = s.selectors?.length ? await this.find(wc, s.selectors, timeout).catch(() => null) : null
           if (ref) await browser.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, false)`)
           // Enter in a field also works when the tab isn't drawn (replaying in the background)
-          if (ref && (s.key ?? 'Enter') === 'Enter') await browser.submitRef(wc, ref)
-          else await browser.pressKey(wc, s.key ?? 'Enter')
+          if (ref && (s.key ?? 'Enter') === 'Enter') await browser.submitRef(builtinDriver(wc), ref)
+          else await browser.pressKey(builtinDriver(wc), s.key ?? 'Enter')
         }
         await sleep(400)
         await browser.waitForLoad(wc)
@@ -188,7 +189,7 @@ class RecorderService {
         else await sleep(Number(s.value) || 1000)
         return
       case 'scroll':
-        await browser.scroll(wc, 0, Number(s.value) || 600)
+        await browser.scroll(builtinDriver(wc), 0, Number(s.value) || 600)
         return
       case 'extract': {
         const text = await browser.evalIn<string>(wc, `__agent.extract(${JSON.stringify(s.selectors?.[0] ?? null)} || undefined)`)

@@ -5,44 +5,52 @@ import { sessions } from './agent-session'
 import { trace } from '../flows/trace'
 import { memory } from '../memory/memory-service'
 import { browser } from './browser-service'
+import { builtinDriver, type PageDriver } from './page-driver'
 import { t } from '@shared/i18n'
 
 /** Which tab a set of tools drives. Agent runs get their conversation's tab; the dev sandbox uses the active one. */
 export interface ToolCtx {
   tab: () => WebContents
+  /** the page the tools drive; defaults to `tab` in the built-in browser */
+  page?: () => PageDriver
   threadId?: string
   /** Dev sandbox: behave like an agent (dialog/file-chooser takeover) for the duration of a call */
   sandbox?: boolean
 }
 
+/** The page a set of tools drives right now. */
+export function pageOf(ctx: ToolCtx): PageDriver {
+  return ctx.page ? ctx.page() : builtinDriver(ctx.tab(), { agent: !!(ctx.threadId || ctx.sandbox) })
+}
+
 export const activeTabCtx: ToolCtx = { tab: () => browser.active(), sandbox: true }
 
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms))
-const lastSnap = new Map<number, { url: string; lines: string[] }>()
+const lastSnap = new Map<string, { url: string; lines: string[] }>()
 
 /** Long URLs (tracking params, data: URLs) would eat the snapshot budget; the model rarely needs more. */
 const shortUrl = (u: string) => (u.length > 160 ? `${u.slice(0, 150)}…(${u.length} 字符)` : u)
-const header = (wc: WebContents) => `URL: ${shortUrl(wc.getURL())}\n标题: ${wc.getTitle()}`
+const header = (p: PageDriver) => `URL: ${shortUrl(p.url())}\n标题: ${p.title()}`
 
-async function snapshotBody(wc: WebContents, scope?: 'viewport' | 'all'): Promise<string> {
-  await browser.waitForLoad(wc, 8000)
-  const body = await browser.evalIn<string>(wc, `__agent.snapshot(${JSON.stringify({ scope })})`)
-  lastSnap.set(wc.id, { url: wc.getURL(), lines: body.split('\n') })
+async function snapshotBody(p: PageDriver, scope?: 'viewport' | 'all'): Promise<string> {
+  await p.waitForLoad(8000)
+  const body = await p.evalIn<string>(`__agent.snapshot(${JSON.stringify({ scope })})`)
+  lastSnap.set(p.id, { url: p.url(), lines: body.split('\n') })
   return body || '(页面没有可见内容)'
 }
 
-async function fullSnapshot(wc: WebContents, scope?: 'viewport' | 'all'): Promise<string> {
-  return `${header(wc)}\n\n${await snapshotBody(wc, scope)}`
+export async function fullSnapshot(p: PageDriver, scope?: 'viewport' | 'all'): Promise<string> {
+  return `${header(p)}\n\n${await snapshotBody(p, scope)}`
 }
 
 /**
  * What changed since the last snapshot of this tab. Element refs are stable across snapshots,
  * so returning only new/changed lines keeps the context small while staying actionable.
  */
-async function changes(wc: WebContents): Promise<string> {
-  const prev = lastSnap.get(wc.id)
-  const body = await snapshotBody(wc)
-  if (!prev || prev.url !== wc.getURL()) return `页面已变化为：\n${header(wc)}\n\n${body}`
+async function changes(p: PageDriver): Promise<string> {
+  const prev = lastSnap.get(p.id)
+  const body = await snapshotBody(p)
+  if (!prev || prev.url !== p.url()) return `页面已变化为：\n${header(p)}\n\n${body}`
   const lines = body.split('\n')
   const [pos, ...rest] = lines
   const prevSet = new Set(prev.lines.slice(1))
@@ -50,49 +58,53 @@ async function changes(wc: WebContents): Promise<string> {
   const added = rest.filter((l) => !prevSet.has(l))
   const removed = prev.lines.slice(1).filter((l) => !curSet.has(l)).length
   if (!added.length && !removed) return `页面没有可见变化 ${pos}`
-  if (added.length > rest.length * 0.6) return `页面内容大幅变化：\n${header(wc)}\n\n${body}`
+  if (added.length > rest.length * 0.6) return `页面内容大幅变化：\n${header(p)}\n\n${body}`
   const shown = added.join('\n')
   return `页面变化 ${pos}（新增/更新 ${added.length} 行，移除 ${removed} 行）：\n${shown.length > 4000 ? shown.slice(0, 4000) + '\n…' : shown}`
 }
 
 /** The element behind a ref, as a replayable target (selectors computed before acting: a click may remove it). */
-async function targetOf(wc: WebContents, ref: string): Promise<{ selectors: string[]; label: string; secret: boolean }> {
+async function targetOf(p: PageDriver, ref: string): Promise<{ selectors: string[]; label: string; secret: boolean }> {
   const r = JSON.stringify(ref)
   try {
-    return await browser.evalIn(wc, `({ selectors: __agent.selectorsOf(${r}), label: __agent.nameOf(__agent.resolve(${r})), secret: __agent.isSecret(${r}) })`)
+    return await p.evalIn(`({ selectors: __agent.selectorsOf(${r}), label: __agent.nameOf(__agent.resolve(${r})), secret: __agent.isSecret(${r}) })`)
   } catch {
     return { selectors: [], label: '', secret: false }
   }
 }
 
-function withNotices(wc: WebContents, text: string): string {
-  const notes = sessions.takeNotices(wc)
+function withNotices(p: PageDriver, text: string): string {
+  const notes = p.takeNotices()
   return notes.length ? `${text}\n\n[页面事件]\n${notes.map((n) => `- ${n}`).join('\n')}` : text
 }
 
-/** Runs an action on the conversation's tab with the agent frame + dialog handling in place. */
-async function onTab<T>(ctx: ToolCtx, fn: (wc: WebContents) => Promise<T>): Promise<T> {
-  const wc = ctx.tab()
-  if (ctx.threadId || ctx.sandbox) await sessions.prepare(wc)
-  await browser.setControlled(wc, true)
-  return fn(wc)
+/** Runs an action on the conversation's page with the agent frame + dialog handling in place. */
+async function onPage<T>(ctx: ToolCtx, fn: (p: PageDriver) => Promise<T>): Promise<T> {
+  const p = pageOf(ctx)
+  await p.prepare()
+  return fn(p)
+}
+
+/** Steps for turning a run into a fixed flow: fixed flows replay in the built-in browser only. */
+function traced(ctx: ToolCtx, p: PageDriver, step: Parameters<typeof trace.add>[1]): void {
+  if (p.kind === 'builtin') trace.add(ctx.threadId, step)
 }
 
 const ref = z.string().describe('browser_snapshot 返回的元素引用，例如 "e12"')
 
 export function createBrowserTools(ctx: ToolCtx) {
-  const center = (wc: WebContents, r: string) => browser.evalIn<{ x: number; y: number }>(wc, `__agent.center(${JSON.stringify(r)})`)
+  const center = (p: PageDriver, r: string) => p.evalIn<{ x: number; y: number }>(`__agent.center(${JSON.stringify(r)})`)
 
   return [
     tool(
       async ({ url }) =>
-        onTab(ctx, async (wc) => {
-          await browser.navigate(url, wc)
-          await browser.waitForLoad(wc)
+        onPage(ctx, async (p) => {
+          await p.navigate(url)
+          await p.waitForLoad()
           await settle(300)
-          trace.add(ctx.threadId, { type: 'navigate', url: wc.getURL() })
+          traced(ctx, p, { type: 'navigate', url: p.url() })
           // experience remembered for this site comes along the first time the agent lands on it
-          return withNotices(wc, await fullSnapshot(wc)) + memory.siteNotesOnce(ctx.threadId, wc.getURL())
+          return withNotices(p, await fullSnapshot(p)) + memory.siteNotesOnce(ctx.threadId, p.url())
         }),
       {
         name: 'browser_navigate',
@@ -100,7 +112,7 @@ export function createBrowserTools(ctx: ToolCtx) {
         schema: z.object({ url: z.string().describe('完整网址或搜索关键词') }),
       },
     ),
-    tool(async ({ scope }) => onTab(ctx, async (wc) => withNotices(wc, await fullSnapshot(wc, scope))), {
+    tool(async ({ scope }) => onPage(ctx, async (p) => withNotices(p, await fullSnapshot(p, scope))), {
       name: 'browser_snapshot',
       description:
         '获取页面结构快照：可交互元素带 [eN] 引用。默认只含正文区域的当前屏和下一屏，导航/页脚链接会折叠；需要完整页面时传 scope:"all"。操作类工具已会返回页面变化，通常无需每步都快照。',
@@ -108,14 +120,14 @@ export function createBrowserTools(ctx: ToolCtx) {
     }),
     tool(
       async ({ ref: r, double }) =>
-        onTab(ctx, async (wc) => {
-          const target = await targetOf(wc, r)
-          const at = wc.getURL()
-          await browser.clickRef(wc, r, { double })
-          trace.add(ctx.threadId, { type: 'click', selectors: target.selectors, label: target.label, url: at })
+        onPage(ctx, async (p) => {
+          const target = await targetOf(p, r)
+          const at = p.url()
+          await browser.clickRef(p, r, { double })
+          traced(ctx, p, { type: 'click', selectors: target.selectors, label: target.label, url: at })
           await settle(600)
-          await browser.waitForLoad(wc, 8000)
-          return withNotices(wc, `已点击 ${r}。\n${await changes(wc)}`) + memory.siteNotesOnce(ctx.threadId, wc.getURL())
+          await p.waitForLoad(8000)
+          return withNotices(p, `已点击 ${r}。\n${await changes(p)}`) + memory.siteNotesOnce(ctx.threadId, p.url())
         }),
       {
         name: 'browser_click',
@@ -125,18 +137,18 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ ref: r, text, clear, submit }) =>
-        onTab(ctx, async (wc) => {
-          const target = await targetOf(wc, r)
-          const at = wc.getURL()
-          await browser.typeRef(wc, r, text, clear !== false)
-          trace.add(ctx.threadId, { type: 'type', selectors: target.selectors, label: target.label, value: text, secret: target.secret, url: at })
-          if (submit) trace.add(ctx.threadId, { type: 'press', key: 'Enter', selectors: target.selectors, url: at })
+        onPage(ctx, async (p) => {
+          const target = await targetOf(p, r)
+          const at = p.url()
+          await browser.typeRef(p, r, text, clear !== false)
+          traced(ctx, p, { type: 'type', selectors: target.selectors, label: target.label, value: text, secret: target.secret, url: at })
+          if (submit) traced(ctx, p, { type: 'press', key: 'Enter', selectors: target.selectors, url: at })
           if (submit) {
-            await browser.submitRef(wc, r)
+            await browser.submitRef(p, r)
             await settle(800)
-            await browser.waitForLoad(wc)
+            await p.waitForLoad()
           }
-          return withNotices(wc, `已在 ${r} 输入内容。\n${await changes(wc)}`)
+          return withNotices(p, `已在 ${r} 输入内容。\n${await changes(p)}`)
         }),
       {
         name: 'browser_type',
@@ -151,33 +163,33 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ ref: r, value }) =>
-        onTab(ctx, async (wc) => {
-          const target = await targetOf(wc, r)
-          await browser.evalIn(wc, `__agent.setValue(${JSON.stringify(r)}, ${JSON.stringify(value)})`)
-          trace.add(ctx.threadId, { type: 'select', selectors: target.selectors, label: target.label, value, url: wc.getURL() })
+        onPage(ctx, async (p) => {
+          const target = await targetOf(p, r)
+          await p.evalIn(`__agent.setValue(${JSON.stringify(r)}, ${JSON.stringify(value)})`)
+          traced(ctx, p, { type: 'select', selectors: target.selectors, label: target.label, value, url: p.url() })
           await settle()
-          return withNotices(wc, `已选择 "${value}"。\n${await changes(wc)}`)
+          return withNotices(p, `已选择 "${value}"。\n${await changes(p)}`)
         }),
       { name: 'browser_select', description: '在下拉框 <select> 中选择选项（按 value 或显示文本）。', schema: z.object({ ref, value: z.string() }) },
     ),
     tool(
       async ({ ref: r }) =>
-        onTab(ctx, async (wc) => {
-          const { x, y } = await center(wc, r)
-          await browser.hover(wc, x, y)
+        onPage(ctx, async (p) => {
+          const { x, y } = await center(p, r)
+          await browser.hover(p, x, y)
           await settle()
-          return withNotices(wc, await changes(wc))
+          return withNotices(p, await changes(p))
         }),
       { name: 'browser_hover', description: '鼠标悬停到元素上（用于展开菜单等）。', schema: z.object({ ref }) },
     ),
     tool(
       async ({ key }) =>
-        onTab(ctx, async (wc) => {
-          trace.add(ctx.threadId, { type: 'press', key, url: wc.getURL() })
-          await browser.pressKey(wc, key)
+        onPage(ctx, async (p) => {
+          traced(ctx, p, { type: 'press', key, url: p.url() })
+          await browser.pressKey(p, key)
           await settle(500)
-          await browser.waitForLoad(wc, 8000)
-          return withNotices(wc, await changes(wc))
+          await p.waitForLoad(8000)
+          return withNotices(p, await changes(p))
         }),
       {
         name: 'browser_press_key',
@@ -187,11 +199,11 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ direction, amount }) =>
-        onTab(ctx, async (wc) => {
+        onPage(ctx, async (p) => {
           const px = amount ?? 700
-          await browser.scroll(wc, 0, direction === 'up' ? -px : px)
+          await browser.scroll(p, 0, direction === 'up' ? -px : px)
           await settle()
-          return withNotices(wc, await changes(wc))
+          return withNotices(p, await changes(p))
         }),
       {
         name: 'browser_scroll',
@@ -201,17 +213,16 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ text, selector, timeoutMs }) =>
-        onTab(ctx, async (wc) => {
+        onPage(ctx, async (p) => {
           const deadline = Date.now() + (timeoutMs ?? 10000)
           while (Date.now() < deadline) {
-            const found = await browser.evalIn<boolean>(
-              wc,
+            const found = await p.evalIn<boolean>(
               selector ? `!!__agent.query([${JSON.stringify(selector)}])` : `document.body && document.body.innerText.includes(${JSON.stringify(text ?? '')})`,
             )
-            if (found) return withNotices(wc, `已出现。\n${await changes(wc)}`)
+            if (found) return withNotices(p, `已出现。\n${await changes(p)}`)
             await settle(400)
           }
-          return withNotices(wc, '等待超时，目标未出现。')
+          return withNotices(p, '等待超时，目标未出现。')
         }),
       {
         name: 'browser_wait_for',
@@ -221,16 +232,15 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ fullPage }) =>
-        onTab(ctx, async (wc) => {
+        onPage(ctx, async (p) => {
           // hidden views don't paint: bring the conversation's tab to the front first
-          const active = browser.active()
-          if (active.id !== wc.id) browser.activate(wc.id)
+          await p.bringToFront()
           const data = await Promise.race([
-            browser.screenshot(wc, fullPage),
+            browser.screenshot(p, fullPage),
             new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('截图超时：标签页可能不可见，请先打开浏览器面板'))), 8000)),
           ])
           return [
-            { type: 'text', text: withNotices(wc, header(wc)) },
+            { type: 'text', text: withNotices(p, header(p)) },
             { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${data}` } },
           ]
         }),
@@ -238,9 +248,9 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ selector }) =>
-        onTab(ctx, async (wc) => {
-          const text = await browser.evalIn<string>(wc, `__agent.extract(${JSON.stringify(selector ?? null)} || undefined)`)
-          return withNotices(wc, `${header(wc)}\n\n${text}`)
+        onPage(ctx, async (p) => {
+          const text = await p.evalIn<string>(`__agent.extract(${JSON.stringify(selector ?? null)} || undefined)`)
+          return withNotices(p, `${header(p)}\n\n${text}`)
         }),
       {
         name: 'browser_extract',
@@ -250,9 +260,9 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ script }) =>
-        onTab(ctx, async (wc) => {
-          const result = await wc.executeJavaScript(`(async () => { ${script} })()`, true)
-          return withNotices(wc, JSON.stringify(result ?? null, null, 2).slice(0, 20000))
+        onPage(ctx, async (p) => {
+          const result = await p.evalMain(script)
+          return withNotices(p, JSON.stringify(result ?? null, null, 2).slice(0, 20000))
         }),
       {
         name: 'browser_eval',
@@ -267,13 +277,13 @@ export function createBrowserTools(ctx: ToolCtx) {
             const id = browser.newTab(url)
             if (ctx.threadId) sessions.assign(ctx.threadId, id)
             await settle(800)
-            return `已新建并切换到标签页 ${id}。\n${await fullSnapshot(browser.tab(id)!)}`
+            return `已新建并切换到标签页 ${id}。\n${await fullSnapshot(builtinDriver(browser.tab(id)!))}`
           }
           case 'switch': {
             if (tabId == null || !browser.tab(tabId)) return '需要有效的 tabId'
             if (ctx.threadId) sessions.assign(ctx.threadId, tabId)
             browser.activate(tabId)
-            return fullSnapshot(browser.tab(tabId)!)
+            return fullSnapshot(builtinDriver(browser.tab(tabId)!))
           }
           case 'close':
             if (tabId == null) return '需要 tabId'
@@ -293,33 +303,30 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ action }) =>
-        onTab(ctx, async (wc) => {
-          const h = wc.navigationHistory
-          if (action === 'back' ? !h.canGoBack() : !h.canGoForward()) return '无法' + (action === 'back' ? '后退' : '前进')
-          if (action === 'back') h.goBack()
-          else h.goForward()
+        onPage(ctx, async (p) => {
+          if (!(await p.history(action))) return '无法' + (action === 'back' ? '后退' : '前进')
           await settle(800)
-          await browser.waitForLoad(wc)
-          return withNotices(wc, await fullSnapshot(wc))
+          await p.waitForLoad()
+          return withNotices(p, await fullSnapshot(p))
         }),
       { name: 'browser_history', description: '浏览器后退或前进。', schema: z.object({ action: z.enum(['back', 'forward']) }) },
     ),
     tool(
       async ({ ref: r, files }) =>
-        onTab(ctx, async (wc) => {
-          const pending = sessions.chooser(wc)
+        onPage(ctx, async (p) => {
+          const pending = p.chooser()
           if (pending) {
-            await browser.cdp(wc, 'DOM.setFileInputFiles', { files, backendNodeId: pending.backendNodeId })
-            sessions.clearChooser(wc)
+            await p.cdp('DOM.setFileInputFiles', { files, backendNodeId: pending.backendNodeId })
+            p.clearChooser()
           } else {
             if (!r) return '当前没有打开的文件选择框，请提供文件输入框的 ref'
-            const { x, y } = await center(wc, r)
-            await browser.cdp(wc, 'DOM.getDocument')
-            const { backendNodeId } = await browser.cdp<{ backendNodeId: number }>(wc, 'DOM.getNodeForLocation', { x, y })
-            await browser.cdp(wc, 'DOM.setFileInputFiles', { backendNodeId, files })
+            const { x, y } = await center(p, r)
+            await p.cdp('DOM.getDocument')
+            const { backendNodeId } = await p.cdp<{ backendNodeId: number }>('DOM.getNodeForLocation', { x, y })
+            await p.cdp('DOM.setFileInputFiles', { backendNodeId, files })
           }
           await settle()
-          return withNotices(wc, `已选择 ${files.length} 个文件。\n${await changes(wc)}`)
+          return withNotices(p, `已选择 ${files.length} 个文件。\n${await changes(p)}`)
         }),
       {
         name: 'browser_upload_file',
@@ -329,8 +336,8 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ confirm, promptText }) =>
-        onTab(ctx, async (wc) => {
-          await sessions.setPolicy(wc, { confirm, prompt: promptText ?? null })
+        onPage(ctx, async (p) => {
+          await p.setDialogPolicy({ confirm, prompt: promptText ?? null })
           return `已设置：确认框将${confirm ? '自动点「确定」' : '自动点「取消」'}${promptText != null ? `，输入框将填写「${promptText}」` : ''}。请重试刚才的操作。`
         }),
       {
