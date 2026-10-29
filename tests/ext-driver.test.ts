@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { chooserNotice, DIALOG_SHIM } from '../src/main/browser/dialogs'
 import type { Link } from '../src/main/external-browser/bridge'
 import { ExtTabs } from '../src/main/external-browser/ext-tabs'
+import { NeedExtension, Targets } from '../src/main/external-browser/targets'
+import type { PageDriver } from '../src/main/browser/page-driver'
 import type { ExtEventName, ExtMethod } from '../src/main/external-browser/protocol'
 
 type Params = Record<string, unknown>
@@ -180,5 +182,76 @@ describe('ExtTabs', () => {
     await tabs.close(7)
     expect(link.calls.at(-1)).toEqual({ method: 'tabs.close', params: { tabId: 7 } })
     expect(() => tabs.driver(7)).toThrow()
+  })
+})
+
+describe('Targets', () => {
+  const builtin = { id: 'builtin:1', kind: 'builtin' } as PageDriver
+  function setup(opts: { handed?: number[]; linked?: boolean } = {}) {
+    const link = fakeLink()
+    const tabs = new ExtTabs(async () => link)
+    for (const tabId of opts.handed ?? []) {
+      // the tab map follows the link once something used it
+      tabs.watch(link)
+      link.emit('handover', { tabId, url: `https://t${tabId}.test/`, title: `T${tabId}` })
+    }
+    const targets = new Targets({ tabs, linked: () => opts.linked ?? true, builtin: () => builtin })
+    return { link, tabs, targets }
+  }
+
+  it('defaults to the built-in browser', () => {
+    const { targets } = setup()
+    expect(targets.get('t1')).toBe('builtin')
+    expect(targets.page('t1')).toBe(builtin)
+  })
+
+  it('uses the most recently handed tab, else opens a new one', async () => {
+    vi.useFakeTimers()
+    const { targets, link, tabs } = setup()
+    tabs.watch(link)
+    link.emit('handover', { tabId: 8, url: '', title: '' })
+    vi.advanceTimersByTime(10)
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    vi.useRealTimers()
+    expect((await targets.useMine('t1')).tabId).toBe(9)
+    expect(targets.get('t1')).toBe('mine')
+    expect(targets.page('t1').id).toBe('ext:9')
+    // 9 is t1's: the next conversation takes 8
+    expect((await targets.useMine('t2')).tabId).toBe(8)
+    expect(link.calls.some((c) => c.method === 'tabs.create')).toBe(false)
+    // nothing handed left: a new tab
+    expect((await targets.useMine('t3')).tabId).toBe(7)
+    expect(link.calls.some((c) => c.method === 'tabs.create')).toBe(true)
+  })
+
+  it('keeps the conversation on its tab when switching again', async () => {
+    const { targets } = setup()
+    const first = await targets.useMine('t1')
+    await targets.useBuiltin('t1')
+    expect(targets.get('t1')).toBe('builtin')
+    expect((await targets.useMine('t1')).tabId).toBe(first.tabId)
+  })
+
+  it('asks for the extension when it is not connected', async () => {
+    const { targets } = setup({ linked: false })
+    await expect(targets.useMine('t1')).rejects.toBeInstanceOf(NeedExtension)
+    expect(targets.get('t1')).toBe('builtin')
+  })
+
+  it('endRun detaches but keeps the choice', async () => {
+    const { targets, link } = setup()
+    const d = await targets.useMine('t1')
+    await d.evalIn('1')
+    await targets.endRun('t1')
+    expect(link.calls.at(-1)).toEqual({ method: 'debugger.detach', params: { tabId: 7 } })
+    expect(targets.get('t1')).toBe('mine')
+  })
+
+  it('a tab gone from the browser falls back to a new one on the next switch', async () => {
+    const { targets, link } = setup()
+    await targets.useMine('t1')
+    link.emit('tabRemoved', { tabId: 7 })
+    await targets.useMine('t1')
+    expect(link.calls.filter((c) => c.method === 'tabs.create')).toHaveLength(2)
   })
 })

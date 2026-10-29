@@ -13,6 +13,7 @@ import { skills } from './skills/skill-service'
 import { memory } from './memory/memory-service'
 import { flows } from './flows/flows'
 import { quick } from './quick/quick-service'
+import { computerUse } from './computer-use'
 import { skillEvolution } from './skills/evolution'
 import { skillVersions } from './skills/versions'
 import { mcp } from './mcp/mcp-service'
@@ -197,6 +198,8 @@ export function registerHandlers(): void {
     'outputs.saveAs': (id) => outputs.saveAs(id),
     'outputs.reveal': (id) => outputs.reveal(id),
     'outputs.open': (id) => outputs.open(id),
+    'computerUse.status': () => computerUse.status(),
+    'computerUse.confirmPairing': (approve) => computerUse.confirmPairing(approve),
     'voice.status': () => voice.status(),
     'voice.prepare': () => voice.prepare(),
     'voice.transcribe': (wav) => voice.transcribe(wav),
@@ -219,6 +222,7 @@ export function registerHandlers(): void {
       agent.refreshHost()
       if (patch.mcpServer) void navoMcpServer.apply()
       if (patch.quick) quick.apply()
+      if (patch.computerUse) void computerUse.apply()
       return s
     },
     'langfuse.test': () => testLangfuse(),

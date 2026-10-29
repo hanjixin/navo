@@ -26,6 +26,7 @@ import type {
   ProviderInput,
   McpServerStatus,
   Settings,
+  ComputerUseStatus,
   FlowDraft,
   FlowRunResult,
   FlowStats,
@@ -225,6 +226,10 @@ export interface Api {
   'outputs.saveAs': (id: string) => string | null
   'outputs.reveal': (id: string) => void
   'outputs.open': (id: string) => void
+  // computer use: the user's own browser
+  'computerUse.status': () => ComputerUseStatus
+  /** the user compared the pairing code the extension shows */
+  'computerUse.confirmPairing': (approve: boolean) => void
   'voice.status': () => VoiceStatus
   /** asks the system for the microphone (macOS); false when denied */
   'voice.prepare': () => boolean
@@ -315,6 +320,9 @@ export interface Events {
   'navoMcp.status': McpServerStatus
   /** settings changed from anywhere (UI, onboarding, MCP) */
   'settings.changed': Settings
+  'computerUse.changed': ComputerUseStatus
+  /** the agent wanted the user's browser but the extension isn't connected: show the import guide */
+  'computerUse.guide': void
   'files.changed': FileRecord
 }
 

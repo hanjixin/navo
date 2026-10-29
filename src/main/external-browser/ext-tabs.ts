@@ -53,6 +53,11 @@ export class ExternalPageDriver implements PageDriver {
     this.info = { ...info }
   }
 
+  /** the tab was closed, or the user took it back by cancelling the debugging session */
+  get gone(): boolean {
+    return this.closedTab || this.cancelled
+  }
+
   url(): string {
     return this.info.url
   }

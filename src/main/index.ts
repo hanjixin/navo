@@ -23,6 +23,7 @@ import { navoMcpServer } from './mcp-server/navo-mcp-server'
 import { files } from './files/file-service'
 import { agent } from './agent/agent-service'
 import { sessions } from './browser/agent-session'
+import { computerUse } from './computer-use'
 
 // isolated profile for tests / multiple instances
 if (process.env.AB_USER_DATA) app.setPath('userData', process.env.AB_USER_DATA)
@@ -134,6 +135,7 @@ app.whenReady().then(async () => {
   recorder.init()
   tasks.init()
   files.init()
+  computerUse.init()
 
   // network-bound startup work shouldn't block the window
   void mcp.connectAll()

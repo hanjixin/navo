@@ -6,6 +6,8 @@ import { trace } from '../flows/trace'
 import { memory } from '../memory/memory-service'
 import { browser } from './browser-service'
 import { builtinDriver, type PageDriver } from './page-driver'
+import { extTabs, targets } from '../external-browser/instance'
+import { SANDBOX } from '../external-browser/targets'
 import { t } from '@shared/i18n'
 
 /** Which tab a set of tools drives. Agent runs get their conversation's tab; the dev sandbox uses the active one. */
@@ -23,7 +25,10 @@ export function pageOf(ctx: ToolCtx): PageDriver {
   return ctx.page ? ctx.page() : builtinDriver(ctx.tab(), { agent: !!(ctx.threadId || ctx.sandbox) })
 }
 
-export const activeTabCtx: ToolCtx = { tab: () => browser.active(), sandbox: true }
+export const activeTabCtx: ToolCtx = { tab: () => browser.active(), page: () => targets.page(SANDBOX), sandbox: true }
+
+/** whether the tools drive a tab in the user's own browser right now */
+const inMine = (ctx: ToolCtx) => targets.get(ctx.threadId ?? SANDBOX) === 'mine'
 
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms))
 const lastSnap = new Map<string, { url: string; lines: string[] }>()
@@ -272,6 +277,7 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async ({ action, tabId, url }) => {
+        if (inMine(ctx)) return myBrowserTabs(ctx, action, tabId, url)
         switch (action) {
           case 'new': {
             const id = browser.newTab(url)
@@ -348,12 +354,47 @@ export function createBrowserTools(ctx: ToolCtx) {
     ),
     tool(
       async () =>
-        JSON.stringify(
-          browser.downloads.slice(0, 10).map(({ filename, path, state, received, total }) => ({ filename, path, state, received, total })),
-          null,
-          2,
-        ),
+        inMine(ctx)
+          ? `文件保存在你浏览器自己的下载目录。最近的下载：\n${JSON.stringify(extTabs.downloads(), null, 2)}`
+          : JSON.stringify(
+              browser.downloads.slice(0, 10).map(({ filename, path, state, received, total }) => ({ filename, path, state, received, total })),
+              null,
+              2,
+            ),
       { name: 'browser_downloads', description: '列出最近的下载（文件会自动保存到下载文件夹）。', schema: z.object({}) },
     ),
   ]
+}
+
+/** browser_tabs in the user's own browser: only the tabs the agent opened or the user handed over. */
+async function myBrowserTabs(ctx: ToolCtx, action: 'list' | 'new' | 'switch' | 'close', tabId?: number, url?: string): Promise<string> {
+  const threadId = ctx.threadId ?? SANDBOX
+  switch (action) {
+    case 'new': {
+      const d = await extTabs.create(url)
+      targets.useTab(threadId, d.tabId)
+      await d.prepare()
+      await d.waitForLoad(8000)
+      return `已在你的浏览器中新建并切换到标签页 ${d.tabId}。\n${await fullSnapshot(d)}`
+    }
+    case 'switch': {
+      if (tabId == null) return '需要有效的 tabId'
+      try {
+        const d = targets.useTab(threadId, tabId)
+        await d.prepare()
+        return fullSnapshot(d)
+      } catch (err) {
+        return (err as Error).message
+      }
+    }
+    case 'close':
+      if (tabId == null) return '需要 tabId'
+      await extTabs.close(tabId)
+      return `已关闭 ${tabId}`
+    default: {
+      const mine = targets.page(threadId).id
+      const tabs = await extTabs.list()
+      return JSON.stringify(tabs.map(({ tabId: id, url: u, title, owned }) => ({ id, url: u, title, current: `ext:${id}` === mine, openedByAgent: owned })))
+    }
+  }
 }

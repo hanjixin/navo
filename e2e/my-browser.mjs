@@ -1,0 +1,112 @@
+// The user's own browser: a Chromium with the Navo extension pairs with Navo, and browser_* tools
+// work in it after browser_switch('mine'). No LLM involved. Needs `pnpm build:extension` and
+// Playwright's Chromium (`pnpm exec playwright install chromium`).
+import { _electron as electron, chromium } from 'playwright'
+import { mainWindow } from './helpers.mjs'
+import { createServer } from 'node:http'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+const ok = (cond, msg) => {
+  console.log(`${cond ? 'PASS' : 'FAIL'} ${msg}`)
+  if (!cond) process.exitCode = 1
+}
+const waitFor = async (fn, ms = 20000) => {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    const v = await fn()
+    if (v) return v
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return null
+}
+
+const FORM = `<!doctype html><title>Form Test</title>
+<h1>Signup</h1><label for=n>Name</label><input id=n name=username>
+<button id=go onclick="document.getElementById('out').textContent='Hello '+document.getElementById('n').value">Submit</button>
+<p id=out></p>`
+const server = createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  res.end(req.url === '/other' ? '<title>User Tab</title><p>mine' : FORM)
+})
+await new Promise((r) => server.listen(0, '127.0.0.1', r))
+const site = `http://127.0.0.1:${server.address().port}`
+
+const userData = mkdtempSync(join(tmpdir(), 'ab-profile-'))
+const app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: userData } })
+const page = await mainWindow(app)
+const api = (m, ...a) => page.evaluate(([m, a]) => window.api.invoke(m, ...a), [m, a])
+const tool = (name, args) => api('dev.invokeTool', name, args).catch((e) => `ERROR ${e.message ?? e}`)
+let browser = null
+
+try {
+  const s = await api('settings.get')
+  await api('settings.set', { computerUse: { ...s.computerUse, myBrowser: true } })
+  const tools = await api('dev.tools')
+  ok(
+    tools.some((t) => t.name === 'browser_switch'),
+    'browser_switch offered when "use my browser" is on',
+  )
+
+  const before = await tool('browser_switch', { target: 'mine' })
+  ok(before.includes('还没有连接 Navo 浏览器扩展'), 'without the extension the agent is told to ask the user')
+
+  const ext = resolve('dist/extension')
+  browser = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'ab-chrome-')), {
+    channel: 'chromium',
+    headless: true,
+    args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
+  })
+  const pairing = await waitFor(async () => (await api('computerUse.status')).browser.pairingCode)
+  ok(/^\d{6}$/.test(pairing ?? ''), `the extension asks to pair (${pairing})`)
+  await api('computerUse.confirmPairing', true)
+  const paired = await waitFor(async () => (await api('computerUse.status')).browser.paired)
+  ok(paired, 'paired after the user confirms')
+
+  const switched = await tool('browser_switch', { target: 'mine' })
+  ok(switched.startsWith('已切换到你的浏览器'), `switched to the user's browser (${switched.split('\n')[0]})`)
+
+  const nav = await tool('browser_navigate', { url: site })
+  ok(/\[e\d+\] textbox "Name"/.test(nav), 'navigate + snapshot in the user browser')
+  const ref = (label) => new RegExp(`\\[(e\\d+)\\] ${label}`).exec(nav)?.[1]
+  await tool('browser_type', { ref: ref('textbox "Name"'), text: 'Ada' })
+  const after = await tool('browser_click', { ref: ref('button "Submit"') })
+  ok(after.includes('Hello Ada'), 'type + click through the extension')
+  const text = await tool('browser_extract', {})
+  ok(text.includes('Hello Ada'), 'extract text')
+  ok(
+    browser.pages().some((p) => p.url().startsWith(site)),
+    'the page opened in the real browser',
+  )
+
+  // a tab the user opened is out of reach
+  const userTab = await browser.newPage()
+  await userTab.goto(`${site}/other`)
+  const list = JSON.parse(await tool('browser_tabs', { action: 'list' }))
+  ok(list.length === 1 && list[0].current && !list.some((t) => t.title === 'User Tab'), "the user's own tabs are not listed")
+
+  const back = await tool('browser_switch', { target: 'builtin' })
+  ok(back.includes('内置浏览器'), 'switched back to the built-in browser')
+  const builtinNav = await tool('browser_navigate', { url: site })
+  ok(/textbox "Name"/.test(builtinNav), 'built-in browser still works')
+
+  await tool('browser_switch', { target: 'mine' })
+  await browser.close()
+  browser = null
+  // quitting the browser closes its tabs first: the agent hears that, then that the browser is gone
+  const gone = await tool('browser_snapshot', {})
+  ok(gone.includes('标签页已被关闭'), `a closed browser's tab is reported: ${gone.slice(0, 80)}`)
+  const started = Date.now()
+  const offline = await tool('browser_tabs', { action: 'new' })
+  ok(
+    offline.includes('与浏览器扩展的连接已断开') && Date.now() - started >= 14000,
+    `opening a tab waits for the browser, then says it is gone (${Math.round((Date.now() - started) / 1000)}s)`,
+  )
+} catch (err) {
+  ok(false, `exception ${err.stack ?? err}`)
+} finally {
+  await browser?.close().catch(() => undefined)
+  await app.close()
+  server.close()
+}

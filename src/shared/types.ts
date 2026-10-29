@@ -727,6 +727,31 @@ export interface Settings {
   quick: QuickSettings
   usage: UsageSettings
   voice: VoiceSettings
+  computerUse: ComputerUseSettings
+}
+
+/** Letting the agent work in the user's own browser (and, later, other apps). */
+export interface ComputerUseSettings {
+  /** desktop apps (not implemented yet) */
+  desktop: boolean
+  /** the user's own Chrome / Edge, through the Navo extension */
+  myBrowser: boolean
+  /** bundle IDs the agent may never operate */
+  blockedApps: string[]
+}
+
+export interface ComputerUseStatus {
+  browser: {
+    /** the extension is connected (paired, or waiting for the user to confirm its code) */
+    connected: boolean
+    paired: boolean
+    browser: string | null
+    pairingCode: string | null
+    /** the folder to pick in "Load unpacked" */
+    extensionDir: string
+  }
+  /** desktop apps: not implemented yet */
+  desktop: null
 }
 
 export interface VoiceSettings {

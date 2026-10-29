@@ -23,6 +23,9 @@ importers:
       tesseract.js:
         specifier: ^7.0.0
         version: 7.0.0
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
     devDependencies:
       '@commitlint/cli':
         specifier: ^21.2.3
@@ -291,9 +294,6 @@ importers:
       vitest:
         specifier: ^5.0.2
         version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/coverage-v8@5.0.2)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1))
-      ws:
-        specifier: ^8.22.0
-        version: 8.22.0
       xlsx:
         specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
         version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz

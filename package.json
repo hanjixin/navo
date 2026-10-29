@@ -18,7 +18,7 @@
     "postinstall": "electron-builder install-app-deps",
     "dist": "node scripts/build-extension.mjs && electron-vite build && electron-builder --publish never",
     "postdist": "electron-builder install-app-deps",
-    "test:e2e": "electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/connectors-cn.mjs && node e2e/voice.mjs && node e2e/i18n.mjs",
+    "test:e2e": "node scripts/build-extension.mjs && electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/connectors-cn.mjs && node e2e/voice.mjs && node e2e/i18n.mjs && node e2e/my-browser.mjs",
     "test:agent": "electron-vite build && node e2e/agent.mjs",
     "screenshots": "electron-vite build && node e2e/smoke.mjs",
     "icon": "node e2e/render-icon.mjs",
@@ -52,7 +52,8 @@
     "@mixmark-io/domino": "^2.2.0",
     "@napi-rs/canvas": "^1.0.9",
     "better-sqlite3": "^12.11.1",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
@@ -144,7 +145,6 @@
     "typescript-eslint": "^8.70.1",
     "vite": "^7.3.6",
     "vitest": "^5.0.2",
-    "ws": "^8.22.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
