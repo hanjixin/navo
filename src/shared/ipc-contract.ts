@@ -27,6 +27,7 @@ import type {
   McpServerStatus,
   Settings,
   ComputerUseStatus,
+  LiveFrame,
   FlowDraft,
   FlowRunResult,
   FlowStats,
@@ -233,6 +234,10 @@ export interface Api {
   /** copies the extension to its folder (if needed) and returns the folder to load */
   'computerUse.installExtension': () => { dir: string }
   'computerUse.openExtensionsPage': (browser: 'chrome' | 'edge' | 'other') => { opened: boolean; url: string }
+  /** asks where to put a copy of the extension; null when the user cancelled */
+  'computerUse.exportExtension': () => { dir: string } | null
+  /** the browser panel / mini window shows (or stops showing) the agent's tab in the user's browser */
+  'computerUse.watch': (on: boolean) => void
   'voice.status': () => VoiceStatus
   /** asks the system for the microphone (macOS); false when denied */
   'voice.prepare': () => boolean
@@ -326,6 +331,8 @@ export interface Events {
   'computerUse.changed': ComputerUseStatus
   /** the agent wanted the user's browser but the extension isn't connected: show the import guide */
   'computerUse.guide': void
+  /** the agent's tab in the user's browser; null when it stopped working there */
+  'computerUse.frame': LiveFrame | null
   'files.changed': FileRecord
 }
 

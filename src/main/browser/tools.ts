@@ -6,7 +6,9 @@ import { trace } from '../flows/trace'
 import { memory } from '../memory/memory-service'
 import { browser } from './browser-service'
 import { builtinDriver, type PageDriver } from './page-driver'
-import { extTabs, targets } from '../external-browser/instance'
+import { extTabs, liveView, targets } from '../external-browser/instance'
+import { ExternalPageDriver } from '../external-browser/ext-tabs'
+import { emit } from '../core/ipc'
 import { SANDBOX } from '../external-browser/targets'
 import { t } from '@shared/i18n'
 
@@ -87,6 +89,11 @@ function withNotices(p: PageDriver, text: string): string {
 async function onPage<T>(ctx: ToolCtx, fn: (p: PageDriver) => Promise<T>): Promise<T> {
   const p = pageOf(ctx)
   await p.prepare()
+  if (p instanceof ExternalPageDriver && !liveView.shows(p)) {
+    // the user's browser is somewhere else on screen: show the agent's work in Navo too
+    emit('browser.reveal', { open: false })
+    void liveView.use(p)
+  }
   return fn(p)
 }
 

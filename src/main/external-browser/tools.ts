@@ -2,7 +2,8 @@ import { tool } from '@langchain/core/tools'
 import { z } from 'zod'
 import { emit } from '../core/ipc'
 import { fullSnapshot, type ToolCtx } from '../browser/tools'
-import { bridge, targets } from './instance'
+import { bridge, liveView, targets } from './instance'
+import { ExternalPageDriver } from './ext-tabs'
 import { NeedExtension, SANDBOX } from './targets'
 
 /** browser_switch: which browser the conversation's browser_* tools drive. */
@@ -11,6 +12,8 @@ export function createSwitchTool(ctx: ToolCtx) {
     async ({ target }) => {
       const threadId = ctx.threadId ?? SANDBOX
       if (target === 'builtin') {
+        const was = targets.page(threadId)
+        if (was instanceof ExternalPageDriver) await liveView.release(was)
         await targets.useBuiltin(threadId)
         return '已切换回内置浏览器。'
       }

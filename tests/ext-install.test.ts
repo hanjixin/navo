@@ -61,3 +61,17 @@ describe('installExtension', () => {
     expect(() => installExtension(join(root, 'nope'), dest)).toThrow('找不到 Navo 浏览器扩展')
   })
 })
+
+describe('installExtension into a folder the user chose', () => {
+  it('will not wipe a folder that holds something else', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ext-install-'))
+    const src = join(root, 'src')
+    const dest = join(root, 'Navo 扩展')
+    mkdirSync(src)
+    writeFileSync(join(src, 'manifest.json'), JSON.stringify({ name: 'Navo', version: '0.1.0' }))
+    mkdirSync(dest)
+    writeFileSync(join(dest, 'notes.txt'), 'mine')
+    expect(() => installExtension(src, dest)).toThrow('不是 Navo 扩展')
+    expect(readFileSync(join(dest, 'notes.txt'), 'utf8')).toBe('mine')
+  })
+})

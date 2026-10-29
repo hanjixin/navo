@@ -18,6 +18,7 @@ export interface ExtTabInfo {
 /** how long a call waits for the extension to come back after it disconnected */
 const RECONNECT_MS = 15_000
 const WORLD = 'navo-agent'
+const SCREENCAST = { format: 'jpeg', quality: 70, maxWidth: 1120, maxHeight: 1400, everyNthFrame: 2 }
 const OFFLINE = '与浏览器扩展的连接已断开，请确认浏览器已打开、Navo 扩展已启用'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -43,6 +44,8 @@ export class ExternalPageDriver implements PageDriver {
   private notices: string[] = []
   private pendingChooser: { backendNodeId: number } | null = null
   private policy: DialogPolicy = { confirm: false, prompt: null }
+  /** where screencast frames go while the live view shows this tab */
+  private onFrame: ((image: string) => void) | null = null
 
   constructor(
     private tabs: ExtTabs,
@@ -75,6 +78,8 @@ export class ExternalPageDriver implements PageDriver {
       this.preparedOn = null
       await link.request('debugger.attach', { tabId: this.tabId })
       this.attachedOn = link
+      // a new debugging session doesn't carry the stream over
+      if (this.onFrame) await link.request('cdp.send', { tabId: this.tabId, method: 'Page.startScreencast', params: SCREENCAST }).catch(() => undefined)
     }
     return link
   }
@@ -190,6 +195,20 @@ export class ExternalPageDriver implements PageDriver {
     if (this.preparedOn) await this.applyPolicy()
   }
 
+  /** Streams the tab's picture (for Navo's browser panel) until stopScreencast. */
+  async startScreencast(onFrame: (image: string) => void): Promise<void> {
+    const first = !this.onFrame
+    this.onFrame = onFrame
+    if (first && this.attachedOn) await this.cdp('Page.startScreencast', SCREENCAST)
+    else if (first) await this.ensure() // attaching starts the stream
+  }
+
+  async stopScreencast(): Promise<void> {
+    if (!this.onFrame) return
+    this.onFrame = null
+    if (this.attachedOn && !this.attachedOn.closed) await this.cdp('Page.stopScreencast').catch(() => undefined)
+  }
+
   /** Lets the user's browser have the tab back (the agent can attach again later). */
   async detach(): Promise<void> {
     const link = this.attachedOn
@@ -236,6 +255,12 @@ export class ExternalPageDriver implements PageDriver {
         const filename = String(params.suggestedFilename ?? params.url ?? '')
         this.tabs.addDownload({ filename, url: String(params.url ?? '') })
         this.notices.push(`开始下载：${filename}（保存在你浏览器自己的下载目录）`)
+        return
+      }
+      case 'Page.screencastFrame': {
+        const { data, sessionId } = raw as { data?: string; sessionId?: number }
+        if (sessionId != null) void this.cdp('Page.screencastFrameAck', { sessionId }).catch(() => undefined)
+        if (data && this.onFrame) this.onFrame(`data:image/jpeg;base64,${data}`)
         return
       }
       case 'Page.javascriptDialogOpening':

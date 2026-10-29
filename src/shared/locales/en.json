@@ -1388,5 +1388,13 @@
   "让 Agent 在你自己的 Chrome / Edge 里操作，用上已登录的账号和插件。需要先导入 Navo 浏览器扩展": "Let the agent work in your own Chrome / Edge, with the accounts you are signed in to and your extensions. Requires the Navo browser extension",
   "浏览器扩展": "Browser extension",
   "重新导入": "Import again",
-  "导入扩展": "Import extension"
+  "导入扩展": "Import extension",
+  "导出 Navo 浏览器扩展": "Export the Navo browser extension",
+  "导出到这里": "Export here",
+  "你的浏览器 · {{v0}}": "Your browser · {{v0}}",
+  "在你的浏览器中": "In your browser",
+  "已导出到 {{v0}}": "Exported to {{v0}}",
+  "复制路径": "Copy path",
+  "导出到其他文件夹…": "Export to another folder…",
+  "选择框里找不到这个文件夹时，按 ⌘⇧G 粘贴上面的路径；也可以先导出到桌面等容易找到的地方。": "If you can't find the folder in the picker, press ⌘⇧G and paste the path above, or export it somewhere easy to find, like the Desktop first."
 }

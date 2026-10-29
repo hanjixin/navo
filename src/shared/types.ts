@@ -754,6 +754,14 @@ export interface ComputerUseStatus {
   desktop: null
 }
 
+/** A picture of the tab the agent works on in the user's browser. */
+export interface LiveFrame {
+  tabId: number
+  url: string
+  title: string
+  image: string
+}
+
 export interface VoiceSettings {
   /** provider: an OpenAI-compatible /audio/transcriptions endpoint · local: faster-whisper on this Mac (via uvx) */
   engine: 'provider' | 'local'

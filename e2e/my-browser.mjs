@@ -4,7 +4,7 @@
 import { _electron as electron, chromium } from 'playwright'
 import { mainWindow } from './helpers.mjs'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -34,7 +34,14 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const site = `http://127.0.0.1:${server.address().port}`
 
 const userData = mkdtempSync(join(tmpdir(), 'ab-profile-'))
-const app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: userData } })
+// a copy of the extension on its own port: a Navo extension in the developer's real browser (which
+// probes 38810–38819) must never pair with this test app
+const TEST_PORT = 38870
+const ext = mkdtempSync(join(tmpdir(), 'ab-ext-'))
+cpSync(resolve('dist/extension'), ext, { recursive: true })
+const bg = join(ext, 'background.js')
+writeFileSync(bg, readFileSync(bg, 'utf8').replace(/const PORTS = .*\n/, `const PORTS = [${TEST_PORT}]\n`))
+const app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: userData, NAVO_BRIDGE_PORT: String(TEST_PORT) } })
 const page = await mainWindow(app)
 const api = (m, ...a) => page.evaluate(([m, a]) => window.api.invoke(m, ...a), [m, a])
 const tool = (name, args) => api('dev.invokeTool', name, args).catch((e) => `ERROR ${e.message ?? e}`)
@@ -55,9 +62,22 @@ try {
   ok(!!guide, 'the import guide opens for the user')
   const dir = (await api('computerUse.status')).browser.extensionDir
   ok(existsSync(join(dir, 'manifest.json')), `the extension is copied for "Load unpacked" (${dir})`)
+  // a copy where Chrome's folder picker can reach it (the system dialog is answered in the main process)
+  const exportTo = mkdtempSync(join(tmpdir(), 'ab-export-'))
+  await app.evaluate(({ dialog }, d) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [d] })
+  }, exportTo)
+  await page.getByRole('button', { name: '导出到其他文件夹…' }).click()
+  const exported = join(exportTo, 'Navo 扩展')
+  await waitFor(async () => (await api('computerUse.status')).browser.extensionDir === exported, 5000)
+  ok(existsSync(join(exported, 'manifest.json')), 'the extension can be exported to a folder the user picks')
+  const shownDir = await waitFor(async () => {
+    const text = (await page.textContent('[data-testid="extension-dir"]'))?.trim()
+    return text === exported ? text : null
+  }, 5000)
+  ok(shownDir === exported, 'the guide then points at the exported folder')
   await page.keyboard.press('Escape')
 
-  const ext = resolve('dist/extension')
   browser = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'ab-chrome-')), {
     channel: 'chromium',
     headless: true,
@@ -71,6 +91,7 @@ try {
   await page.getByRole('button', { name: '确认连接' }).click()
   const paired = await waitFor(async () => (await api('computerUse.status')).browser.paired)
   ok(paired, 'paired after the user confirms')
+  ok((await api('computerUse.status')).browser.browser === 'Chromium', 'paired with the test browser')
 
   const switched = await tool('browser_switch', { target: 'mine' })
   ok(switched.startsWith('已切换到你的浏览器'), `switched to the user's browser (${switched.split('\n')[0]})`)
@@ -87,6 +108,10 @@ try {
     browser.pages().some((p) => p.url().startsWith(site)),
     'the page opened in the real browser',
   )
+  // the browser panel shows the agent's tab live
+  const live = await page.waitForSelector('[data-testid="external-view"] img', { timeout: 10000 }).catch(() => null)
+  ok(((await live?.getAttribute('src')) ?? '').startsWith('data:image/jpeg'), "Navo's browser panel shows the user's tab live")
+  ok((await page.textContent('[data-testid="external-view"]'))?.includes('Form Test'), 'with the title of that tab')
 
   // a tab the user opened is out of reach
   const userTab = await browser.newPage()
@@ -96,6 +121,13 @@ try {
 
   const back = await tool('browser_switch', { target: 'builtin' })
   ok(back.includes('内置浏览器'), 'switched back to the built-in browser')
+  ok(
+    await page
+      .waitForSelector('[data-testid="external-view"]', { state: 'detached', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false),
+    'the live picture goes away when the agent is back in the built-in browser',
+  )
   const builtinNav = await tool('browser_navigate', { url: site })
   ok(/textbox "Name"/.test(builtinNav), 'built-in browser still works')
 

@@ -1,4 +1,4 @@
-import { Check, Copy, FolderOpen } from 'lucide-react'
+import { Check, Copy, FolderInput, FolderOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { ComputerUseStatus } from '@shared/types'
@@ -46,6 +46,14 @@ export function ExtensionGuide({ status, onClose }: { status: ComputerUseStatus;
     await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 1200)
+  }
+  const exportTo = async () => {
+    try {
+      const r = await call('computerUse.exportExtension')
+      if (r) toast.success(t('已导出到 {{v0}}', { v0: r.dir }))
+    } catch (err) {
+      toast.error(errorMessage(err))
+    }
   }
   const pair = (approve: boolean) => void call('computerUse.confirmPairing', approve)
 
@@ -109,12 +117,24 @@ export function ExtensionGuide({ status, onClose }: { status: ComputerUseStatus;
           <Step n={2} title={t('打开右上角的「开发者模式」')} />
           <Step n={3} title={t('点「加载已解压的扩展程序」，选择这个文件夹')}>
             <div className="flex items-center gap-2">
-              <code className="selectable min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs">{b.extensionDir}</code>
-              <Button size="sm" onClick={() => void call('app.showItemInFolder', b.extensionDir)}>
+              <code className="selectable min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs" data-testid="extension-dir">
+                {b.extensionDir}
+              </code>
+              <Button size="icon-sm" variant="ghost" aria-label={t('复制路径')} onClick={() => void copy(b.extensionDir)}>
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => void exportTo()}>
+                <FolderInput />
+                {t('导出到其他文件夹…')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void call('app.showItemInFolder', b.extensionDir)}>
                 <FolderOpen />
                 {t('在访达中显示')}
               </Button>
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">{t('选择框里找不到这个文件夹时，按 ⌘⇧G 粘贴上面的路径；也可以先导出到桌面等容易找到的地方。')}</p>
           </Step>
         </ol>
         <p className="mt-5 text-xs text-muted-foreground">

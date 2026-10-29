@@ -6,10 +6,15 @@ import { builtinDriver } from '../browser/page-driver'
 import { Bridge } from './bridge'
 import { ExtTabs } from './ext-tabs'
 import { SANDBOX, Targets } from './targets'
+import { LiveView } from './live-view'
+import { emit } from '../core/ipc'
 
 /** Navo's bridge to its browser extension; the pairing token is kept in the system keychain. */
+/** NAVO_BRIDGE_PORT: tests use their own range, so an extension in the developer's real browser can't join */
+const testPort = Number(process.env.NAVO_BRIDGE_PORT) || 0
+
 export const bridge = new Bridge({
-  ports: BRIDGE_PORTS,
+  ports: testPort ? [testPort] : BRIDGE_PORTS,
   extensionId: EXTENSION_ID,
   tokens: { get: () => secrets.get('extension.token'), set: (t) => secrets.set('extension.token', t) },
 })
@@ -23,3 +28,6 @@ export const targets = new Targets({
   linked: () => !!bridge.link(),
   builtin: (threadId) => builtinDriver(threadId === SANDBOX ? browser.active() : sessions.tabFor(threadId), { agent: true }),
 })
+
+/** The picture of the agent's tab in the user's browser, for Navo's browser panel. */
+export const liveView = new LiveView((f) => emit('computerUse.frame', f))

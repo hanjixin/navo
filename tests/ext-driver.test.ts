@@ -255,3 +255,80 @@ describe('Targets', () => {
     expect(link.calls.filter((c) => c.method === 'tabs.create')).toHaveLength(2)
   })
 })
+
+import { LiveView, type LiveFrame } from '../src/main/external-browser/live-view'
+
+describe('screencast', () => {
+  it('streams frames as JPEG data URLs and acknowledges each one', async () => {
+    const link = fakeLink()
+    const p = await new ExtTabs(async () => link).create('https://a.test')
+    const frames: string[] = []
+    await p.startScreencast((img) => frames.push(img))
+    expect(link.cdpCalls('Page.startScreencast')[0]).toEqual({ format: 'jpeg', quality: 70, maxWidth: 1120, maxHeight: 1400, everyNthFrame: 2 })
+    link.emit('cdp', { tabId: 7, method: 'Page.screencastFrame', params: { data: 'AAA', sessionId: 3 } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(frames).toEqual(['data:image/jpeg;base64,AAA'])
+    expect(link.cdpCalls('Page.screencastFrameAck')).toEqual([{ sessionId: 3 }])
+    await p.stopScreencast()
+    expect(link.cdpCalls('Page.stopScreencast')).toHaveLength(1)
+    link.emit('cdp', { tabId: 7, method: 'Page.screencastFrame', params: { data: 'BBB', sessionId: 4 } })
+    expect(frames).toHaveLength(1)
+  })
+
+  it('starts again after the extension reconnects', async () => {
+    const link1 = fakeLink()
+    const link2 = fakeLink()
+    let current = link1
+    const p = await new ExtTabs(async () => current).create()
+    await p.startScreencast(() => undefined)
+    link1.close()
+    current = link2
+    await p.evalIn('1')
+    expect(link2.cdpCalls('Page.startScreencast')).toHaveLength(1)
+  })
+})
+
+describe('LiveView', () => {
+  async function setup() {
+    const link = fakeLink()
+    const tabs = new ExtTabs(async () => link)
+    const sent: (LiveFrame | null)[] = []
+    const view = new LiveView((f) => sent.push(f))
+    return { link, tabs, sent, view }
+  }
+
+  it('casts only while someone is watching and the agent uses a tab', async () => {
+    const { link, tabs, view } = await setup()
+    const p = await tabs.create('https://a.test')
+    await view.use(p)
+    expect(link.cdpCalls('Page.startScreencast')).toHaveLength(0)
+    await view.setWatching(true)
+    expect(link.cdpCalls('Page.startScreencast')).toHaveLength(1)
+    await view.setWatching(false)
+    expect(link.cdpCalls('Page.stopScreencast')).toHaveLength(1)
+  })
+
+  it('sends frames with the tab they belong to', async () => {
+    const { link, tabs, sent, view } = await setup()
+    const p = await tabs.create('https://a.test')
+    await view.setWatching(true)
+    await view.use(p)
+    link.emit('cdp', { tabId: 7, method: 'Page.screencastFrame', params: { data: 'AAA', sessionId: 1 } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sent.at(-1)).toEqual({ tabId: 7, url: 'https://a.test', title: '', image: 'data:image/jpeg;base64,AAA' })
+  })
+
+  it('release stops casting and clears the picture', async () => {
+    const { link, tabs, sent, view } = await setup()
+    const p = await tabs.create()
+    await view.setWatching(true)
+    await view.use(p)
+    await view.release(p)
+    expect(link.cdpCalls('Page.stopScreencast')).toHaveLength(1)
+    expect(sent.at(-1)).toBeNull()
+    // releasing a tab that isn't shown changes nothing
+    const before = sent.length
+    await view.release(p)
+    expect(sent).toHaveLength(before)
+  })
+})
