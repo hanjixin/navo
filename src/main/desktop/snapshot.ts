@@ -1,6 +1,17 @@
 export type Rect = { x: number; y: number; width: number; height: number }
 export type DesktopApp = { bundleId: string; name: string; pid: number; windows?: string[] }
-export type AXNode = { id: string; role: string; title?: string; value?: string; enabled: boolean; frame?: Rect; depth: number }
+export type AXNode = {
+  id: string
+  role: string
+  title?: string
+  value?: string
+  placeholder?: string
+  identifier?: string
+  focused?: boolean
+  enabled: boolean
+  frame?: Rect
+  depth: number
+}
 export type AXTree = { app: DesktopApp; nodes: AXNode[] }
 export type Screenshot = { data: string; width: number; height: number; bounds: Rect }
 type Target = { id: string; bundleId: string; frame?: Rect }
@@ -26,15 +37,36 @@ export class DesktopSnapshot {
       return true
     }
     append(`${JSON.stringify(tree.app.name)} (${tree.app.bundleId})`)
-    let omitted = 0
-    for (const node of tree.nodes) {
+    const candidates = tree.nodes.map((node, index) => {
       const ref = `d${this.nextRef++}`
       const depth = Number.isFinite(node.depth) ? Math.min(30, Math.max(0, Math.floor(node.depth))) : 0
-      const line = `${'  '.repeat(depth)}[${ref}] ${node.role}${node.title ? ` ${JSON.stringify(node.title)}` : ''}${node.value ? ` value=${JSON.stringify(node.value)}` : ''}${node.enabled ? '' : ' (disabled)'}`
-      if (append(line)) {
-        this.refs.set(ref, { id: node.id, bundleId: tree.app.bundleId, ...(node.frame ? { frame: { ...node.frame } } : {}) })
-      } else omitted++
+      const line = `${'  '.repeat(depth)}[${ref}] ${node.role}${node.title ? ` ${JSON.stringify(node.title)}` : ''}${node.value !== undefined ? ` value=${JSON.stringify(node.value)}` : ''}${node.placeholder ? ` placeholder=${JSON.stringify(node.placeholder)}` : ''}${node.identifier ? ` identifier=${JSON.stringify(node.identifier)}` : ''}${node.focused ? ' (focused)' : ''}${node.enabled ? '' : ' (disabled)'}`
+      const priority = node.focused
+        ? 0
+        : ['AXApplication', 'AXWindow', 'AXSheet', 'AXDialog'].includes(node.role)
+          ? 1
+          : ['AXTextArea', 'AXTextField', 'AXSearchField', 'AXComboBox'].includes(node.role)
+            ? 2
+            : /^(AXButton|AXCheckBox|AXRadioButton|AXPopUpButton|AXMenuButton|AXLink|AXSlider|AXTab)$/.test(node.role)
+              ? 3
+              : 4
+      return { node, ref, line, priority, index }
+    })
+    // Long chat histories must not use the entire budget before their composer is reached.
+    // Select controls first, then print the retained nodes in their original tree order.
+    const selected = new Set<number>()
+    let remaining = budget - used
+    for (const candidate of [...candidates].sort((a, b) => a.priority - b.priority || a.index - b.index)) {
+      const size = candidate.line.length + (lines.length || selected.size ? 1 : 0)
+      if (size > remaining) continue
+      selected.add(candidate.index)
+      remaining -= size
     }
+    for (const { node, ref, line, index } of candidates) {
+      if (!selected.has(index) || !append(line)) continue
+      this.refs.set(ref, { id: node.id, bundleId: tree.app.bundleId, ...(node.frame ? { frame: { ...node.frame } } : {}) })
+    }
+    const omitted = tree.nodes.length - this.refs.size
     if (omitted) append(`… ${omitted} 个元素因预算省略`)
     return lines.join('\n')
   }

@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { appFile } from '../core/app-dir'
 import { emit } from '../core/ipc'
 import { getSettings } from '../core/settings'
+import { log } from '../core/logger'
 import type { DesktopStatus } from '@shared/types'
 import { DesktopClient } from './client'
 import { DesktopConsent } from './consent'
@@ -28,7 +29,12 @@ export const desktopConsent = new DesktopConsent({
 const client = new DesktopClient({
   executable: executable(),
   args: fake ? ['--fake'] : [],
-  onInput: () => desktop.stop(),
+  onInput: (reason) => {
+    // Keep diagnostics free of app contents and input text.
+    const known = ['mouse', 'escape', 'monitor_unavailable', 'monitor_timeout', 'monitor_disabled'].includes(reason) ? reason : 'unknown'
+    log.info(`[desktop] control stopped: ${known}`)
+    desktop.stop()
+  },
   onFailure: () => desktop.failed(),
 })
 export const desktop = new DesktopController({

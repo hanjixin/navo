@@ -52,6 +52,28 @@ describe('desktop snapshots', () => {
       expect(() => screenshotPoint(image, x, y)).toThrow()
     expect(() => screenshotPoint({ ...image, width: 0 }, 0, 0)).toThrow()
   })
+
+  it('retains the focused composer after a long chat history and labels an empty draft', () => {
+    const snapshot = new DesktopSnapshot()
+    const history = Array.from({ length: 200 }, (_, i) => ({
+      id: `message-${i}`,
+      role: 'AXStaticText',
+      value: 'Message content '.repeat(20),
+      enabled: true,
+      depth: 3,
+    }))
+    const result = snapshot.update({
+      app,
+      nodes: [
+        ...history,
+        { id: 'composer', role: 'AXTextArea', value: '', placeholder: 'Message', identifier: 'prompt-textarea', focused: true, enabled: true, depth: 3 },
+      ],
+    })
+    expect(result.length).toBeLessThanOrEqual(12_000)
+    expect(result).toContain('AXTextArea value="" placeholder="Message" identifier="prompt-textarea" (focused)')
+    const composer = result.split('\n').find((line) => line.includes('AXTextArea'))!
+    expect(snapshot.get(reference(composer)).id).toBe('composer')
+  })
 })
 
 function approvals() {

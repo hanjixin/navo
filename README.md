@@ -140,6 +140,12 @@ Agent 靠模型摸索着在某个系统（常见是老旧的内部系统）上�
 
 macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。`pnpm dev` 自动编译本机架构的 Swift helper，`pnpm build` / `pnpm dist` 编译 arm64 + x86_64；Windows/Linux 构建跳过桌面 helper。打包时 helper 随 App 签名。
 
+本机测试系统权限请运行 `pnpm dist:local:mac`，生成完整 ad-hoc 签名的 App，并检查 App 与 helper 的签名和标识。每次输出到独立的 `release/local-mac/build-*/mac*/Navo.app`，不覆盖正在运行的本地包或正式发布目录；正式 `pnpm dist` 的签名、公证策略不变。此命令只构建，不启动或申请权限。
+
+从 Finder 双击新包，或使用脚本打印的 `open "…/Navo.app"` 命令经 LaunchServices 启动，再在 Navo 设置中申请辅助功能和屏幕录制权限。不要通过 Playwright、直接执行 `Contents/MacOS/Navo` 或终端运行 helper 来验证打包 App 的权限，以免系统将权限归属到测试器或终端。先退出旧 Navo，确认打开的是刚构建的路径。
+
+ad-hoc 签名不能在代码变化后保证旧授权继续有效。重建后若权限开关已开但仍无法操作，请退出 Navo，在系统设置的辅助功能和屏幕录制列表中移除旧 Navo 条目，再添加新包并重新授权，最后通过 Finder 或 `open` 重启。helper 使用固定签名标识 `com.navo.desktop`，App 使用 `com.navo.app`；固定标识不代表代码变化后免于重新授权。本地 ad-hoc 包仅用于本机测试，分发仍使用正式证书与公证流程。
+
 `pnpm test:desktop` 使用隔离配置和 helper 的 `--fake` 模式验证授权与工具链路，不操作真实桌面。`pnpm eval:desktop` 显示本机测试说明；授予系统权限后运行 `node scripts/desktop-eval.mjs --run`，在 TextEdit 新建文档并输入中文，验证元素树、截图和坐标。加 `--stop-test` 可手动验证 Esc 急停。测试文档会保留为未保存状态。
 
 开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试；推送 `v*` 标签触发三平台发布。

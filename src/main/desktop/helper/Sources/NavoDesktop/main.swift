@@ -38,6 +38,17 @@ func unicodeChunks(_ text: String) -> [[UInt16]] {
   return chunks
 }
 
+// Match only the selected AX window; z-order alone may select an auxiliary preview.
+func selectedScreenshotIndex(_ candidates: [(CGRect, String?)], bounds: CGRect?, title: String?) -> Int? {
+  guard let bounds else { return candidates.count == 1 ? 0 : nil }
+  let matches = candidates.indices.filter { i in
+    let r = candidates[i].0
+    return abs(r.minX - bounds.minX) <= 2 && abs(r.minY - bounds.minY) <= 2 && abs(r.width - bounds.width) <= 2 && abs(r.height - bounds.height) <= 2
+  }
+  let titled = matches.filter { !(title ?? "").isEmpty && candidates[$0].1 == title }
+  return titled.count == 1 ? titled[0] : matches.count == 1 ? matches[0] : nil
+}
+
 final class Helper {
   let fake = CommandLine.arguments.contains("--fake")
   var refs: [String: (AXUIElement, String, CGRect?)] = [:]
@@ -87,6 +98,18 @@ final class Helper {
     if AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(p.x), Float(p.y), &hit) == .success, let hit, secureContext(hit) { throw fail("不能操作密码输入框") }
     return p
   }
+  func selectedWindow(_ app: NSRunningApplication) -> AXUIElement? {
+    let root = AXUIElementCreateApplication(app.processIdentifier)
+    for key in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
+      if let value = attr(root, key), CFGetTypeID(value) == AXUIElementGetTypeID() { return (value as! AXUIElement) }
+    }
+    return nil
+  }
+  func verifyFocus(_ target: AXUIElement, _ id: String) throws {
+    let root = AXUIElementCreateApplication(try find(id).processIdentifier)
+    guard let focused = attr(root, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
+          CFEqual(focused, target) else { throw fail("输入焦点与目标元素不一致，请重新获取快照") }
+  }
   func focusedSafe(_ id: String, requireFocus: Bool = false) throws {
     let root = AXUIElementCreateApplication(try find(id).processIdentifier)
     guard let focused = attr(root, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() else {
@@ -127,7 +150,7 @@ final class Helper {
       let helper = Unmanaged<Helper>.fromOpaque(context).takeUnretainedValue()
       if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         helper.stopped = true; helper.watching = false; helper.release()
-        emit(["event": "user_input", "reason": "monitor_unavailable"])
+        emit(["event": "user_input", "reason": type == .tapDisabledByTimeout ? "monitor_timeout" : "monitor_disabled"])
         return Unmanaged.passUnretained(event)
       }
       guard event.getIntegerValueField(.eventSourceUserData) != marker, !helper.stopped else { return Unmanaged.passUnretained(event) }
@@ -195,31 +218,77 @@ final class Helper {
       refs.removeAll(); serial += 1
       let root = AXUIElementCreateApplication(app.processIdentifier)
       let deadline = Date().addingTimeInterval(5)
-      var nodes: [[String: Any]] = []; var seen = Set<CFHashCode>()
-      func walk(_ n: AXUIElement, _ depth: Int) async throws {
+      var nodes: [[String: Any]] = []; var seen: [CFHashCode: [AXUIElement]] = [:]; var visited = 0
+      func walk(_ n: AXUIElement, _ depth: Int, _ visibleDepth: Int) async throws {
         if stopped { throw fail("用户已停止桌面操作") }
         guard Date() < deadline else { throw fail("读取辅助功能树超时，请缩小操作范围后重试") }
-        if nodes.count % 10 == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
-        guard depth < 20, nodes.count < 1500, !seen.contains(CFHash(n)) else { return }; seen.insert(CFHash(n))
-        let key = "\(serial):\(nodes.count)"; refs[key] = (n, id, frame(n))
-        var item: [String: Any] = ["id": key, "role": string(n, kAXRoleAttribute) ?? "AXUnknown", "enabled": (attr(n, kAXEnabledAttribute) as? Bool) ?? true, "depth": depth]
-        if secure(n) { item["title"] = "密码输入框"; item["enabled"] = false }
-        else { if let title = string(n, kAXTitleAttribute) ?? string(n, kAXDescriptionAttribute) { item["title"] = String(title.prefix(500)) }; if let value = string(n, kAXValueAttribute) { item["value"] = String(value.prefix(1500)) } }
-        if let r = frame(n) { item["frame"] = rect(r) }; nodes.append(item)
-        if !secure(n) { for child in attr(n, kAXChildrenAttribute) as? [AXUIElement] ?? [] { try await walk(child, depth + 1) } }
+        guard depth < 80, visited < 6000, nodes.count < 1500 else { return }
+        let hash = CFHash(n)
+        if seen[hash]?.contains(where: { CFEqual($0, n) }) == true { return }
+        seen[hash, default: []].append(n); visited += 1
+        if visited % 10 == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+        let role = string(n, kAXRoleAttribute) ?? "AXUnknown"
+        if role == "AXMenu", attr(n, kAXVisibleChildrenAttribute) as? [AXUIElement] == nil { return }
+        let protected = secure(n)
+        let title = protected ? "密码输入框" : string(n, kAXTitleAttribute) ?? string(n, kAXDescriptionAttribute)
+        let value = protected ? nil : string(n, kAXValueAttribute)
+        let placeholder = protected ? nil : string(n, "AXPlaceholderValue")
+        let identifier = protected ? nil : string(n, "AXIdentifier")
+        let focused = !protected && (attr(n, kAXFocusedAttribute) as? Bool == true)
+        let emptyContainer = ["AXGroup", "AXUnknown", "AXLayoutArea", "AXScrollArea", "AXWebArea"].contains(role)
+          && (title ?? "").isEmpty && (value ?? "").isEmpty && (placeholder ?? "").isEmpty && !focused
+        if !emptyContainer {
+          let key = "\(serial):\(nodes.count)"; refs[key] = (n, id, frame(n))
+          var item: [String: Any] = ["id": key, "role": role, "enabled": protected ? false : (attr(n, kAXEnabledAttribute) as? Bool) ?? true, "depth": visibleDepth, "focused": focused]
+          if let title { item["title"] = String(title.prefix(500)) }
+          if let value { item["value"] = String(value.prefix(1500)) }
+          if let placeholder { item["placeholder"] = String(placeholder.prefix(500)) }
+          if let identifier { item["identifier"] = String(identifier.prefix(300)) }
+          if let r = frame(n) { item["frame"] = rect(r) }; nodes.append(item)
+        }
+        if !protected {
+          let children = role == "AXMenu" ? attr(n, kAXVisibleChildrenAttribute) as? [AXUIElement] ?? [] : attr(n, kAXChildrenAttribute) as? [AXUIElement] ?? []
+          for child in children { try await walk(child, depth + 1, emptyContainer ? visibleDepth : visibleDepth + 1) }
+        }
       }
-      try await walk(root, 0); try guardApp(id); return ["app": appInfo(app), "nodes": nodes]
+      let targetWindow = selectedWindow(app)
+      // Surface focus only when it belongs to the selected main window, not a floating preview.
+      if let focused = attr(root, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(), !secureContext(focused as! AXUIElement) {
+        let focusedWindow = attr(focused as! AXUIElement, kAXWindowAttribute)
+        if targetWindow == nil || (focusedWindow != nil && CFEqual(focusedWindow!, targetWindow!)) {
+          try await walk(focused as! AXUIElement, 0, 0)
+        }
+      }
+      try await walk(targetWindow ?? root, 0, 0)
+      if let menu = attr(root, kAXMenuBarAttribute), CFGetTypeID(menu) == AXUIElementGetTypeID() { try await walk(menu as! AXUIElement, 0, 0) }
+      nodes = nodes.enumerated().sorted { a, b in
+        func rank(_ item: [String: Any]) -> Int {
+          if item["focused"] as? Bool == true { return 0 }
+          if ["AXTextArea", "AXTextField", "AXComboBox", "AXSearchField"].contains(item["role"] as? String ?? "") { return 1 }
+          return 2
+        }
+        let ar = rank(a.element), br = rank(b.element)
+        return ar == br ? a.offset < b.offset : ar < br
+      }.map { $0.element }
+      try guardApp(id); return ["app": appInfo(app), "nodes": nodes]
     }
     if cmd == "screenshot" {
       guard CGPreflightScreenCaptureAccess() else { throw fail("需要在系统设置中允许屏幕录制权限") }
       let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-      let order = windows().compactMap { $0[kCGWindowNumber as String] as? UInt32 }
-      guard let w = content.windows.filter({ $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 1 && $0.frame.height > 1 }).min(by: { (order.firstIndex(of: $0.windowID) ?? Int.max) < (order.firstIndex(of: $1.windowID) ?? Int.max) }) else { throw fail("目标 App 没有可截图的窗口") }
+      let candidates = content.windows.filter { $0.owningApplication?.processID == app.processIdentifier && $0.windowLayer == 0 && $0.frame.width > 1 && $0.frame.height > 1 }
+      let target = selectedWindow(app)
+      let bounds = target.flatMap { frame($0) }
+      if target != nil && bounds == nil { throw fail("无法确定当前窗口位置，请重新获取快照") }
+      guard let index = selectedScreenshotIndex(candidates.map { ($0.frame, $0.title) }, bounds: bounds, title: target.flatMap { string($0, kAXTitleAttribute) }) else {
+        throw fail("无法唯一匹配当前应用窗口，请聚焦目标窗口后重试")
+      }
+      let w = candidates[index]
       let ratio = min(1, 1568 / max(w.frame.width, w.frame.height)); let config = SCStreamConfiguration()
       config.width = max(1, Int(w.frame.width * ratio)); config.height = max(1, Int(w.frame.height * ratio)); config.showsCursor = false
       config.ignoreShadowsSingleWindow = true
       let cg = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: config)
       try guardApp(id)
+      if let target { guard let current = selectedWindow(app), CFEqual(current, target) else { throw fail("截图期间焦点窗口已改变，请重新截图") } }
       guard let latest = windows().first(where: { ($0[kCGWindowNumber as String] as? UInt32) == w.windowID }),
             let rawBounds = latest[kCGWindowBounds as String] as? NSDictionary,
             let currentBounds = CGRect(dictionaryRepresentation: rawBounds), currentBounds == w.frame else { throw fail("截图期间窗口位置已改变，请重新截图") }
@@ -252,12 +321,16 @@ final class Helper {
     }
     if cmd == "type" {
       if let n { guard AXUIElementSetAttributeValue(n, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else { throw fail("无法聚焦该元素") } }
+      try await Task.sleep(nanoseconds: 1_000_000)
+      if let n { try verifyFocus(n, id) }
       try focusedSafe(id, requireFocus: true)
       let text = a["text"] as? String ?? ""
       for units in unicodeChunks(text) {
         try guardInput(id); try focusedSafe(id, requireFocus: true)
+        if let n { try verifyFocus(n, id) }
         // Let the event tap process user input received during synchronous AX calls before posting.
         try await Task.sleep(nanoseconds: 1_000_000)
+        if let n { try verifyFocus(n, id) }
         let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true); down?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units); heldKeys.insert(0); try post(down, id)
         let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false); up?.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units); try post(up, id); heldKeys.remove(0)
         try await Task.sleep(nanoseconds: 1_000_000)

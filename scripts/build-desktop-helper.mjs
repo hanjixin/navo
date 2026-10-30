@@ -32,5 +32,5 @@ if (universal) {
   const intel = build('x86_64')
   run('lipo', ['-create', arm, intel, '-output', output])
 } else copyFileSync(build(), output)
-run('codesign', ['--force', '--sign', '-', output])
+run('codesign', ['--force', '--sign', '-', '--identifier', 'com.navo.desktop', output])
 console.log(`Desktop helper: ${output}`)
