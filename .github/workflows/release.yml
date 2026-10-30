@@ -22,6 +22,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: actions/setup-dotnet@v4
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: '10.0.x'
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Package & publish

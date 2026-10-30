@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DesktopConsentRequest } from '../../shared/types'
 import type { DesktopApp } from './snapshot'
+import { desktopAppKey } from './platform'
 
 type Pending = { request: DesktopConsentRequest; resolve: () => void; reject: (error: Error) => void }
 
@@ -66,7 +67,7 @@ export class DesktopConsent {
   }
 
   private isBlocked(bundleId: string): boolean {
-    return this.options.blocked().some((id) => id.toLowerCase() === bundleId.toLowerCase())
+    return this.options.blocked().some((id) => desktopAppKey(id) === desktopAppKey(bundleId))
   }
 
   private advance(): void {

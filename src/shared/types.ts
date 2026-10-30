@@ -754,6 +754,7 @@ export interface ComputerUseStatus {
 }
 
 export interface DesktopStatus {
+  platform: 'darwin' | 'win32' | 'unsupported'
   supported: boolean
   accessibility: boolean
   screenRecording: boolean

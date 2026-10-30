@@ -129,16 +129,17 @@ Agent 靠模型摸索着在某个系统（常见是老旧的内部系统）上�
 
 ### 电脑操作
 
-「设置 → 电脑操作」可以开启浏览器扩展或 macOS 桌面应用控制。桌面控制要求 macOS 14+，默认关闭：
+「设置 → 电脑操作」可以开启浏览器扩展或桌面应用控制。桌面控制支持 macOS 14+、Windows 10/11 的普通交互桌面，默认关闭；Linux 暂不支持：
 
-- 点击「辅助功能 → 前往授权」，在系统设置中允许 Navo 读取控件、点击和输入。开发模式下系统可能显示 Electron 或桌面 helper；以系统申请提示为准。
-- 使用窗口截图时还需要「屏幕录制」权限；仅使用元素树的模型无需这项权限。授权后如仍提示未授权，点击「重新启动 Navo」。
-- 首次操作每个 App 时选择「本对话允许」「仅这一次」或「拒绝」。系统设置、钥匙串、终端和 Navo 默认在禁止操作列表中。
+- macOS：点击「辅助功能 → 前往授权」，在系统设置中允许 Navo 读取控件、点击和输入。开发模式下系统可能显示 Electron 或桌面 helper；以系统申请提示为准。
+- macOS：使用窗口截图时还需要「屏幕录制」权限；仅使用元素树的模型无需这项权限。授权后如仍提示未授权，点击「重新启动 Navo」。
+- Windows：无需 macOS 的辅助功能或屏幕录制授权；仍需在 Navo 内批准目标应用。只控制当前用户、同等权限的普通窗口，不支持 UAC 安全桌面、管理员权限窗口、锁屏或其他登录会话。
+- 首次操作每个 App 时选择「本对话允许」「仅这一次」或「拒绝」。macOS 默认禁止系统设置、钥匙串、终端和 Navo；Windows 默认禁止系统设置、cmd.exe、PowerShell 与当前 Navo 主进程路径。其他终端（包括 Windows Terminal）可在设置中按可执行文件路径补充禁用。
 - 控制期间有独立置顶提示条；按 Esc、移动真实鼠标超过 20 像素或点击停止即可中止当前运行。一次只允许一个对话控制桌面。
 
 桌面工具包含应用列表、启动/切换、元素树、点击、Unicode 输入、组合键、滚动、等待与截图。截图工具仅向支持视觉的模型提供；坐标使用最近截图内的像素。每次快照刷新元素引用，旧引用失效。
 
-macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。`pnpm dev` 自动编译本机架构的 Swift helper，`pnpm build` / `pnpm dist` 编译 arm64 + x86_64；Windows/Linux 构建跳过桌面 helper。打包时 helper 随 App 签名。
+macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。`pnpm dev` 自动编译本机架构的 Swift helper，`pnpm build` / `pnpm dist` 编译 arm64 + x86_64。Windows 开发需要 .NET 10 SDK，`pnpm dev` 发布本机架构 helper，`pnpm build` / `pnpm dist` 发布 win-x64 与 win-arm64；安装包按目标架构携带完整 self-contained 运行时，用户无需安装 .NET。Linux 构建跳过桌面 helper。
 
 本机测试系统权限请运行 `pnpm dist:local:mac`，生成完整 ad-hoc 签名的 App，并检查 App 与 helper 的签名和标识。每次输出到独立的 `release/local-mac/build-*/mac*/Navo.app`，不覆盖正在运行的本地包或正式发布目录；正式 `pnpm dist` 的签名、公证策略不变。此命令只构建，不启动或申请权限。
 
@@ -146,9 +147,9 @@ macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。`pnp
 
 ad-hoc 签名不能在代码变化后保证旧授权继续有效。重建后若权限开关已开但仍无法操作，请退出 Navo，在系统设置的辅助功能和屏幕录制列表中移除旧 Navo 条目，再添加新包并重新授权，最后通过 Finder 或 `open` 重启。helper 使用固定签名标识 `com.navo.desktop`，App 使用 `com.navo.app`；固定标识不代表代码变化后免于重新授权。本地 ad-hoc 包仅用于本机测试，分发仍使用正式证书与公证流程。
 
-`pnpm test:desktop` 使用隔离配置和 helper 的 `--fake` 模式验证授权与工具链路，不操作真实桌面。`pnpm eval:desktop` 显示本机测试说明；授予系统权限后运行 `node scripts/desktop-eval.mjs --run`，在 TextEdit 新建文档并输入中文，验证元素树、截图和坐标。加 `--stop-test` 可手动验证 Esc 急停。测试文档会保留为未保存状态。
+`pnpm test:desktop` 使用隔离配置和 helper 的 `--fake` 模式验证授权与工具链路，不操作真实桌面。Windows CI 配置了原生 helper 构建、协议回归和 Electron 桌面 E2E；自动化结果不等同于 Windows 实机、多屏、不同 DPI、UAC 或各应用 UI Automation 兼容性验证，发布前仍需在 Windows 实机完成这些验证。`pnpm eval:desktop` 显示本机测试说明；macOS 授予系统权限后运行 `node scripts/desktop-eval.mjs --run`，在 TextEdit 新建文档并输入中文，验证元素树、截图和坐标。加 `--stop-test` 可手动验证 Esc 急停。测试文档会保留为未保存状态。
 
-开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试；推送 `v*` 标签触发三平台发布。
+开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试，在 Windows 上跑桌面 helper 与 Electron E2E；推送 `v*` 标签触发三平台发布。
 
 E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。
 

@@ -7,4 +7,6 @@ pnpm-lock.yaml
 resources/*.png
 dist
 **/.build/**
+**/helper-windows/bin/**
+**/helper-windows/obj/**
 .superpowers

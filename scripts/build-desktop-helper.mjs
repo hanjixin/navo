@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, copyFileSync } from 'node:fs'
+import { mkdirSync, copyFileSync, rmSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-if (process.platform !== 'darwin') {
-  console.log('Desktop helper is macOS-only; skipping.')
+if (!['darwin', 'win32'].includes(process.platform)) {
+  console.log('Desktop helper supports macOS and Windows; skipping this platform.')
   process.exit(0)
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -20,6 +20,34 @@ function run(command, args) {
   }
   return result.stdout.trim()
 }
+if (process.platform === 'win32') {
+  const requestedArch = process.argv.find((arg) => arg.startsWith('--arch='))?.slice('--arch='.length)
+  const architectures = universal ? ['x64', 'arm64'] : [requestedArch ?? process.arch]
+  for (const arch of architectures) {
+    if (!['x64', 'arm64'].includes(arch)) throw new Error(`Unsupported Windows desktop architecture: ${arch}`)
+    const rid = `win-${arch}`
+    const destination = resolve(root, 'dist/desktop', rid)
+    // Isolate architectures and remove old runtime files before a new self-contained publish.
+    rmSync(destination, { recursive: true, force: true })
+    run('dotnet', [
+      'publish',
+      resolve(root, 'src/main/desktop/helper-windows/NavoDesktop.csproj'),
+      '--configuration',
+      'Release',
+      '--runtime',
+      rid,
+      '--self-contained',
+      'true',
+      '-p:PublishSingleFile=false',
+      '-p:PublishTrimmed=false',
+      '--output',
+      destination,
+    ])
+    console.log(`Desktop helper: ${resolve(destination, 'navo-desktop.exe')}`)
+  }
+  process.exit(0)
+}
+
 function build(arch) {
   const args = ['build', '--package-path', source, '-c', 'release', ...(arch ? ['--arch', arch] : [])]
   run('swift', args)

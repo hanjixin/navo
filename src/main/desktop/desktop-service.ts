@@ -11,8 +11,12 @@ import { DesktopClient } from './client'
 import { DesktopConsent } from './consent'
 import { DesktopController } from './controller'
 import { DesktopOverlay } from './overlay'
+import { desktopExecutableName, desktopRelativePath, desktopSupported } from './platform'
 
-const executable = () => (app.isPackaged ? join(process.resourcesPath, 'desktop', 'navo-desktop') : appFile('dist/desktop/navo-desktop'))
+const executable = () =>
+  app.isPackaged
+    ? join(process.resourcesPath, 'desktop', desktopExecutableName(process.platform))
+    : appFile(join('dist/desktop', desktopRelativePath(process.platform, process.arch)))
 // Fake mode is deliberately unavailable in packaged builds.
 const fake = !app.isPackaged && process.env.NAVO_DESKTOP_FAKE === '1'
 let changed: () => void = () => undefined
@@ -41,7 +45,8 @@ export const desktop = new DesktopController({
   client,
   consent: desktopConsent,
   enabled: () => getSettings().computerUse.desktop,
-  supported: () => process.platform === 'darwin' && (fake || Number(release().split('.')[0]) >= 23),
+  supported: () => desktopSupported(process.platform, release(), fake),
+  platform: process.platform,
   available: () => existsSync(executable()),
   blocked: () => getSettings().computerUse.blockedApps,
   changed: (active: DesktopStatus['active']) => {

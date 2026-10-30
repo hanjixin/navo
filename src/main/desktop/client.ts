@@ -45,7 +45,7 @@ export class DesktopClient implements DesktopTransport {
 
   private start(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child
-    const child = spawn(this.options.executable, this.options.args ?? [], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(this.options.executable, this.options.args ?? [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     this.child = child
     const lines = createInterface({ input: child.stdout })
     lines.on('line', (line) => {

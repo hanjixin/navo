@@ -1400,7 +1400,6 @@
   "禁止操作的应用": "Blocked apps",
   "每行填写一个应用的 Bundle ID。列表中的应用始终禁止操作。": "Enter one app bundle ID per line. Apps on this list cannot be controlled.",
   "操作桌面应用": "Control desktop apps",
-  "让 Agent 操作 Mac 上的应用。首次操作每个应用前，会先征求你的同意。": "Let the agent control apps on your Mac. It will ask for your permission before using each app.",
   "辅助功能": "Accessibility",
   "已授权": "Granted",
   "允许 Navo 点击、输入和读取应用界面。": "Allow Navo to click, type, and read app interfaces.",
@@ -1422,5 +1421,11 @@
   "允许 Navo 截取应用窗口。授权后可能需要重新启动 Navo。": "Allow Navo to capture app windows. You may need to restart Navo after granting permission.",
   "Navo 正在操作 {{app}}": "Navo is controlling {{app}}",
   "按 Esc 或点击停止": "Press Esc or click to stop",
-  "桌面应用操作需要 macOS 14 或更高版本。": "Desktop control requires macOS 14 or later."
+  "桌面应用操作需要 macOS 14+ 或 Windows 10/11。": "Desktop control requires macOS 14+ or Windows 10/11.",
+  "让 Agent 操作电脑上的应用。首次操作每个应用前，会先征求你的同意。": "Let the agent control desktop apps. You approve each app before it is used.",
+  "每行填写一个应用的 exe 完整路径。列表中的应用始终禁止操作。": "Enter one full executable path per line. Listed apps can never be controlled.",
+  "Windows 桌面访问": "Windows desktop access",
+  "无需额外的系统权限开关。支持普通权限应用；锁屏、UAC 提示和管理员应用不可操作。": "No additional system permission switch is required. Standard apps are supported; the lock screen, UAC prompts, and administrator apps cannot be controlled.",
+  "当前桌面不可用": "Desktop currently unavailable",
+  "可用": "Available"
 }

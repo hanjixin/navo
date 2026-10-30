@@ -1,18 +1,18 @@
-// Desktop settings, consent and tools through the real Swift JSON transport, using --fake.
+// Desktop settings, consent and tools through the native JSON transport, using --fake.
 // The helper simulates TextEdit and permissions; no real desktop app receives input.
-// Build first: pnpm build. macOS only; no model or system permission prompt is needed.
+// Build first: pnpm build. macOS and Windows; no model or system permission prompt is needed.
 import { _electron as electron } from 'playwright'
 import { mainWindow } from './helpers.mjs'
-import { checkDesktopHelper } from './desktop-helper.mjs'
+import { checkDesktopHelper, desktopHelperPath } from './desktop-helper.mjs'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
-if (process.platform !== 'darwin') {
-  console.log('SKIP desktop: the native helper requires macOS')
+if (!['darwin', 'win32'].includes(process.platform)) {
+  console.log('SKIP desktop: the native helper requires macOS or Windows')
   process.exit(0)
 }
-if (!existsSync(resolve('dist/desktop/navo-desktop'))) throw new Error('Build the desktop helper before running e2e/desktop.mjs')
+if (!existsSync(desktopHelperPath())) throw new Error('Build the desktop helper before running e2e/desktop.mjs')
 const ok = (condition, message) => {
   console.log(`${condition ? 'PASS' : 'FAIL'} ${message}`)
   if (!condition) process.exitCode = 1
@@ -70,7 +70,17 @@ try {
     const d = (await api('computerUse.status')).desktop
     return d.accessibility && d.screenRecording && d.helper === 'ok'
   })
-  ok((await section.getByText('已授权', { exact: true }).count()) >= 2, 'settings displays both granted permissions')
+  if (process.platform === 'darwin') ok((await section.getByText('已授权', { exact: true }).count()) >= 2, 'settings displays both granted permissions')
+  else {
+    await section.getByText('Windows 桌面访问', { exact: true }).waitFor({ state: 'visible' })
+    ok(await section.getByText('可用', { exact: true }).isVisible(), 'Windows desktop access is shown as available')
+    ok(
+      (await section.getByText('辅助功能', { exact: true }).count()) === 0 &&
+        (await section.getByText('屏幕录制', { exact: true }).count()) === 0 &&
+        (await section.getByRole('button', { name: '前往授权', exact: true }).count()) === 0,
+      'Windows desktop settings omit macOS permission rows and grant buttons',
+    )
+  }
   ok(
     (await api('dev.tools')).some((t) => t.name === 'desktop_activate'),
     'enabling desktop exposes the tools',
@@ -97,7 +107,7 @@ try {
   ok((await tool('desktop_click', { ref: refOf(granted) })).includes('已失效'), 'a previous snapshot reference is rejected')
   snapshot = await tool('desktop_type', { ref: refOf(snapshot), text: '你好，Navo 🌍' })
   ok(snapshotOK(snapshot), 'Unicode input passes through the helper transport and returns fresh refs')
-  snapshot = await tool('desktop_key', { combo: 'cmd+a' })
+  snapshot = await tool('desktop_key', { combo: process.platform === 'win32' ? 'ctrl+a' : 'cmd+a' })
   ok(snapshotOK(snapshot), 'keyboard shortcut passes through the helper transport')
   snapshot = await tool('desktop_scroll', { ref: refOf(snapshot), dy: 160 })
   ok(snapshotOK(snapshot), 'scroll by element reference returns fresh refs')
@@ -134,5 +144,5 @@ try {
 } finally {
   await api('computerUse.stop').catch(() => undefined)
   await app.close()
-  rmSync(profile, { recursive: true, force: true })
+  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

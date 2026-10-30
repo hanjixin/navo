@@ -2,6 +2,7 @@ import type { DesktopStatus } from '@shared/types'
 import type { DesktopConsent } from './consent'
 import { DesktopTransportError, type DesktopTransport } from './client'
 import { DesktopSnapshot, screenshotPoint, type AXTree, type DesktopApp, type Screenshot } from './snapshot'
+import { desktopAppKey } from './platform'
 
 type Session = {
   app?: DesktopApp
@@ -29,6 +30,7 @@ export class DesktopController {
       consent: DesktopConsent
       enabled: () => boolean
       supported: () => boolean
+      platform?: string
       available: () => boolean
       blocked: () => string[]
       changed: (active: DesktopStatus['active']) => void
@@ -37,7 +39,14 @@ export class DesktopController {
   ) {}
 
   status(): DesktopStatus {
-    return { supported: this.options.supported(), ...this.permissions, helper: this.options.available() ? this.helper : 'missing', active: this.active }
+    const platform = this.options.platform ?? process.platform
+    return {
+      platform: platform === 'darwin' || platform === 'win32' ? platform : 'unsupported',
+      supported: this.options.supported(),
+      ...this.permissions,
+      helper: this.options.available() ? this.helper : 'missing',
+      active: this.active,
+    }
   }
 
   async refresh(request?: 'accessibility' | 'screenRecording'): Promise<void> {
@@ -183,8 +192,12 @@ export class DesktopController {
     this.busy = true
     try {
       this.permissions = await this.native(threadId, s, 'permissions')
-      if (access && !this.permissions.accessibility) throw new Error('缺少辅助功能权限，请到 设置 → 电脑操作 授权')
-      if (screen && !this.permissions.screenRecording) throw new Error('缺少屏幕录制权限，请到 设置 → 电脑操作 授权')
+      if ((access && !this.permissions.accessibility) || (screen && !this.permissions.screenRecording)) {
+        if (this.options.platform === 'win32') throw new Error('当前 Windows 桌面不可操作，请解锁电脑并关闭系统安全提示后重试')
+        throw new Error(
+          access && !this.permissions.accessibility ? '缺少辅助功能权限，请到 设置 → 电脑操作 授权' : '缺少屏幕录制权限，请到 设置 → 电脑操作 授权',
+        )
+      }
       const result = await run(s)
       s.failures = 0
       return result
@@ -202,13 +215,13 @@ export class DesktopController {
 
   private check(threadId: string, s: Session): void {
     if (!this.options.enabled()) throw new Error('桌面控制尚未开启，请到 设置 → 电脑操作 开启')
-    if (!this.options.supported()) throw new Error('桌面控制需要 macOS 14 或更高版本')
+    if (!this.options.supported()) throw new Error('桌面控制需要 macOS 14+ 或 Windows 10/11')
     if (!this.options.available()) throw new Error('桌面控制服务缺失，请重新构建或安装 Navo')
     if (s.stopped || this.sessions.get(threadId) !== s) throw new Error('桌面操作已被用户中止，请等待用户继续')
   }
 
   private blocked(bundleId: string): boolean {
-    return this.options.blocked().some((id) => id.toLowerCase() === bundleId.toLowerCase())
+    return this.options.blocked().some((id) => desktopAppKey(id) === desktopAppKey(bundleId))
   }
 
   private async native<T>(threadId: string, s: Session, cmd: string, args: Record<string, unknown> = {}): Promise<T> {

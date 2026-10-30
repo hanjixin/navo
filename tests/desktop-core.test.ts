@@ -85,6 +85,13 @@ function approvals() {
 }
 
 describe('desktop consent', () => {
+  it('rejects an equivalent Windows executable path without requesting approval', async () => {
+    const { consent, blocked, published } = approvals()
+    blocked.push('c:/Apps/tool.exe')
+    await expect(consent.request('one', { ...app, bundleId: 'C:\\Apps\\folder\\..\\tool.exe' })).rejects.toThrow('禁止')
+    expect(published).toHaveLength(0)
+  })
+
   it('queues prompts, scopes session grants to a conversation and rechecks the blacklist', async () => {
     const { consent, published, current, blocked } = approvals()
     const first = consent.request('one', app)

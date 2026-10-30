@@ -6,3 +6,5 @@ release
 .DS_Store
 coverage
 *.tsbuildinfo
+src/main/desktop/helper-windows/bin/
+src/main/desktop/helper-windows/obj/

@@ -51,6 +51,10 @@ mac:
   # Notarization runs when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID (or APPLE_API_KEY*)
   # are set, and is skipped with a warning otherwise — see README「发布」.
 win:
+  extraResources:
+    # Resolve the matching RID for every target, including explicit --arm64 builds.
+    - from: dist/desktop/win-${arch}
+      to: desktop
   target: nsis
 linux:
   target: AppImage
