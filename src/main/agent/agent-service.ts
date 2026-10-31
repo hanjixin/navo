@@ -26,6 +26,8 @@ import { Rpc } from '../agent-host/rpc'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
 import { t } from '@shared/i18n'
+import { targets } from '../external-browser/instance'
+import { computerUse } from '../computer-use'
 
 interface ThreadRow {
   id: string
@@ -256,7 +258,7 @@ class AgentService {
     // the browser steps of this run, kept for turning it into a fixed flow
     trace.start(threadId)
     outputs.onRunStart(threadId)
-    const ctx = { threadId, tab: () => sessions.tabFor(threadId) }
+    const ctx = { threadId, tab: () => sessions.tabFor(threadId), page: () => targets.page(threadId) }
     const entries = collectTools(ctx)
     const runState = { runId, tools: new Map(entries.map((e) => [e.tool.name, e])), usedMemoryTools: false }
     this.runs.set(threadId, runState)
@@ -269,13 +271,9 @@ class AgentService {
       const resolved = resolveModel(thread.modelId)
       // memory: picked from the conversation (title, the user's previous two messages and this one —
       // "那它用什么打包" alone says nothing) and the site the conversation's tab is on
-      const tab = sessions.peek(threadId)
+      const page = this.pageInfo(threadId)
       const earlier = input.kind === 'message' ? (await this.recentUserTexts(threadId, 2)).map((t) => t.slice(0, 500)) : []
-      const mem = memory.forRun(
-        threadId,
-        [thread.title, ...earlier, input.kind === 'message' ? input.text : ''].join('\n'),
-        tab && !tab.isDestroyed() ? tab.getURL() : null,
-      )
+      const mem = memory.forRun(threadId, [thread.title, ...earlier, input.kind === 'message' ? input.text : ''].join('\n'), page?.url ?? null)
       if (input.kind === 'message' && mem?.refs.length) input = { ...input, memories: mem.refs }
       const req: RunRequest = {
         runId,
@@ -283,7 +281,7 @@ class AgentService {
         input,
         fromCheckpointId,
         model: resolved,
-        systemPrompt: systemPrompt(tab, mem ? mem.prompt : null),
+        systemPrompt: systemPrompt(page, mem ? mem.prompt : null),
         memoryPrompt: mem?.prompt || undefined,
         tools: describeTools(entries),
         interruptOn: opts.headless
@@ -305,6 +303,7 @@ class AgentService {
     } finally {
       this.runs.delete(threadId)
       await sessions.end(threadId)
+      await computerUse.endRun(threadId)
       this.touch(threadId)
       emit('threads.changed')
     }
@@ -315,6 +314,16 @@ class AgentService {
     if (input.kind === 'message' && !opts.headless && !result.error && !result.aborted && !result.interrupted && !isSpawnedConversation(threadId))
       void this.learnFrom(threadId, input.text, result.finalText, runState.usedMemoryTools)
     return result
+  }
+
+  /** The page the conversation's browser tools are on: its tab in the user's browser, or the built-in one. */
+  private pageInfo(threadId: string): { title: string; url: string; mine?: boolean } | null {
+    if (targets.get(threadId) === 'mine') {
+      const p = targets.page(threadId)
+      return { title: p.title(), url: p.url(), mine: true }
+    }
+    const tab = sessions.peek(threadId)
+    return tab && !tab.isDestroyed() ? { title: tab.getTitle(), url: tab.getURL() } : null
   }
 
   /** The user's own recent messages in a conversation (what memory evidence is checked against). */

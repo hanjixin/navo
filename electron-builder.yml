@@ -14,6 +14,9 @@ asarUnpack:
   - '**/node_modules/tesseract.js/**'
   - '**/node_modules/tesseract.js-core/**'
 extraResources:
+  # the Navo browser extension, copied to userData and imported with "Load unpacked"
+  - from: dist/extension
+    to: extension
   # pdf.js CMaps (required for Chinese/Japanese/Korean PDFs) and standard font data
   - from: node_modules/pdfjs-dist/cmaps
     to: pdfjs/cmaps

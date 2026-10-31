@@ -9,7 +9,9 @@ const shared = { '@shared': resolve('src/shared') }
  * Main / agent-host code is bundled with all its JS dependencies; only native modules stay external
  * (they are the only runtime `dependencies` in package.json). This keeps the app self-contained —
  * some packages (e.g. @langchain/langgraph-sdk) ship vendored files under nested node_modules that
- * electron-builder would otherwise drop — and makes the installer smaller.
+ * electron-builder would otherwise drop — and makes the installer smaller. `ws` stays external too:
+ * bundled, its optional native helper (bufferutil) becomes an empty module and every client frame
+ * of 32 bytes or more fails to unmask.
  */
 const nodeDeps = externalizeDepsPlugin()
 

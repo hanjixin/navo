@@ -54,6 +54,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # e2e/my-browser.mjs loads the Navo extension into Playwright's Chromium
+      - run: pnpm exec playwright install chromium
       - run: pnpm test:e2e
       # packaging regressions (native modules, asar paths, bundling) only show up in a real build
       - run: pnpm dist -- --mac dir

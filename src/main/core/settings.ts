@@ -1,4 +1,4 @@
-import { nativeTheme } from 'electron'
+import { app, nativeTheme } from 'electron'
 import type { LangfuseSettings, Settings } from '@shared/types'
 import { kv } from './db'
 import { emit } from './ipc'
@@ -18,6 +18,18 @@ const DEFAULTS: Settings = {
   quick: { enabled: true, shortcut: 'Alt+Space', screenshotShortcut: 'Alt+Shift+Space', keepInTray: true },
   usage: { dailyBudget: null, currency: 'CNY', pauseBackground: false },
   voice: { engine: 'provider', providerId: null, model: 'whisper-1', localModel: 'small', language: 'auto', autoSend: false },
+  computerUse: {
+    desktop: false,
+    myBrowser: false,
+    // Keychain Access, System Settings, Terminal and Navo itself (Electron when run from source)
+    blockedApps: [
+      'com.apple.keychainaccess',
+      'com.apple.systempreferences',
+      'com.apple.Terminal',
+      'com.navo.app',
+      ...(app.isPackaged ? [] : ['com.github.Electron']),
+    ],
+  },
   skills: { selfImprove: true, autoApplySmall: true, autoCreateFromExperience: true },
   memory: { enabled: true, autoLearn: true, review: false, daily: true, modelId: null, idleMinutes: 3, consolidate: true },
   langfuse: {
@@ -48,6 +60,7 @@ export function getSettings(): Settings {
     quick: { ...DEFAULTS.quick, ...(stored.quick ?? {}) },
     usage: { ...DEFAULTS.usage, ...(stored.usage ?? {}) },
     voice: { ...DEFAULTS.voice, ...(stored.voice ?? {}) },
+    computerUse: { ...DEFAULTS.computerUse, ...(stored.computerUse ?? {}) },
     files: { ...DEFAULTS.files, ...(stored.files ?? {}), mineruTokenSet: secrets.has('mineru.token') },
     langsmithApiKeySet: secrets.has('langsmith'),
   }

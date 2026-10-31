@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Navo",
+  "description": "让 Navo 在你的浏览器里操作你交给它的标签页",
+  "version": "0.0.0",
+  "permissions": ["debugger", "tabs", "storage", "alarms"],
+  "host_permissions": ["ws://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApg4OCawY3dWuMPllyYMZoLAisikTOrVgAm1ZN3a4V5qlAYz50gZyHAQk8R3aSuQAWxOFcJ5uPE+tHb5GSqqFYwdng3bQ9bEkfuj5l78m7qF2hBMQk4ASqBNGUbnwHOVGEFzBNJ3Ko/VIVZc1pM8NZdTpaTrls8tHj+MWjvwDz10kYviEBci/r0Pp2h5D2BSvHRyX0rKd0zQexQuoDpo4ntrosv6FCixoWn2wuUuQfnBZtwmuEYIEQMFjdiAzL9kzj77pMia70fRJpcfk99B0BtAgjr8xr9WMRMKXjRU0QDBie95bBBjuG7IURvgom9uaUQbCjgX0QPpFIN8sMOqQNQIDAQAB"
+}

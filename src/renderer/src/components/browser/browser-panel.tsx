@@ -17,7 +17,7 @@ const GUTTER = 6
 const COLLAPSE_SLACK = 120
 
 export function BrowserPanel() {
-  const { state, width, setWidth, setOpen, recordingSteps, lastRecorded } = useBrowser()
+  const { state, width, setWidth, setOpen, recordingSteps, lastRecorded, external } = useBrowser()
   const overlays = useOverlayStore((s) => s.count)
   const devMode = useSettings((s) => s.settings?.devMode)
   const windowWidth = useLayout((s) => s.windowWidth)
@@ -34,6 +34,7 @@ export function BrowserPanel() {
   const navigate = useNavigate()
 
   const max = browserMax(windowWidth, collapsed)
+  const showExternal = !!external
   const effective = Math.min(Math.max(width, BROWSER_MIN), max)
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export function BrowserPanel() {
     const el = pageRef.current
     if (!el) return
     const report = () => {
-      if (hidden) return void call('browser.setBounds', null)
+      if (hidden || showExternal) return void call('browser.setBounds', null)
       const r = el.getBoundingClientRect()
       void call('browser.setBounds', { x: r.left, y: r.top, width: r.width, height: r.height })
     }
@@ -82,9 +83,15 @@ export function BrowserPanel() {
       ro.disconnect()
       window.removeEventListener('resize', report)
     }
-  }, [hidden, effective])
+  }, [hidden, effective, showExternal])
 
   useEffect(() => () => void call('browser.setBounds', null), [])
+
+  // the agent's tab in the user's own browser is shown as a live picture instead of the native view
+  useEffect(() => {
+    void call('computerUse.watch', true)
+    return () => void call('computerUse.watch', false)
+  }, [])
 
   // A still frame taken while the pointer rests on the gutter, so a drag can hide the native view at
   // once: while it is up, it swallows pointer events and a quick drag would stop over the page.
@@ -319,7 +326,16 @@ export function BrowserPanel() {
 
         {/* native view placeholder */}
         <div ref={pageRef} className="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-[#0e1626]">
-          {hidden ? (
+          {external ? (
+            <div className="absolute inset-0 flex flex-col bg-muted" data-testid="external-view">
+              <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-card px-3 text-xs text-muted-foreground">
+                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" />
+                <span className="shrink-0 font-medium text-foreground">{t('在你的浏览器中')}</span>
+                <span className="truncate">{external.title || external.url}</span>
+              </div>
+              <img src={external.image} alt="" draggable={false} className="pointer-events-none min-h-0 flex-1 object-contain object-top select-none" />
+            </div>
+          ) : hidden ? (
             snapshot ? (
               <img
                 src={snapshot}

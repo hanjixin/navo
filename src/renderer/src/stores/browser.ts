@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { BrowserState } from '@shared/types'
+import type { BrowserState, LiveFrame } from '@shared/types'
 import { toast } from 'sonner'
 import { call, on } from '@/lib/ipc'
 import { t } from '@shared/i18n'
@@ -13,6 +13,8 @@ interface BrowserStore {
   /** floating mini window while the panel is collapsed */
   mini: boolean
   preview: { tabId: number; image: string } | null
+  /** the agent's tab in the user's own browser (live picture), while it works there */
+  external: LiveFrame | null
   setMini: (v: boolean) => void
   setOpen: (v: boolean) => void
   setWidth: (w: number) => void
@@ -40,6 +42,7 @@ export const useBrowser = create<BrowserStore>((set) => ({
   recordingSteps: 0,
   mini: false,
   preview: null,
+  external: null,
   setMini: (mini) => set({ mini }),
   setOpen: (open) => {
     try {
@@ -81,5 +84,6 @@ export function wireBrowserEvents(): void {
     else useBrowser.setState({ mini: true })
   })
   on('browser.preview', (preview) => useBrowser.setState({ preview }))
+  on('computerUse.frame', (external) => useBrowser.setState({ external }))
   on('macros.recording', ({ steps, last }) => useBrowser.setState({ recordingSteps: steps, lastRecorded: last }))
 }

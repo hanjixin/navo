@@ -1,5 +1,4 @@
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import type { WebContents } from 'electron'
 import { z } from 'zod'
 import { getSettings } from '../core/settings'
 import { createBrowserTools, type ToolCtx } from '../browser/tools'
@@ -12,6 +11,9 @@ import { isSpawnedConversation, NAVO_TOOLS } from '../mcp-server/tools'
 import { memory } from '../memory/memory-service'
 import { outputs } from '../outputs/outputs-service'
 import { language } from '@shared/i18n'
+import { createSwitchTool } from '../external-browser/tools'
+import { targets } from '../external-browser/instance'
+import { SANDBOX } from '../external-browser/targets'
 
 export interface ToolEntry {
   tool: StructuredToolInterface
@@ -43,15 +45,31 @@ export const NAVO_DESTRUCTIVE = NAVO_TOOLS.filter((d) => d.destructive).map((d) 
 
 /** All tool implementations for one run, bound to that conversation's tab. */
 export function collectTools(ctx: ToolCtx): ToolEntry[] {
+  const myBrowser = getSettings().computerUse.myBrowser
+  const builtin = myBrowser ? (t: StructuredToolInterface) => builtinOnly(t, ctx.threadId ?? SANDBOX) : (t: StructuredToolInterface) => t
   return [
     ...createBrowserTools(ctx).map((tool) => ({ tool: tool as unknown as StructuredToolInterface, source: 'browser' as const })),
-    ...plugins.tools(ctx.tab).map((tool) => ({ tool, source: 'plugin' as const })),
-    ...recorder.tools(ctx.tab).map((tool) => ({ tool, source: 'macro' as const })),
+    ...(myBrowser ? [{ tool: createSwitchTool(ctx) as unknown as StructuredToolInterface, source: 'browser' as const }] : []),
+    ...plugins.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'plugin' as const })),
+    ...recorder.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'macro' as const })),
     ...mcp.tools().map((tool) => ({ tool, source: 'mcp' as const })),
     ...connectors.tools().map((tool) => ({ tool, source: 'connector' as const })),
     ...navoTools(ctx.threadId),
     ...(ctx.threadId ? [{ source: 'navo' as const, tool: exportFileTool(ctx.threadId) }] : []),
   ]
+}
+
+/**
+ * Site plugins and recorded flows act on the built-in browser's tab; while the conversation works
+ * in the user's own browser they say so instead. The wrapper shares everything but `invoke`.
+ */
+function builtinOnly(t: StructuredToolInterface, threadId: string): StructuredToolInterface {
+  const wrapped = Object.create(t) as StructuredToolInterface
+  wrapped.invoke = ((input: unknown, config?: unknown) =>
+    targets.get(threadId) === 'mine'
+      ? Promise.resolve("这个工具只能在内置浏览器中使用，请先调用 browser_switch('builtin')。")
+      : t.invoke(input as never, config as never)) as StructuredToolInterface['invoke']
+  return wrapped
 }
 
 /** Lets the agent hand over Word / PDF / Excel versions of what it wrote under /workspace/. */
@@ -82,14 +100,17 @@ export function describeTools(entries: ToolEntry[]): ToolDescriptor[] {
   return entries.map(({ tool, source }) => ({ name: tool.name, description: tool.description, schema: toJsonSchema(tool.schema), source }))
 }
 
-/** `mem`: the run's memory section; null when memory is off for the conversation. */
-export function systemPrompt(tab: WebContents | null, mem: string | null = null): string {
+/**
+ * `page`: the page the conversation's browser tools are on (`mine`: in the user's own browser);
+ * `mem`: the run's memory section, null when memory is off for the conversation.
+ */
+export function systemPrompt(page: { title: string; url: string; mine?: boolean } | null, mem: string | null = null): string {
   const s = getSettings()
   const pluginList = plugins.describe()
   return `你是 Navo —— 一个会自己上网干活的桌面 AI 助手，能够控制一个内置浏览器、调用 MCP/连接器工具、使用 Skill，并通过文件系统管理工作文件。
 当前时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}
 回答使用用户提问所用的语言（用户用英文就用英文回答）${language() === 'en' ? '；用户的界面是英文，无法判断时用英文' : ''}。
-${tab && !tab.isDestroyed() ? `本对话使用的浏览器标签页: ${tab.getTitle()} (${tab.getURL()})` : ''}
+${page ? `${page.mine ? '本对话使用用户自己浏览器中的标签页' : '本对话使用的浏览器标签页'}: ${page.title} (${page.url})` : ''}
 
 ## 浏览器操作准则
 - browser_navigate / browser_snapshot 返回页面结构，其中 [eN] 是元素引用；browser_click / browser_type 等操作会直接返回页面的变化，一般不必每步重新快照。
@@ -101,7 +122,15 @@ ${tab && !tab.isDestroyed() ? `本对话使用的浏览器标签页: ${tab.getTi
 - 遇到登录、验证码时，请用户在右侧浏览器中手动完成后再继续。
 - 如果同一方法连续失败两次，换一种思路，不要重复相同的调用。
 - 多步骤网页任务可委派给 browser-operator 子代理，以节省上下文。
-
+${
+  s.computerUse.myBrowser
+    ? `
+## 电脑操作准则
+- 网页任务默认用内置浏览器；需要用户已登录的账号，或用户说「用我的浏览器」时，调用 browser_switch('mine')。
+- 在用户的浏览器里，发送、付款、删除前先向用户确认。
+`
+    : ''
+}
 ## 管理 Navo 自身
 - navo_* 工具可以查看和管理 Navo 本身：对话、模型、Skill、MCP 服务器、连接器。用户让你「装一个 MCP」「写一个 Skill」「换默认模型」「看看之前的对话」时直接用它们。
 - navo_send_message 会在另一个对话中启动新的 Agent 运行并等待结果，适合把独立的子任务并行交出去；不要用它给当前对话发消息。

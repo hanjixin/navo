@@ -5,7 +5,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'release/**', 'build/**', 'coverage/**', 'node_modules/**'] },
+  { ignores: ['out/**', 'dist/**', 'release/**', 'build/**', 'coverage/**', 'node_modules/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -37,6 +37,8 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  // the browser extension runs in Chrome (service worker + popup)
+  { files: ['extension/**/*.js'], languageOptions: { globals: { ...globals.browser, chrome: 'readonly' } } },
   { files: ['**/*.cjs'], languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } }, rules: { '@typescript-eslint/no-require-imports': 'off' } },
   // e2e scripts pass callbacks into page.evaluate, which run in the renderer
   { files: ['e2e/**/*.mjs', 'scripts/**/*.mjs'], languageOptions: { globals: { ...globals.node, ...globals.browser } }, rules: { 'no-console': 'off' } },
