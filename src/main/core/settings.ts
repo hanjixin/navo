@@ -1,4 +1,5 @@
 import { app, nativeTheme } from 'electron'
+import { win32 } from 'node:path'
 import type { LangfuseSettings, Settings } from '@shared/types'
 import { kv } from './db'
 import { emit } from './ipc'
@@ -21,14 +22,17 @@ const DEFAULTS: Settings = {
   computerUse: {
     desktop: false,
     myBrowser: false,
-    // Keychain Access, System Settings, Terminal and Navo itself (Electron when run from source)
-    blockedApps: [
-      'com.apple.keychainaccess',
-      'com.apple.systempreferences',
-      'com.apple.Terminal',
-      'com.navo.app',
-      ...(app.isPackaged ? [] : ['com.github.Electron']),
-    ],
+    // System settings, command shells, and Navo itself (Electron when run from source).
+    blockedApps:
+      process.platform === 'win32'
+        ? [
+            process.execPath,
+            win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'ImmersiveControlPanel', 'SystemSettings.exe'),
+            win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'),
+            win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+            win32.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
+          ]
+        : ['com.apple.keychainaccess', 'com.apple.systempreferences', 'com.apple.Terminal', 'com.navo.app', ...(app.isPackaged ? [] : ['com.github.Electron'])],
   },
   skills: { selfImprove: true, autoApplySmall: true, autoCreateFromExperience: true },
   memory: { enabled: true, autoLearn: true, review: false, daily: true, modelId: null, idleMinutes: 3, consolidate: true },

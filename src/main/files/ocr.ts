@@ -20,7 +20,13 @@ async function getWorker(opts: Pick<ParseOptions, 'ocrCacheDir' | 'ocrLangDir' |
     mkdirSync(opts.ocrCacheDir, { recursive: true })
     const bundled = opts.ocrLangDir && LANGS.every((l) => existsSync(join(opts.ocrLangDir!, `${l}.traineddata.gz`)))
     opts.onProgress?.(bundled ? '正在启动 OCR…' : '正在准备 OCR（首次使用需下载中文语言包）…')
-    worker = createWorker(LANGS.join('+'), 1, { cachePath: opts.ocrCacheDir, ...(bundled ? { langPath: opts.ocrLangDir, gzip: true } : {}) }).catch((err) => {
+    worker = createWorker(LANGS.join('+'), 1, {
+      cachePath: opts.ocrCacheDir,
+      // Progress is surfaced through onProgress instead of the worker logger.
+      // Native Tesseract diagnostics may still be written to stderr.
+      logger: () => undefined,
+      ...(bundled ? { langPath: opts.ocrLangDir, gzip: true } : {}),
+    }).catch((err) => {
       worker = null
       throw new Error(t('OCR 引擎初始化失败{{v0}}：{{v1}}', { v0: bundled ? '' : t('（需要联网下载语言包）'), v1: (err as Error).message ?? err }))
     })

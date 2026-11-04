@@ -140,7 +140,7 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
   const cfg = settings!.memory
   const [confirmClear, setConfirmClear] = useState(false)
   const [tidying, setTidying] = useState(false)
-  const { models, load: loadModels } = useModels()
+  const { activeModels: models, load: loadModels } = useModels()
   useEffect(() => {
     void loadModels()
   }, [loadModels])
@@ -238,12 +238,16 @@ function MemorySettingsDialog({ count, onClose }: { count: number; onClose: () =
           <div className={cn('flex items-center justify-between gap-4 text-sm', (!cfg.enabled || (!cfg.autoLearn && !cfg.daily)) && 'opacity-60')}>
             <span>
               {t('记忆使用的模型')}
+              {cfg.modelId && models && !models.some((model) => model.id === cfg.modelId) ? (
+                <span className="block text-xs text-warning">{t('当前模型已停用或不可用，请切换模型')}</span>
+              ) : null}
               <span className="block text-xs text-muted-foreground">{t('自动学习和每日记录各回复一次后台调用，可以换成更便宜的模型')}</span>
             </span>
             <Select
               className="w-48"
               disabled={!cfg.enabled || (!cfg.autoLearn && !cfg.daily)}
-              value={cfg.modelId ?? '__thread__'}
+              value={cfg.modelId && !models?.some((model) => model.id === cfg.modelId) ? '' : (cfg.modelId ?? '__thread__')}
+              placeholder={t('请选择已启用的模型')}
               onChange={(v) => void update({ memory: { ...cfg, modelId: v === '__thread__' ? null : v } })}
               options={[{ value: '__thread__', label: t('跟随对话') }, ...(models ?? []).map((m) => ({ value: m.id, label: m.displayName || m.model }))]}
             />
@@ -330,7 +334,7 @@ function MemoryRow({ m, focused, onEdit }: { m: Memory; focused: boolean; onEdit
               className="interactive flex max-w-60 items-center gap-1 truncate hover:text-foreground"
               onClick={() => {
                 useChat.getState().select(m.source!.threadId)
-                navigate('/chat')
+                navigate(`/chat/${encodeURIComponent(m.source!.threadId)}`)
               }}
               title={t('打开来源对话')}
             >
@@ -439,7 +443,7 @@ function DayRow({ e }: { e: DayEntry }) {
           className="interactive mt-0.5 flex max-w-full items-center gap-1 truncate text-xs text-subtle-foreground hover:text-foreground"
           onClick={() => {
             useChat.getState().select(e.threadId)
-            navigate('/chat')
+            navigate(`/chat/${encodeURIComponent(e.threadId)}`)
           }}
           title={t('打开这个对话')}
         >

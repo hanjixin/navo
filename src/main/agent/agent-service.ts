@@ -17,9 +17,11 @@ import { getSettings, langfuseConfig } from '../core/settings'
 import { sessions } from '../browser/agent-session'
 import { resolveModel } from '../models/registry'
 import { skills } from '../skills/skill-service'
-import type { RpcMessage, RunRequest, RunResult, ToolCallRequest, UsageEvent } from '../agent-host/protocol'
+import type { RpcMessage, RunRequest, RunResult, ToolCallRequest, UsageEvent, WorkspaceWrite } from '../agent-host/protocol'
 import { usage } from '../usage/usage-service'
 import { outputs } from '../outputs/outputs-service'
+import { resolveRunWorkspaceRoot } from '../projects/workspace-directory'
+import { acceptWorkspaceWrite } from '../outputs/workspace-write'
 import { BUILTIN_SEND_TOOLS } from '../connectors/builtin'
 import { connectors } from '../connectors/connector-service'
 import { Rpc } from '../agent-host/rpc'
@@ -28,6 +30,7 @@ import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolE
 import { t } from '@shared/i18n'
 import { targets } from '../external-browser/instance'
 import { computerUse } from '../computer-use'
+import { projects } from '../projects/project-service'
 
 interface ThreadRow {
   id: string
@@ -35,15 +38,24 @@ interface ThreadRow {
   model_id: string | null
   created_at: number
   updated_at: number
+  project_id: string | null
 }
 
-const toThread = (r: ThreadRow): Thread => ({ id: r.id, title: r.title, modelId: r.model_id, createdAt: r.created_at, updatedAt: r.updated_at })
+const toThread = (r: ThreadRow): Thread => ({
+  id: r.id,
+  title: r.title,
+  modelId: r.model_id,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  projectId: r.project_id ?? null,
+})
 const RESET = '__reset__'
 
 export type { RunResult }
 type Listener = (e: ChatEvent) => void
 
 interface ActiveRun {
+  workspaceRoot: string
   runId: string
   tools: Map<string, ToolEntry>
   /** the agent managed memory itself, so automatic learning skips this exchange */
@@ -73,7 +85,12 @@ class AgentService {
     child.stderr?.on('data', (d: Buffer) => log.warn(`[agent-host] ${d.toString().trim()}`))
     const rpc = new Rpc(
       { post: (m) => child.postMessage(m), listen: (fn) => child.on('message', (m: RpcMessage) => fn(m)) },
-      { 'tool.call': (req: ToolCallRequest) => this.callTool(req) },
+      {
+        'tool.call': (req: ToolCallRequest) => this.callTool(req),
+        'workspace.write': (event: WorkspaceWrite) => {
+          acceptWorkspaceWrite(event, this.runs, (threadId, path) => outputs.recordWorkspaceWrite(threadId, path, this.runs.get(threadId)!.workspaceRoot))
+        },
+      },
       (name, payload) => {
         if (name === 'chat.event') this.send(payload as ChatEvent)
         if (name === 'usage') {
@@ -127,39 +144,62 @@ class AgentService {
     return r ? toThread(r) : null
   }
 
-  createThread(modelId?: string | null, opts: { title?: string; hidden?: boolean } = {}): Thread {
+  createThread(modelId?: string | null, opts: { title?: string; hidden?: boolean; projectId?: string | null } = {}): Thread {
+    if (modelId) resolveModel(modelId)
+    if (opts.projectId != null && !projects.exists(opts.projectId)) throw new Error(t('项目不存在'))
     const id = newId()
     const now = Date.now()
     db()
-      .prepare('INSERT INTO threads(id, title, model_id, created_at, updated_at, hidden) VALUES(?, ?, ?, ?, ?, ?)')
-      .run(id, opts.title ?? '新对话', modelId ?? null, now, now, opts.hidden ? 1 : 0)
-    if (!opts.hidden) emit('threads.changed')
+      .prepare('INSERT INTO threads(id, title, model_id, created_at, updated_at, hidden, project_id) VALUES(?, ?, ?, ?, ?, ?, ?)')
+      .run(id, opts.title ?? '新对话', modelId ?? null, now, now, opts.hidden ? 1 : 0, opts.projectId ?? null)
+    if (!opts.hidden) {
+      emit('threads.changed')
+      emit('projects.changed')
+    }
     return this.getThread(id)!
   }
 
   renameThread(id: string, title: string): void {
     db()
-      .prepare('UPDATE threads SET title = ? WHERE id = ?')
-      .run(title.trim() || '新对话', id)
+      .prepare('UPDATE threads SET title = ?, updated_at = ? WHERE id = ?')
+      .run(title.trim() || '新对话', Date.now(), id)
     emit('threads.changed')
+    emit('projects.changed')
+    emit('artifacts.changed')
+  }
+
+  setThreadProject(id: string, projectId: string | null): void {
+    if (!this.getThread(id)) throw new Error(t('会话不存在'))
+    if (projectId != null && !projects.exists(projectId)) throw new Error(t('项目不存在'))
+    db().prepare('UPDATE threads SET project_id = ?, updated_at = ? WHERE id = ?').run(projectId, Date.now(), id)
+    emit('threads.changed')
+    emit('projects.changed')
+    emit('artifacts.changed')
   }
 
   setThreadModel(id: string, modelId: string): void {
+    resolveModel(modelId)
     db().prepare('UPDATE threads SET model_id = ? WHERE id = ?').run(modelId, id)
     emit('threads.changed')
+    emit('projects.changed')
+    emit('artifacts.changed')
   }
 
   async deleteThread(id: string): Promise<void> {
     outputs.forget(id)
     this.stop(id)
+    computerUse.forget(id)
     db().prepare('DELETE FROM threads WHERE id = ?').run(id)
     kv.set(`thread.allow.${id}`, [])
     sessions.forget(id)
     memory.forgetThread(id)
     learning.drop(id)
     kv.set(`thread.memory.${id}`, true)
-    await this.host().call('thread.delete', { threadId: id })
+    kv.set(`thread.workspace.${id}`, null)
     emit('threads.changed')
+    emit('projects.changed')
+    emit('artifacts.changed')
+    await this.host().call('thread.delete', { threadId: id })
   }
 
   private touch(id: string): void {
@@ -182,6 +222,7 @@ class AgentService {
   }
 
   stop(threadId: string): void {
+    computerUse.stopRun(threadId)
     if (this.runs.has(threadId)) void this.rpc?.call('run.abort', { threadId }).catch(() => undefined)
   }
 
@@ -192,6 +233,7 @@ class AgentService {
   async send_(threadId: string, text: string, images: string[] = [], opts: { headless?: boolean } = {}, fileIds: string[] = []): Promise<RunResult> {
     const thread = this.getThread(threadId)
     if (!thread) throw new Error(t('会话不存在'))
+    resolveModel(thread.modelId)
     const firstFile = fileIds.length ? files.get(fileIds[0]).name : ''
     if (thread.title === '新对话' && (text.trim() || firstFile))
       this.renameThread(threadId, (text.trim() || `文件：${firstFile}`).replace(/\s+/g, ' ').slice(0, 40))
@@ -257,18 +299,28 @@ class AgentService {
     sessions.begin(threadId, thread.title)
     // the browser steps of this run, kept for turning it into a fixed flow
     trace.start(threadId)
-    outputs.onRunStart(threadId)
     const ctx = { threadId, tab: () => sessions.tabFor(threadId), page: () => targets.page(threadId) }
-    const entries = collectTools(ctx)
-    const runState = { runId, tools: new Map(entries.map((e) => [e.tool.name, e])), usedMemoryTools: false }
+    computerUse.beginRun(threadId)
+    const runState = { workspaceRoot: paths.workspace, runId, tools: new Map<string, ToolEntry>(), usedMemoryTools: false }
     this.runs.set(threadId, runState)
     this.send({ type: 'run_start', threadId, runId })
     this.touch(threadId)
 
     let result: RunResult
     try {
-      const allowed = new Set(this.allowList(threadId))
+      const project = thread.projectId ? projects.get(thread.projectId) : null
+      const workspaceRoot = resolveRunWorkspaceRoot(
+        input.kind,
+        project?.workingDirectory ?? null,
+        paths.workspace,
+        kv.get<string | null>(`thread.workspace.${threadId}`, null),
+      )
+      kv.set(`thread.workspace.${threadId}`, workspaceRoot)
+      runState.workspaceRoot = workspaceRoot
       const resolved = resolveModel(thread.modelId)
+      const entries = collectTools(ctx, resolved.supportsVision, workspaceRoot)
+      runState.tools = new Map(entries.map((e) => [e.tool.name, e]))
+      const allowed = new Set(this.allowList(threadId))
       // memory: picked from the conversation (title, the user's previous two messages and this one —
       // "那它用什么打包" alone says nothing) and the site the conversation's tab is on
       const page = this.pageInfo(threadId)
@@ -281,7 +333,7 @@ class AgentService {
         input,
         fromCheckpointId,
         model: resolved,
-        systemPrompt: systemPrompt(page, mem ? mem.prompt : null),
+        systemPrompt: systemPrompt(page, mem ? mem.prompt : null, project ?? undefined, workspaceRoot),
         memoryPrompt: mem?.prompt || undefined,
         tools: describeTools(entries),
         interruptOn: opts.headless
@@ -289,7 +341,7 @@ class AgentService {
           : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter((t) => !allowed.has(t)),
         browserSubagent: settings.browserSubagent,
         mounts: skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })),
-        paths: { skills: paths.skills, workspace: paths.workspace, uploads: paths.uploads },
+        paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
         devMode: settings.devMode,
         langfuse: langfuseConfig(),
         meta: { threadTitle: thread.title, modelLabel: resolved.model, appVersion: app.getVersion() },
@@ -301,13 +353,15 @@ class AgentService {
       this.send({ type: 'error', threadId, error })
       result = { finalText: '', interrupted: false, error }
     } finally {
+      const cleaned = await Promise.allSettled([sessions.end(threadId), computerUse.endRun(threadId)])
+      for (const cleanup of cleaned) if (cleanup.status === 'rejected') log.warn(`[agent] cleanup failed: ${String(cleanup.reason)}`)
       this.runs.delete(threadId)
-      await sessions.end(threadId)
-      await computerUse.endRun(threadId)
       this.touch(threadId)
       emit('threads.changed')
+      emit('projects.changed')
+      emit('artifacts.changed')
     }
-    outputs.onRunEnd(threadId)
+    if (!result.interrupted) kv.set(`thread.workspace.${threadId}`, null)
     flows.onRunEnd(threadId, input.kind === 'message' ? input.text : '', !result.error && !result.aborted && !result.interrupted)
     this.send({ type: 'run_end', threadId, runId, aborted: result.aborted, traceUrl: result.traceUrl })
     // learn from the finished exchange in the background (the agent's own memory_* calls take precedence)

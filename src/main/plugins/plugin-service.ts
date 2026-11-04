@@ -1,7 +1,8 @@
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { dialog, type WebContents } from 'electron'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
+import { realpathSync } from 'node:fs'
 import { z } from 'zod'
 import type { PluginInfo } from '@shared/types'
 import { db } from '../core/db'
@@ -127,9 +128,15 @@ class PluginService {
   }
 
   private file(id: string, file: string): string {
-    const dir = join(paths.plugins, id)
+    const root = realpathSync(paths.plugins)
+    const dir = join(root, id)
     const full = resolve(dir, file)
     if (!full.startsWith(dir + sep)) throw new Error(t('非法路径'))
+    // Existing symlinks must resolve inside the plugin directory. For a new file,
+    // validate the real parent so a symlinked directory cannot escape the root.
+    const parent = realpathSync(join(full, '..'))
+    if (parent !== dir && !parent.startsWith(dir + sep)) throw new Error(t('非法路径'))
+    if (existsSync(full) && !realpathSync(full).startsWith(dir + sep)) throw new Error(t('非法路径'))
     return full
   }
 
@@ -179,8 +186,10 @@ class PluginService {
   async import(): Promise<PluginInfo[]> {
     const res = await dialog.showOpenDialog({ title: t('选择插件文件夹（包含 manifest.json）'), properties: ['openDirectory', 'multiSelections'] })
     for (const src of res.filePaths) {
+      const source = realpathSync(src)
+      if (!statSync(source).isDirectory()) throw new Error(t('插件目录无效'))
       const m = validateManifest(JSON.parse(readFileSync(join(src, 'manifest.json'), 'utf8')))
-      cpSync(src, join(paths.plugins, m.id || basename(src)), { recursive: true })
+      cpSync(source, join(paths.plugins, m.id || basename(source)), { recursive: true, verbatimSymlinks: true })
     }
     return this.reload()
   }

@@ -50,9 +50,11 @@ await app.evaluate(({ app }, dir) => app.setPath('downloads', dir), downloads)
 try {
   const p = await api('providers.save', { type: 'openai-compatible', name: 'Mock', baseURL: mock.url, apiKey: 'x' })
   const m = await api('models.save', { providerId: p.id, model: 'mock-1', displayName: 'Mock', supportsTools: true, supportsVision: false, isDefault: true })
+  const project = await api('projects.save', { name: 'Artifacts project', description: 'E2E project context' })
 
   // ---------- the agent writes files and exports one itself
-  const t = await api('threads.create', m.id)
+  const t = await api('threads.create', m.id, project.id)
+  ok(t.projectId === project.id, 'a conversation can be created in a project')
   const end = await runAndWait(t.id, '[outputs:T1] 写一份竞品周报，要 Word 版')
   ok(end && !end.error, 'the run finished')
   const list = await api('outputs.list', t.id)
@@ -60,6 +62,17 @@ try {
   ok(names.join(',') === ['价格-T1.csv', '周报-T1.docx', '周报-T1.md'].sort().join(','), `the conversation's outputs are listed (${names.join(', ')})`)
   const md = list.find((f) => f.name === '周报-T1.md')
   const csv = list.find((f) => f.name === '价格-T1.csv')
+  const artifacts = await api('artifacts.list', project.id)
+  const updatedThread = (await api('threads.list')).find((item) => item.id === t.id)
+  ok(
+    artifacts.some((f) => f.id === md.id && f.projectName === project.name && f.threadTitle === updatedThread?.title),
+    'project artifacts aggregate conversation outputs',
+  )
+  ok(
+    (await api('artifacts.list', null)).every((f) => f.threadId !== t.id),
+    'unassigned artifact filtering excludes project outputs',
+  )
+  ok((await api('artifacts.preview', md.id)).kind === 'markdown', 'artifacts share output preview support')
   ok(md.exports.join() === 'docx,pdf,xlsx' && csv.exports.join() === 'xlsx', 'each knows what it can be exported to')
   const docxPath = join(profile, 'workspace', '周报-T1.docx')
   const docXml = existsSync(docxPath) ? await (await JSZip.loadAsync(readFileSync(docxPath))).file('word/document.xml').async('string') : ''
@@ -75,6 +88,14 @@ try {
   const csvX = await api('outputs.export', csv.id, 'xlsx', join(exportsDir, 'c.xlsx'))
   ok(XLSX.utils.sheet_to_json(XLSX.read(readFileSync(csvX)).Sheets.Sheet1, { header: 1 })[2]?.[1] === 2999, 'CSV → Excel')
 
+  // ---------- moving and deleting projects keeps artifacts
+  await api('threads.setProject', t.id, null)
+  ok(
+    (await api('artifacts.list', null)).some((f) => f.id === md.id),
+    'moving a conversation updates artifact scope',
+  )
+  await api('threads.setProject', t.id, project.id)
+
   // ---------- a download in the conversation's tab
   const before = (await api('outputs.list', t.id)).length
   await runAndWait(t.id, '[nav:http://127.0.0.1:38994/orders.csv] 下载订单 [plain]')
@@ -84,14 +105,14 @@ try {
     'a file downloaded in its tab is one of its outputs',
   )
 
-  // ---------- the dialog
+  // ---------- chat output menu and the shared artifact preview panel
   await app.evaluate(({ BrowserWindow }, id) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('evt:quick.openThread', id)
   }, t.id)
   await win.click('[data-testid=outputs-button]', { timeout: 8000 })
-  await win.waitForSelector('[data-testid=output-list] li', { timeout: 5000 })
-  ok((await win.$$('[data-testid=output-list] li')).length === 4, 'the dialog lists them')
-  await win.getByRole('button', { name: /周报-T1\.md/ }).click()
+  await win.waitForSelector('[data-testid=output-list] [role=menuitem]', { timeout: 5000 })
+  ok((await win.$$('[data-testid=output-list] [role=menuitem]')).length === 4, 'the chat output menu lists them')
+  await win.getByRole('menuitem', { name: '周报-T1.md', exact: true }).click()
   await win.waitForSelector('[data-testid=output-preview] h1', { timeout: 5000 })
   ok((await win.textContent('[data-testid=output-preview] h1')).includes('竞品周报 T1'), 'Markdown is previewed rendered')
   await sleep(300)
@@ -106,10 +127,21 @@ try {
   await win.getByRole('button', { name: '导出 Word' }).click()
   await until(async () => existsSync(join(exportsDir, 'ui.docx')))
   ok(existsSync(join(exportsDir, 'ui.docx')), '"导出 Word" saves where the user chose')
-  await win.getByRole('button', { name: /价格-T1\.csv/ }).click()
+  await win.getByRole('button', { name: '收起工作区面板', exact: true }).last().click()
+  await win.click('[data-testid=outputs-button]')
+  await win.getByRole('menuitem', { name: '价格-T1.csv', exact: true }).click()
   await win.waitForSelector('[data-testid=output-table]', { timeout: 5000 })
   ok(/产品[\s\S]*2999/.test(await win.textContent('[data-testid=output-table]')), 'CSV is previewed as a table')
   await win.screenshot({ path: join(out, 'outputs-table.png') })
+  await api('projects.delete', project.id)
+  ok(
+    (await api('projects.list')).every((p) => p.id !== project.id),
+    'deleting a project removes the project',
+  )
+  ok(
+    (await api('artifacts.list', null)).some((f) => f.id === md.id),
+    'deleting a project keeps its artifacts unassigned',
+  )
 } catch (e) {
   await win.screenshot({ path: join(out, 'outputs-fail.png') }).catch(() => null)
   console.log('FAIL exception', e)

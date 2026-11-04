@@ -7,8 +7,8 @@
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "node scripts/build-extension.mjs && electron-vite build",
+    "dev": "node scripts/build-desktop-helper.mjs && electron-vite dev",
+    "build": "node scripts/build-desktop-helper.mjs --universal && node scripts/build-extension.mjs && electron-vite build",
     "build:extension": "node scripts/build-extension.mjs",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
@@ -16,9 +16,10 @@
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "test": "vitest run",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "node scripts/build-extension.mjs && electron-vite build && electron-builder --publish never",
+    "dist": "node scripts/build-desktop-helper.mjs --universal && node scripts/build-extension.mjs && electron-vite build && electron-builder --publish never",
+    "dist:local:mac": "node scripts/build-local-mac.mjs",
     "postdist": "electron-builder install-app-deps",
-    "test:e2e": "node scripts/build-extension.mjs && electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/connectors-cn.mjs && node e2e/voice.mjs && node e2e/i18n.mjs && node e2e/my-browser.mjs",
+    "test:e2e": "node scripts/build-desktop-helper.mjs && node scripts/build-extension.mjs && electron-vite build && node e2e/tools.mjs && node e2e/agent-mock.mjs && node e2e/layout.mjs && node e2e/discovery.mjs && node e2e/features.mjs && node e2e/langfuse.mjs && node e2e/onboarding.mjs && node e2e/model-picker.mjs && node e2e/model-management.mjs && node e2e/navo-mcp.mjs && node e2e/navo-self.mjs && node e2e/files.mjs && node e2e/mini.mjs && node e2e/memory.mjs && node e2e/skills-evolve.mjs && node e2e/quick.mjs && node e2e/flows.mjs && node e2e/monitor.mjs && node e2e/usage.mjs && node e2e/outputs.mjs && node e2e/projects-artifacts.mjs && node e2e/project-directory.mjs && node e2e/project-home-layout.mjs && node e2e/project-files.mjs && node e2e/project-workspace-improvements.mjs && node e2e/connectors-cn.mjs && node e2e/voice.mjs && node e2e/i18n.mjs && node e2e/my-browser.mjs && node e2e/desktop.mjs",
     "test:agent": "electron-vite build && node e2e/agent.mjs",
     "screenshots": "electron-vite build && node e2e/smoke.mjs",
     "icon": "node e2e/render-icon.mjs",
@@ -36,7 +37,12 @@
     "eval:skill": "electron-vite build && node scripts/skill-eval.mjs",
     "eval:flow": "electron-vite build && node scripts/flow-eval.mjs",
     "eval:monitor": "electron-vite build && node scripts/monitor-eval.mjs",
-    "check:connectors-live": "electron-vite build && node scripts/connectors-live.mjs"
+    "check:connectors-live": "electron-vite build && node scripts/connectors-live.mjs",
+    "build:desktop": "node scripts/build-desktop-helper.mjs",
+    "test:desktop": "node scripts/build-desktop-helper.mjs && electron-vite build && node e2e/desktop.mjs",
+    "eval:desktop": "node scripts/build-desktop-helper.mjs && electron-vite build && node scripts/desktop-eval.mjs",
+    "test:e2e:project-workspace-improvements": "electron-vite build && node e2e/project-workspace-improvements.mjs",
+    "test:e2e:models": "electron-vite build && node e2e/model-picker.mjs && node e2e/model-management.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

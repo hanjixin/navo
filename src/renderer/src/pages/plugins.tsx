@@ -213,7 +213,10 @@ export function PluginsPage() {
                         {t('配置错误')}
                       </Badge>
                     ) : (
-                      <div className="mt-1.5 text-xs text-subtle-foreground">{t('{{v0}} 个动作', { v0: p.actions.length })}</div>
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle-foreground">
+                        <span>{t('{{v0}} 个动作', { v0: p.actions.length })}</span>
+                        {p.version ? <span>· {t('版本 {{v0}}', { v0: p.version })}</span> : null}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -252,8 +255,10 @@ export function PluginsPage() {
               </div>
               <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto pt-4">
                 {plugin.error ? <ErrorState error={plugin.error} compact className="mb-4" /> : null}
-                <div className="mb-4 flex items-center gap-2 text-sm">
+                <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
                   {isActive(plugin.id) ? <Badge variant="success">{t('当前页面已匹配')}</Badge> : <Badge>{t('当前页面未匹配')}</Badge>}
+                  {plugin.version ? <Badge variant="outline">{t('版本 {{v0}}', { v0: plugin.version })}</Badge> : null}
+                  <Badge variant="outline">{t('隔离运行')}</Badge>
                   <span className="text-xs text-muted-foreground">{plugin.description}</span>
                 </div>
                 <div className="mb-2 text-xs font-medium text-subtle-foreground">{t('匹配规则')}</div>

@@ -3,7 +3,7 @@ import { tool, type StructuredTool } from '@langchain/core/tools'
 import { Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import type Database from 'better-sqlite3'
-import { CompositeBackend, FilesystemBackend, StateBackend, createDeepAgent } from 'deepagents'
+import { CompositeBackend, StateBackend, createDeepAgent } from 'deepagents'
 import { ClearToolUsesEdit, contextEditingMiddleware, createMiddleware } from 'langchain'
 import type { ChatEvent, ThreadState, Todo, UIMessage } from '@shared/types'
 import { reasoningOf, textOf, toPendingInterrupt, toTodos, toUIMessage } from '../agent/messages'
@@ -13,6 +13,8 @@ import { UsageHandler } from '../models/usage-callback'
 import { ScopedSkillBackend } from '../skills/scoped-backend'
 import { startTracing } from './langfuse'
 import type { RunRequest, RunResult, ToolCallRequest, ToolDescriptor, UsageEvent } from './protocol'
+import { WorkspaceBackend } from './workspace-backend'
+import type { WorkspaceWrite } from './protocol'
 import { t } from '@shared/i18n'
 
 /** Returned by forkPoint when the branch starts from an empty conversation. */
@@ -20,6 +22,7 @@ export const RESET = '__reset__'
 
 export interface RunnerDeps {
   db: Database.Database
+  workspaceWrite: (event: WorkspaceWrite) => Promise<void>
   checkpointsPath: string
   emit: (e: ChatEvent) => void
   callTool: (req: ToolCallRequest) => Promise<unknown>
@@ -29,6 +32,10 @@ export interface RunnerDeps {
 
 /** Tools that legitimately repeat with identical arguments (the page may have changed in between). */
 const REPEAT_OK = new Set([
+  'desktop_snapshot',
+  'desktop_scroll',
+  'desktop_wait_for',
+  'desktop_screenshot',
   'browser_snapshot',
   'browser_scroll',
   'browser_press_key',
@@ -137,7 +144,7 @@ export class Runner {
     const backend = new CompositeBackend(new StateBackend(), {
       // read-only: skills change through the skill tools, so every change is versioned and checked
       '/skills/': new ScopedSkillBackend(req.paths.skills, null, 'Skill 文件不能直接改写。改进已有 Skill 用 skill_note，新建或重写用 navo_save_skill。'),
-      '/workspace/': new FilesystemBackend({ rootDir: req.paths.workspace, virtualMode: true }),
+      '/workspace/': new WorkspaceBackend(req.paths.workspace, (path) => this.deps.workspaceWrite({ runId: req.runId, threadId: req.threadId, path })),
       ...Object.fromEntries(req.mounts.map((m) => [`/ext/${m.id}/`, new ScopedSkillBackend(m.root, new Set(m.allowed))])),
       // parsed uploads: readable (read_file supports offset/limit for long documents), never writable
       '/uploads/': new ScopedSkillBackend(req.paths.uploads, null, '上传的文件是只读的。'),

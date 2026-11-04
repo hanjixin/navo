@@ -26,7 +26,7 @@ async function shot(name) {
 const theme = process.env.THEME
 if (theme) await page.evaluate((t) => window.api.invoke('settings.set', { theme: t }), theme)
 
-for (const route of ['chat', 'models', 'tasks', 'skills', 'connectors', 'mcp', 'memory', 'plugins', 'macros', 'settings']) {
+for (const route of ['chat', 'models', 'tasks', 'files', 'projects', 'artifacts', 'skills', 'connectors', 'mcp', 'memory', 'plugins', 'macros', 'settings']) {
   await page.evaluate((r) => (location.hash = `#/${r}`), route)
   await page.waitForTimeout(900)
   await shot(route)

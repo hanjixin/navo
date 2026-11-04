@@ -8,6 +8,8 @@ export const SIDEBAR_EXPANDED = 208
 export const SIDEBAR_COLLAPSED = 56
 export const BROWSER_MIN = 360
 export const BROWSER_DEFAULT = 560
+export const WORKSPACE_MIN = 300
+export const WORKSPACE_DEFAULT = 400
 /** Content area never gets narrower than this; the browser panel yields first. */
 export const MAIN_MIN = 440
 const AUTO_COLLAPSE_BELOW = 1240
@@ -34,6 +36,10 @@ interface LayoutState {
   mainWidth: number
   sidebarPref: Pref
   threadsPref: boolean | null
+  workspaceWidth: number
+  workspaceLastPanel: string | null
+  setWorkspaceWidth: (width: number) => void
+  setWorkspaceLastPanel: (panel: string | null) => void
   setWindowWidth: (w: number) => void
   setMainWidth: (w: number) => void
   toggleSidebar: () => void
@@ -45,6 +51,13 @@ export const useLayout = create<LayoutState>((set, get) => ({
   mainWidth: 800,
   sidebarPref: read<Pref>('layout.sidebar', null),
   threadsPref: read<boolean | null>('layout.threads', null),
+  workspaceWidth: read<number>('layout.workspaceWidth', WORKSPACE_DEFAULT),
+  workspaceLastPanel: null,
+  setWorkspaceWidth: (workspaceWidth) => {
+    write('layout.workspaceWidth', workspaceWidth)
+    set({ workspaceWidth })
+  },
+  setWorkspaceLastPanel: (workspaceLastPanel) => set({ workspaceLastPanel }),
   setWindowWidth: (windowWidth) => set({ windowWidth }),
   setMainWidth: (mainWidth) => set({ mainWidth }),
   toggleSidebar: () => {

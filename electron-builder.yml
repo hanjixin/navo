@@ -31,6 +31,11 @@ protocols:
   - name: Navo
     schemes: [navo]
 mac:
+  extraResources:
+    - from: dist/desktop/navo-desktop
+      to: desktop/navo-desktop
+  binaries:
+    - Contents/Resources/desktop/navo-desktop
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -39,11 +44,17 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
+    NSAccessibilityUsageDescription: Navo 需要辅助功能权限来读取界面和操作你授权的应用。
+    NSScreenCaptureUsageDescription: Navo 需要屏幕录制权限来截取你授权的应用窗口。
     NSMicrophoneUsageDescription: Navo 需要使用麦克风来进行语音输入。
   # Signing uses a "Developer ID Application" certificate (keychain, or CSC_LINK / CSC_KEY_PASSWORD).
   # Notarization runs when APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID (or APPLE_API_KEY*)
   # are set, and is skipped with a warning otherwise — see README「发布」.
 win:
+  extraResources:
+    # Resolve the matching RID for every target, including explicit --arm64 builds.
+    - from: dist/desktop/win-${arch}
+      to: desktop
   target: nsis
 linux:
   target: AppImage

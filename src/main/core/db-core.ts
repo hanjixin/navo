@@ -136,6 +136,18 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE connectors ADD COLUMN config TEXT;
   `,
+  `
+  CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  ALTER TABLE threads ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
+  CREATE INDEX threads_project ON threads(project_id, updated_at);
+  `,
+  `
+  ALTER TABLE projects ADD COLUMN working_directory TEXT;
+  ALTER TABLE outputs ADD COLUMN workspace_root TEXT;
+  `,
+  `
+  ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */
@@ -151,5 +163,19 @@ export function openDatabase(path: string): Database.Database {
       d.pragma(`user_version = ${i + 1}`)
     })()
   }
+  // Keep diagnostic/history tables bounded. User conversations, files and memories are
+  // intentionally excluded; these limits only prevent telemetry from growing forever.
+  const prune = d.transaction(() => {
+    d.exec(`
+      DELETE FROM traces WHERE id NOT IN (SELECT id FROM traces ORDER BY created_at DESC LIMIT 10000);
+      DELETE FROM usage WHERE id NOT IN (SELECT id FROM usage ORDER BY at DESC LIMIT 20000);
+      DELETE FROM run_traces WHERE id NOT IN (SELECT id FROM run_traces ORDER BY at DESC LIMIT 5000);
+      DELETE FROM macro_runs WHERE id NOT IN (SELECT id FROM macro_runs ORDER BY at DESC LIMIT 5000);
+      DELETE FROM skill_runs WHERE id NOT IN (SELECT id FROM skill_runs ORDER BY at DESC LIMIT 5000);
+      DELETE FROM monitor_checks WHERE id NOT IN (SELECT id FROM monitor_checks ORDER BY at DESC LIMIT 10000);
+    `)
+    d.exec('PRAGMA optimize')
+  })
+  prune()
   return d
 }

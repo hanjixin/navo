@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog, shell } from 'electron'
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, fstatSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join, relative, sep } from 'node:path'
 import * as XLSX from 'xlsx'
-import type { DownloadInfo, ExportFormat, OutputFile, OutputPreview } from '@shared/types'
+import type { Artifact, DownloadInfo, ExportFormat, OutputFile, OutputPreview } from '@shared/types'
 import { db } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
@@ -11,6 +11,7 @@ import { paths } from '../core/paths'
 import { files } from '../files/file-service'
 import { decodeText } from '../files/text-utils'
 import { exportTargets, kindOf, markdownToDocx, markdownToHtml, toXlsx } from './convert'
+import { insideWorkspace, workspaceFile, storedWorkspacePath, outputAbsolutePath } from './workspace-paths'
 import { t } from '@shared/i18n'
 
 interface Row {
@@ -20,64 +21,41 @@ interface Row {
   source: 'agent' | 'download'
   size: number
   at: number
+  workspace_root: string | null
 }
 
 /** text previews stop here */
 const MAX_TEXT = 400_000
 const MAX_IMAGE = 15 * 1024 * 1024
 const MAX_ROWS = 300
-/** a run that wrote more files than this is a bulk job: only the most recent are listed */
-const MAX_PER_RUN = 100
-
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' }
 
 /** /workspace/… for the agent's files (that is how the agent and the user refer to them) */
 const VIRTUAL = '/workspace/'
-const absOf = (p: string) => (p.startsWith(VIRTUAL) ? join(paths.workspace, ...p.slice(VIRTUAL.length).split('/')) : p)
-const virtualOf = (abs: string) => VIRTUAL + relative(paths.workspace, abs).split(sep).join('/')
+const absOf = (row: Row) => outputAbsolutePath(row, paths.workspace)
+const virtualOf = (abs: string, root: string) => VIRTUAL + relative(root, abs).split(sep).join('/')
+const storedPath = (abs: string, root: string) => storedWorkspacePath(abs, root, paths.workspace)
 
 /**
  * What conversations produced: files the agent wrote under /workspace/ during a run and files
  * downloaded in its tab — previewed in the app and exported to Word, PDF or Excel.
  */
 class OutputsService {
-  private runStart = new Map<string, number>()
-
-  onRunStart(threadId: string): void {
-    this.runStart.set(threadId, Date.now())
-  }
-
-  /** Files under /workspace/ changed during the run belong to this conversation. */
-  onRunEnd(threadId: string): void {
-    const since = this.runStart.get(threadId)
-    this.runStart.delete(threadId)
-    if (since == null) return
-    const found: { abs: string; size: number; mtime: number }[] = []
-    const walk = (dir: string, depth: number) => {
-      if (depth > 6 || found.length > 2000) return
-      let entries: string[]
-      try {
-        entries = readdirSync(dir)
-      } catch {
-        return
-      }
-      for (const name of entries) {
-        if (name.startsWith('.') || name === 'node_modules') continue
-        const abs = join(dir, name)
-        try {
-          const st = statSync(abs)
-          if (st.isDirectory()) walk(abs, depth + 1)
-          // a second of slack: some file systems store whole seconds
-          else if (st.mtimeMs >= since - 1000) found.push({ abs, size: st.size, mtime: st.mtimeMs })
-        } catch {
-          /* vanished while looking */
-        }
-      }
+  recordWorkspaceWrite(threadId: string, path: string, workspaceRoot = paths.workspace): void {
+    let abs: string
+    if (!db().prepare('SELECT 1 FROM threads WHERE id=?').get(threadId)) return
+    let stat: ReturnType<typeof statSync>
+    try {
+      abs = workspaceFile(workspaceRoot, path)
+      stat = statSync(abs)
+    } catch (error) {
+      // A file can disappear after a successful write; indexing errors must reach the caller.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
     }
-    walk(paths.workspace, 0)
-    found.sort((a, b) => b.mtime - a.mtime)
-    for (const f of found.slice(0, MAX_PER_RUN)) this.upsert(threadId, virtualOf(f.abs), 'agent', f.size)
-    if (found.length) emit('outputs.changed', { threadId })
+    if (!stat.isFile()) return
+    this.upsert(threadId, storedPath(abs, workspaceRoot), 'agent', Number(stat.size), workspaceRoot)
+    emit('outputs.changed', { threadId })
   }
 
   /** A finished download in a conversation's tab. */
@@ -87,13 +65,15 @@ class OutputsService {
     emit('outputs.changed', { threadId })
   }
 
-  private upsert(threadId: string, path: string, source: Row['source'], size: number): void {
+  private upsert(threadId: string, path: string, source: Row['source'], size: number, workspaceRoot: string | null = null): void {
     db()
       .prepare(
-        `INSERT INTO outputs(id, thread_id, path, source, size, at) VALUES(?, ?, ?, ?, ?, ?)
-         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at`,
+        `INSERT INTO outputs(id, thread_id, path, source, size, at, workspace_root) VALUES(?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at, workspace_root = excluded.workspace_root`,
       )
-      .run(newId(), threadId, path, source, size, Date.now())
+      .run(newId(), threadId, path, source, size, Date.now(), workspaceRoot)
+    emit('artifacts.changed')
+    emit('projects.changed')
   }
 
   private row(id: string): Row {
@@ -103,12 +83,37 @@ class OutputsService {
   }
 
   private toFile(r: Row): OutputFile {
-    const abs = absOf(r.path)
-    const missing = !existsSync(abs)
     const name = basename(r.path)
-    // whether Markdown has tables / JSON is tabular decides the targets: read small files only
+    let size = r.size
+    let unavailableReason: OutputFile['unavailableReason']
     let text: string | undefined
-    if (!missing && r.size < 2_000_000 && /\.(md|markdown|txt|json)$/i.test(name)) text = decodeText(readFileSync(abs)).text
+    let fd: number | undefined
+    try {
+      const abs = absOf(r)
+      // Reject directories/special files before opening, then inspect the opened file too.
+      if (!statSync(abs).isFile()) throw new Error('Not a regular file')
+      fd = openSync(abs, 'r')
+      const stat = fstatSync(fd)
+      if (!stat.isFile()) throw new Error('Not a regular file')
+      size = stat.size
+      // Never trust the indexed size: an external editor may have enlarged the file.
+      if (size < 2_000_000 && /\.(md|markdown|txt|json)$/i.test(name)) {
+        const buffer = Buffer.alloc(size)
+        const length = readSync(fd, buffer, 0, buffer.length, 0)
+        text = decodeText(buffer.subarray(0, length)).text
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      unavailableReason = code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unreadable'
+    } finally {
+      if (fd !== undefined) {
+        try {
+          closeSync(fd)
+        } catch {
+          unavailableReason ??= 'unreadable'
+        }
+      }
+    }
     return {
       id: r.id,
       threadId: r.thread_id,
@@ -116,15 +121,40 @@ class OutputsService {
       path: r.path,
       source: r.source,
       kind: kindOf(name),
-      size: missing ? r.size : statSync(abs).size,
+      size,
       at: r.at,
-      missing,
-      exports: missing ? [] : exportTargets(name, text),
+      missing: unavailableReason === 'missing',
+      ...(unavailableReason ? { unavailableReason } : {}),
+      exports: unavailableReason ? [] : exportTargets(name, text),
     }
   }
 
   list(threadId: string): OutputFile[] {
     return (db().prepare('SELECT * FROM outputs WHERE thread_id = ? ORDER BY at DESC').all(threadId) as Row[]).map((r) => this.toFile(r))
+  }
+
+  artifacts(projectId?: string | null): Artifact[] {
+    const where = projectId === undefined ? '' : projectId === null ? 'WHERE t.project_id IS NULL' : 'WHERE t.project_id = ?'
+    const rows = db()
+      .prepare(
+        `SELECT o.*, t.title AS thread_title, t.project_id, p.name AS project_name FROM outputs o JOIN threads t ON t.id=o.thread_id LEFT JOIN projects p ON p.id=t.project_id ${where} ORDER BY o.at DESC`,
+      )
+      .all(...(projectId !== undefined && projectId !== null ? [projectId] : [])) as (Row & {
+      thread_title: string
+      project_id: string | null
+      project_name: string | null
+    })[]
+    return rows.map((r) => ({ ...this.toFile(r), projectId: r.project_id, projectName: r.project_name, threadTitle: r.thread_title }))
+  }
+
+  artifact(id: string): Artifact | null {
+    const row = db()
+      .prepare(
+        `SELECT o.*, t.title AS thread_title, t.project_id, p.name AS project_name
+      FROM outputs o JOIN threads t ON t.id=o.thread_id LEFT JOIN projects p ON p.id=t.project_id WHERE o.id=?`,
+      )
+      .get(id) as (Row & { thread_title: string; project_id: string | null; project_name: string | null }) | undefined
+    return row ? { ...this.toFile(row), projectId: row.project_id, projectName: row.project_name, threadTitle: row.thread_title } : null
   }
 
   counts(): Record<string, number> {
@@ -137,8 +167,10 @@ class OutputsService {
   }
 
   async preview(id: string): Promise<OutputPreview> {
-    const r = this.row(id)
-    const abs = absOf(r.path)
+    return this.previewFile(absOf(this.row(id)))
+  }
+
+  async previewFile(abs: string): Promise<OutputPreview> {
     if (!existsSync(abs)) return { kind: 'other', message: t('文件已被删除或移走') }
     const name = basename(abs)
     const kind = kindOf(name)
@@ -201,7 +233,7 @@ class OutputsService {
    */
   async export(id: string, format: ExportFormat, dest?: string): Promise<string | null> {
     const r = this.row(id)
-    const abs = absOf(r.path)
+    const abs = absOf(r)
     if (!existsSync(abs)) throw new Error(t('文件已被删除或移走'))
     const { data, name } = await this.convert(abs, format)
     let target = dest === 'beside' ? join(dirname(abs), name) : dest
@@ -212,10 +244,13 @@ class OutputsService {
       if (res.canceled || !res.filePath) return null
       target = res.filePath
     }
+    const workspaceRoot = r.workspace_root ?? paths.workspace
+    if (insideWorkspace(workspaceRoot, target)) workspaceFile(workspaceRoot, relative(workspaceRoot, target), true)
     writeFileSync(target, data)
-    // a converted file inside the workspace is an output too
-    if (target.startsWith(paths.workspace)) {
-      this.upsert(r.thread_id, virtualOf(target), 'agent', data.length)
+    // a converted file inside the original workspace is an output too
+    if (insideWorkspace(workspaceRoot, target)) {
+      workspaceFile(workspaceRoot, relative(workspaceRoot, target))
+      this.upsert(r.thread_id, storedPath(target, workspaceRoot), 'agent', data.length, workspaceRoot)
       emit('outputs.changed', { threadId: r.thread_id })
     }
     log.info(`[outputs] exported ${r.path} → ${target}`)
@@ -223,7 +258,7 @@ class OutputsService {
   }
 
   async saveAs(id: string): Promise<string | null> {
-    const abs = absOf(this.row(id).path)
+    const abs = absOf(this.row(id))
     const win = BrowserWindow.getFocusedWindow()
     const opts = { defaultPath: basename(abs) }
     const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
@@ -233,27 +268,27 @@ class OutputsService {
   }
 
   reveal(id: string): void {
-    shell.showItemInFolder(absOf(this.row(id).path))
+    shell.showItemInFolder(absOf(this.row(id)))
   }
 
   async open(id: string): Promise<void> {
-    const err = await shell.openPath(absOf(this.row(id).path))
+    const err = await shell.openPath(absOf(this.row(id)))
     if (err) throw new Error(err)
   }
 
   /** For the agent's export_file: /workspace/report.md → /workspace/report.docx */
-  async exportWorkspaceFile(threadId: string, virtualPath: string, format: ExportFormat): Promise<string> {
+  async exportWorkspaceFile(threadId: string, virtualPath: string, format: ExportFormat, workspaceRoot = paths.workspace): Promise<string> {
     if (!virtualPath.startsWith(VIRTUAL)) throw new Error(t('只能导出 /workspace/ 下的文件'))
-    const abs = absOf(virtualPath)
-    if (relative(paths.workspace, abs).startsWith('..')) throw new Error(t('只能导出 /workspace/ 下的文件'))
+    const abs = workspaceFile(workspaceRoot, virtualPath.slice(VIRTUAL.length))
     if (!existsSync(abs)) throw new Error(t('文件不存在：{{v0}}', { v0: virtualPath }))
     const { data, name } = await this.convert(abs, format)
     const target = join(dirname(abs), name)
+    workspaceFile(workspaceRoot, relative(workspaceRoot, target), true)
     writeFileSync(target, data)
-    this.upsert(threadId, virtualOf(abs), 'agent', statSync(abs).size)
-    this.upsert(threadId, virtualOf(target), 'agent', data.length)
+    this.upsert(threadId, storedPath(abs, workspaceRoot), 'agent', statSync(abs).size, workspaceRoot)
+    this.upsert(threadId, storedPath(target, workspaceRoot), 'agent', data.length, workspaceRoot)
     emit('outputs.changed', { threadId })
-    return virtualOf(target)
+    return virtualOf(target, workspaceRoot)
   }
 
   forget(threadId: string): void {

@@ -28,7 +28,7 @@ const ICON_KIND: Record<OutputFile['kind'], string | null> = {
   other: null,
 }
 
-function PreviewBody({ p }: { p: OutputPreview }) {
+export function PreviewBody({ p }: { p: OutputPreview }) {
   switch (p.kind) {
     case 'markdown':
       return (
@@ -85,8 +85,11 @@ function PreviewBody({ p }: { p: OutputPreview }) {
   }
 }
 
-function Preview({ file }: { file: OutputFile }) {
-  const preview = useAsync(() => call('outputs.preview', file.id), [file.id, file.at])
+export function Preview({ file, artifact = false }: { file: OutputFile; artifact?: boolean }) {
+  const preview = useAsync(
+    () => (artifact ? call('artifacts.preview', file.id) : call('outputs.preview', file.id)),
+    [artifact, file.id, file.at, file.unavailableReason, file.size],
+  )
   const [busy, setBusy] = useState<string | null>(null)
 
   const act = async (key: string, fn: () => Promise<string | null | void>, done?: (r: string) => string) => {
@@ -121,7 +124,7 @@ function Preview({ file }: { file: OutputFile }) {
             onClick={() =>
               void act(
                 f,
-                () => call('outputs.export', file.id, f),
+                () => call(artifact ? 'artifacts.export' : 'outputs.export', file.id, f),
                 (p) => t('已导出 {{v0}}：{{v1}}', { v0: FORMAT_LABEL[f], v1: p.split('/').pop() }),
               )
             }
@@ -133,12 +136,12 @@ function Preview({ file }: { file: OutputFile }) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={file.missing}
+          disabled={file.missing || !!file.unavailableReason}
           loading={busy === 'save'}
           onClick={() =>
             void act(
               'save',
-              () => call('outputs.saveAs', file.id),
+              () => call(artifact ? 'artifacts.saveAs' : 'outputs.saveAs', file.id),
               () => t('已另存'),
             )
           }
@@ -151,8 +154,8 @@ function Preview({ file }: { file: OutputFile }) {
           size="icon-sm"
           aria-label={t('在访达中显示')}
           title={t('在访达中显示')}
-          disabled={file.missing}
-          onClick={() => void call('outputs.reveal', file.id)}
+          disabled={file.missing || !!file.unavailableReason}
+          onClick={() => void act('reveal', () => call(artifact ? 'artifacts.reveal' : 'outputs.reveal', file.id))}
         >
           <FolderOpen />
         </Button>
@@ -161,8 +164,8 @@ function Preview({ file }: { file: OutputFile }) {
           size="icon-sm"
           aria-label={t('用默认应用打开')}
           title={t('用默认应用打开')}
-          disabled={file.missing}
-          onClick={() => void act('open', () => call('outputs.open', file.id))}
+          disabled={file.missing || !!file.unavailableReason}
+          onClick={() => void act('open', () => call(artifact ? 'artifacts.open' : 'outputs.open', file.id))}
         >
           <ExternalLink />
         </Button>
@@ -236,7 +239,11 @@ export function OutputsDialog({ threadId, onClose }: { threadId: string; onClose
                           {timeAgo(f.at)}
                         </span>
                       </span>
-                      {f.missing ? <Badge variant="warning">{t('已移除')}</Badge> : null}
+                      {f.missing ? (
+                        <Badge variant="warning">{t('已移除')}</Badge>
+                      ) : f.unavailableReason === 'unreadable' ? (
+                        <Badge variant="warning">{t('无法读取')}</Badge>
+                      ) : null}
                     </button>
                   </li>
                 ))}

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import type { ComputerUseStatus } from '@shared/types'
 import { t } from '@shared/i18n'
 import { appFile } from './core/app-dir'
@@ -13,6 +13,8 @@ import { getSettings } from './core/settings'
 import { installExtension, type InstallResult } from './external-browser/install'
 import { ExternalPageDriver } from './external-browser/ext-tabs'
 import { bridge, liveView, targets } from './external-browser/instance'
+import { desktop, desktopConsent, initDesktop } from './desktop/desktop-service'
+import type { DesktopConsentDecision } from '@shared/types'
 
 const defaultDir = () => join(paths.userData, 'browser-extension')
 /** a copy the user put somewhere they can pick in Chrome's folder dialog (~/Library is hidden there) */
@@ -32,13 +34,16 @@ const EXTENSION_PAGES = {
 
 /** Computer use: the agent working in the user's own browser (through the Navo extension). */
 export const computerUse = {
-  init(): void {
+  init(onAbort: (threadId: string) => void, onConsent: () => void): void {
+    initDesktop(() => emit('computerUse.changed', this.status()), onAbort, onConsent)
     bridge.onChange(() => emit('computerUse.changed', this.status()))
     void this.apply()
   },
 
   /** Starts or stops the extension bridge to match the settings. */
   async apply(): Promise<void> {
+    if (getSettings().computerUse.desktop) await desktop.refresh()
+    else desktop.shutdown()
     try {
       if (getSettings().computerUse.myBrowser) {
         this.ensureExtension()
@@ -95,7 +100,47 @@ export const computerUse = {
   },
 
   status(): ComputerUseStatus {
-    return { browser: { ...bridge.status(), extensionDir: extensionDir() }, desktop: null }
+    return { browser: { ...bridge.status(), extensionDir: extensionDir() }, desktop: desktop.status() }
+  },
+
+  async refreshDesktop(): Promise<ComputerUseStatus> {
+    await desktop.refresh()
+    return this.status()
+  },
+
+  async openPermission(kind: 'accessibility' | 'screenRecording'): Promise<void> {
+    if (!['accessibility', 'screenRecording'].includes(kind) || process.platform !== 'darwin') return
+    await desktop.refresh(kind)
+    await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?Privacy_${kind === 'accessibility' ? 'Accessibility' : 'ScreenCapture'}`)
+  },
+
+  restart(): void {
+    desktop.shutdown()
+    app.relaunch()
+    app.quit()
+  },
+
+  consent(id: string, decision: DesktopConsentDecision): void {
+    desktopConsent.resolve(id, decision)
+  },
+  pendingConsent() {
+    return desktopConsent.current()
+  },
+
+  stop(): void {
+    desktop.stop()
+  },
+  stopRun(threadId: string): void {
+    desktop.stop(threadId, false)
+  },
+  beginRun(threadId: string): void {
+    desktop.beginRun(threadId)
+  },
+  forget(threadId: string): void {
+    desktop.forget(threadId)
+  },
+  shutdown(): void {
+    desktop.shutdown()
   },
 
   confirmPairing(approve: boolean): void {
@@ -111,6 +156,7 @@ export const computerUse = {
 
   /** After a run: the user's browser gets its tabs back (no debugging banner while idle). */
   async endRun(threadId: string): Promise<void> {
+    await desktop.endRun(threadId)
     const page = targets.get(threadId) === 'mine' ? targets.page(threadId) : null
     if (page instanceof ExternalPageDriver) await liveView.release(page)
     await targets.endRun(threadId).catch(() => undefined)

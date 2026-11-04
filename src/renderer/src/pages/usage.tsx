@@ -192,6 +192,11 @@ function BudgetCard({ report }: { report: UsageReport }) {
               style={{ width: `${ratio * 100}%` }}
             />
           </div>
+          {ratio >= 0.8 && !b.paused ? (
+            <p className={cn('text-xs', ratio >= 1 ? 'text-danger' : 'text-warning')}>
+              {ratio >= 1 ? t('已达到每日预算，后台调用将按设置暂停。') : t('已使用每日预算的 {{v0}}%，接近上限。', { v0: Math.round(ratio * 100) })}
+            </p>
+          ) : null}
           {b.paused ? <p className="text-xs text-warning">{t('今日预算已用完：记忆整理、Skill 复盘和网页监控的判断暂停到明天。')}</p> : null}
         </div>
       ) : null}
@@ -326,7 +331,7 @@ export function UsagePage() {
                         hint={t('{{v0}} 次', { v0: totals.calls })}
                         onClick={() => {
                           select(totals.threadId)
-                          navigate('/chat')
+                          navigate(`/chat/${encodeURIComponent(totals.threadId)}`)
                         }}
                       />
                     ))}

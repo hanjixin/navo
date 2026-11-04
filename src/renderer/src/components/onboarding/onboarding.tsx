@@ -28,6 +28,7 @@ import { call } from '@/lib/ipc'
 import { PRESETS, type Preset, guessVision } from '@/lib/providers'
 import { cn, errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { threadPath } from '@/lib/routes'
 import { useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
 import { t } from '@shared/i18n'
@@ -237,11 +238,20 @@ function ModelStep({
         {state.phase === 'ready' ? (
           <div className="grid animate-fade-in gap-3 rounded-lg border border-border bg-card p-4">
             <Field
-              label={t('默认模型')}
-              hint={state.models.length ? t('共 {{v0}} 个可用模型', { v0: state.models.length }) : t('未能自动获取模型列表，可手动填写模型 ID')}
+              label={t('选择并启用默认模型')}
+              hint={
+                state.models.length
+                  ? t('已导入 {{count}} 个模型，选择一个启用，其余保持停用', { count: state.models.length })
+                  : t('未能自动获取模型列表，可手动填写模型 ID')
+              }
             >
               {state.models.length ? (
-                <Select value={state.model} onChange={(v) => onTest(v)} options={state.models.map((m) => ({ value: m, label: m }))} />
+                <Select
+                  value={state.model}
+                  placeholder={t('选择并启用默认模型')}
+                  onChange={(v) => onTest(v)}
+                  options={state.models.map((m) => ({ value: m, label: m }))}
+                />
               ) : (
                 <Input
                   value={state.model}
@@ -252,7 +262,9 @@ function ModelStep({
                 />
               )}
             </Field>
-            {state.test == null ? (
+            {!state.model ? (
+              <p className="text-xs text-muted-foreground">{t('选择模型后将启用并测试连接')}</p>
+            ) : state.test == null ? (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="size-1.5 animate-pulse rounded-full bg-brand" />
                 {t('正在测试模型…')}
@@ -461,6 +473,7 @@ function DoneStep({ summary, onStart }: { summary: { model?: string; mcp: number
       </ul>
       {summary.model ? (
         <>
+          <p className="mt-2 text-sm text-muted-foreground">{t('选择一个示例后会打开对话并立即运行；完成结果会显示在对话和产出中。')}</p>
           <div className="mt-8 mb-2 text-sm font-medium">{t('试试这些')}</div>
           <div className="grid gap-2">
             {STARTERS.map((s) => (
@@ -499,14 +512,16 @@ export function Onboarding() {
     if (!provider || !modelName) return
     patch({ model: modelName, test: null })
     try {
+      const existing = (await call('models.list')).find((model) => model.providerId === provider.id && model.model === modelName)
       const saved = await call('models.save', {
-        id: m.modelId ?? undefined,
+        id: existing?.id,
         providerId: provider.id,
         model: modelName,
         displayName: modelName,
         supportsTools: true,
         supportsVision: guessVision(provider.type, modelName),
         isDefault: true,
+        enabled: true,
       })
       patch({ modelId: saved.id })
       const r = await call('models.test', saved.id)
@@ -529,14 +544,12 @@ export function Onboarding() {
       })
       let models: string[] = []
       try {
-        models = await call('providers.fetchModels', provider.id)
+        await call('providers.importModels', provider.id)
+        models = (await call('models.list')).filter((model) => model.providerId === provider.id).map((model) => model.model)
       } catch {
         models = p.models
       }
-      const preferred = p.models.find((x) => models.includes(x)) ?? models[0] ?? p.models[0] ?? ''
-      patch({ provider, models, phase: 'ready' })
-      if (preferred) await testModel(preferred, provider)
-      else patch({ model: '' })
+      patch({ provider, models, phase: 'ready', model: '', modelId: null, test: null })
     } catch (e) {
       patch({ phase: 'error', error: errorMessage(e) })
     }
@@ -548,8 +561,9 @@ export function Onboarding() {
     navigate('/chat')
     if (prompt && m.modelId) {
       const chat = useChat.getState()
-      await chat.newThread(m.modelId)
-      void chat.send(prompt)
+      const thread = await chat.newThread(m.modelId)
+      navigate(threadPath(thread))
+      void chat.sendTo(thread.id, prompt)
     }
   }
 

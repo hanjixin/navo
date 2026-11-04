@@ -135,7 +135,13 @@ app.whenReady().then(async () => {
   recorder.init()
   tasks.init()
   files.init()
-  computerUse.init()
+  computerUse.init(
+    (threadId) => agent.stop(threadId),
+    () => {
+      mainWin?.show()
+      mainWin?.focus()
+    },
+  )
 
   // network-bound startup work shouldn't block the window
   void mcp.connectAll()
@@ -160,6 +166,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   quitting = true
   quick.shutdown()
+  computerUse.shutdown()
   agent.shutdown()
   files.shutdown()
   tasks.stopAll()

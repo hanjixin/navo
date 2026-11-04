@@ -1,4 +1,5 @@
 import { ArrowUp, Loader2, Mic, Paperclip, Square, X } from 'lucide-react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { AttachmentChip } from '@/components/files/attachment-chip'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
@@ -21,6 +22,12 @@ export function Composer({
   onModelChange,
   disabled,
   disabledReason,
+  value,
+  onValueChange,
+  placeholder,
+  className,
+  minHeight = 0,
+  showModelManagementLink = true,
 }: {
   onSend: (text: string, fileIds: string[]) => void
   onStop: () => void
@@ -29,26 +36,37 @@ export function Composer({
   onModelChange: (id: string) => void
   disabled?: boolean
   disabledReason?: string
+  value?: string
+  onValueChange?: (text: string) => void
+  placeholder?: string
+  className?: string
+  minHeight?: number
+  showModelManagementLink?: boolean
 }) {
-  const [text, setText] = useState('')
+  const [localText, setLocalText] = useState('')
+  const text = value ?? localText
+  const setText = onValueChange ?? setLocalText
   const attached = useChat((s) => s.draftFiles)
   const setAttached = useChat((s) => s.setDraftFiles)
   const { addFiles: upload, pick } = useFiles()
   const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const models = useModels((s) => s.models) ?? []
-  const current = models.find((m) => m.id === modelId) ?? models.find((m) => m.isDefault)
+  const models = useModels((s) => s.activeModels) ?? []
+  const modelsLoaded = useModels((s) => s.activeModels !== undefined)
+  const current = modelId ? models.find((m) => m.id === modelId) : (models.find((m) => m.isDefault) ?? models[0])
+  const modelUnavailable = modelsLoaded && !current
+  const modelReason = models.length ? t('当前模型已停用或不可用，请切换模型') : t('没有已启用的模型，请前往模型页面启用')
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`
-  }, [text])
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), 220)}px`
+  }, [text, minHeight])
 
   const submit = (override?: string) => {
     const t = (override ?? text).trim()
-    if ((!t && !attached.length) || running || disabled) return
+    if ((!t && !attached.length) || running || disabled || modelUnavailable || !modelsLoaded) return
     onSend(t, attached)
     setText('')
     setAttached([])
@@ -120,6 +138,7 @@ export function Composer({
       className={cn(
         'interactive rounded-lg border bg-card focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring',
         dragging ? 'border-primary bg-info-soft' : 'border-input',
+        className,
       )}
       onDragOver={(e) => {
         e.preventDefault()
@@ -132,6 +151,16 @@ export function Composer({
         void addFiles(e.dataTransfer.files)
       }}
     >
+      {modelUnavailable ? (
+        <div className="flex flex-wrap items-center gap-2 px-3.5 pt-3 text-xs text-muted-foreground" role="status">
+          <span>{modelReason}</span>
+          {!models.length && showModelManagementLink ? (
+            <Link to="/models" className="interactive rounded text-brand hover:underline">
+              {t('管理模型')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       {attached.length ? (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
           {attached.map((id) => (
@@ -157,7 +186,7 @@ export function Composer({
             ? (disabledReason ?? t('暂不可输入'))
             : dragging
               ? t('松开以添加文件')
-              : t('描述你想完成的任务，可拖入或粘贴文件；Enter 发送，Shift+Enter 换行')
+              : (placeholder ?? t('描述你想完成的任务，可拖入或粘贴文件；Enter 发送，Shift+Enter 换行'))
         }
         className="block max-h-[220px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm leading-relaxed outline-none placeholder:text-subtle-foreground"
       />
@@ -212,9 +241,10 @@ export function Composer({
               </Button>
             </Tooltip>
             {models.length ? (
-              <div className="w-52">
+              <div className="max-w-52 min-w-0 flex-1">
                 <Select
-                  value={current?.id}
+                  value={current?.id ?? ''}
+                  placeholder={t('请选择已启用的模型')}
                   onChange={onModelChange}
                   className="h-7 border-transparent bg-transparent text-xs text-muted-foreground hover:bg-accent"
                   options={models.map((m) => ({ value: m.id, label: m.displayName }))}
@@ -254,7 +284,7 @@ export function Composer({
               variant="primary"
               size="icon-sm"
               onClick={() => submit()}
-              disabled={disabled || (!text.trim() && !attached.length)}
+              disabled={disabled || modelUnavailable || !modelsLoaded || (!text.trim() && !attached.length)}
               aria-label={t('发送')}
               className={cn('rounded-md')}
             >

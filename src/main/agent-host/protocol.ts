@@ -1,7 +1,7 @@
 import type { Decision, MessageAttachment, MemoryRef } from '@shared/types'
 import type { ResolvedModel } from '../models/factory'
 
-export type ToolSource = 'browser' | 'plugin' | 'macro' | 'mcp' | 'connector' | 'navo'
+export type ToolSource = 'browser' | 'desktop' | 'plugin' | 'macro' | 'mcp' | 'connector' | 'navo'
 
 /** A tool implemented in the main process and proxied into the agent process. */
 export interface ToolDescriptor {
@@ -85,3 +85,9 @@ export type RpcMessage =
   | { kind: 'res'; id: number; ok: true; result: unknown }
   | { kind: 'res'; id: number; ok: false; error: string }
   | { kind: 'evt'; name: string; payload: unknown }
+
+export interface WorkspaceWrite {
+  runId: string
+  threadId: string
+  path: string
+}

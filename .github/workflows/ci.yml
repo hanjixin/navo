@@ -62,3 +62,70 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - run: pnpm test:packaged
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-e2e-diagnostics
+          path: |
+            /tmp/ab-*/
+            /tmp/navo-*/
+            ~/Library/Logs/Navo/
+          if-no-files-found: ignore
+
+  e2e-linux-packaged:
+    name: Linux packaged smoke
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - run: pnpm dist -- --linux dir
+      - run: xvfb-run -a node e2e/packaged.mjs release/linux-unpacked/navo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-packaged-logs
+          path: ~/.config/navo/logs
+          if-no-files-found: ignore
+
+  desktop-windows:
+    name: Windows desktop helper + Electron E2E
+    needs: check
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Native helper self-test (no desktop input)
+        shell: pwsh
+        run: |
+          & .\dist\desktop\win-x64\navo-desktop.exe --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Both tests run the native helper in --fake mode, without touching the runner desktop.
+      - run: node e2e/desktop-helper.mjs
+      - run: node e2e/desktop.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-e2e-diagnostics
+          path: |
+            ${{ runner.temp }}/ab-*/
+            ${{ runner.temp }}/navo-*/
+            ${{ runner.temp }}/**/*.log
+          if-no-files-found: ignore

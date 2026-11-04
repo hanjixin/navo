@@ -32,6 +32,7 @@ export interface ModelConfig {
   maxTokens?: number | null
   reasoningEffort?: 'low' | 'medium' | 'high' | null
   isDefault: boolean
+  enabled: boolean
   /** price per million tokens, for the usage page (set with models.setPricing) */
   pricing?: ModelPricing | null
 }
@@ -44,7 +45,7 @@ export interface ModelPricing {
   currency: 'CNY' | 'USD'
 }
 
-export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing'> & { id?: string; isDefault?: boolean }
+export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing' | 'enabled'> & { id?: string; isDefault?: boolean; enabled?: boolean }
 
 // ---------- Outputs ----------
 export type OutputKind = 'markdown' | 'html' | 'table' | 'json' | 'image' | 'pdf' | 'document' | 'text' | 'other'
@@ -63,6 +64,7 @@ export interface OutputFile {
   at: number
   /** gone since (deleted or moved) */
   missing: boolean
+  unavailableReason?: 'missing' | 'unreadable'
   /** what it can be exported to */
   exports: ExportFormat[]
 }
@@ -101,12 +103,55 @@ export interface UsageReport {
   budget: { daily: number | null; currency: ModelPricing['currency']; spentToday: number; paused: boolean }
 }
 
+export interface Project {
+  workingDirectory: string | null
+  id: string
+  name: string
+  description: string
+  createdAt: number
+  updatedAt: number
+}
+export interface ProjectSummary extends Project {
+  threadCount: number
+  artifactCount: number
+  lastActivityAt: number
+}
+export interface ProjectDetail extends ProjectSummary {
+  threads: Thread[]
+}
+export interface ProjectFileEntry {
+  name: string
+  path: string
+  kind: 'directory' | 'file'
+  size: number
+  modifiedAt: number
+}
+export interface ProjectFileListing {
+  root: string
+  path: string
+  entries: ProjectFileEntry[]
+  truncated: boolean
+}
+export interface ProjectInput {
+  workingDirectory?: string | null
+  id?: string
+  name: string
+  description?: string
+}
+
+export interface Artifact extends OutputFile {
+  projectId: string | null
+  projectName: string | null
+  threadTitle: string
+}
+
 export interface Thread {
   id: string
   title: string
   modelId: string | null
   createdAt: number
   updatedAt: number
+  projectId: string | null
 }
 
 export interface ToolCall {
@@ -730,9 +775,9 @@ export interface Settings {
   computerUse: ComputerUseSettings
 }
 
-/** Letting the agent work in the user's own browser (and, later, other apps). */
+/** Letting the agent work in the user's own browser and macOS apps. */
 export interface ComputerUseSettings {
-  /** desktop apps (not implemented yet) */
+  /** macOS desktop apps; requires per-app consent */
   desktop: boolean
   /** the user's own Chrome / Edge, through the Navo extension */
   myBrowser: boolean
@@ -750,9 +795,26 @@ export interface ComputerUseStatus {
     /** the folder to pick in "Load unpacked" */
     extensionDir: string
   }
-  /** desktop apps: not implemented yet */
-  desktop: null
+  desktop: DesktopStatus
 }
+
+export interface DesktopStatus {
+  platform: 'darwin' | 'win32' | 'unsupported'
+  supported: boolean
+  accessibility: boolean
+  screenRecording: boolean
+  helper: 'ok' | 'missing' | 'failed'
+  active: { threadId: string; bundleId: string; app: string } | null
+}
+
+export interface DesktopConsentRequest {
+  id: string
+  threadId: string
+  app: string
+  bundleId: string
+}
+
+export type DesktopConsentDecision = 'session' | 'once' | 'deny'
 
 /** A picture of the tab the agent works on in the user's browser. */
 export interface LiveFrame {

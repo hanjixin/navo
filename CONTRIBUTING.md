@@ -3,7 +3,8 @@
 ## 环境
 
 - Node.js 22（见 `.nvmrc`），pnpm 10（`corepack enable` 后自动使用 `packageManager` 指定的版本）
-- macOS 上跑端到端测试需要系统自带的 `sqlite3`
+- macOS 桌面 helper 需要 Xcode Command Line Tools；端到端测试需要系统自带的 `sqlite3`
+- Windows 桌面 helper 需要 .NET 10 SDK（`dotnet --version`）；支持 Windows 10/11 x64 与 ARM64 的普通交互桌面。发布产物包含运行时，安装用户无需安装 SDK 或 .NET。
 
 ```bash
 pnpm install        # 同时为 Electron 编译 better-sqlite3，并安装 Git 钩子
@@ -21,6 +22,10 @@ pnpm dev            # 开发模式（界面热更新；改了 src/main 需要重
 | `pnpm test:agent`                  | 用真实模型跑一轮对话（需要 `ANTHROPIC_API_KEY`，或 `PROVIDER=openai-responses OPENAI_API_KEY=…`）   |
 | `pnpm dist` / `pnpm test:packaged` | 打包安装包 / 对打包产物做冒烟测试                                                                   |
 | `pnpm screenshots`                 | 截取各页面截图                                                                                      |
+
+桌面 helper：`pnpm build:desktop` 编译本机架构；Windows 下 `node scripts/build-desktop-helper.mjs --arch=arm64` 可单独发布 ARM64，`--universal` 发布 win-x64 和 win-arm64 到各自的 `dist/desktop/win-*` 目录。`electron-builder` 按 `${arch}` 复制对应目录；不要把 x64 helper 手动放入 ARM64 安装包。Windows 发布是 self-contained 目录形式，exe 旁的 DLL、运行时等文件必须一起打包。
+
+`pnpm test:desktop` 使用 fake helper；`node e2e/desktop-helper.mjs` 可单独验证协议、长输入中断和急停锁。Windows CI 使用 .NET 10 构建并运行这些检查与 Electron 桌面 E2E，不要求用户授权或真实桌面操作。这些检查不能替代 Windows 实机 UI Automation、不同 DPI、多屏与应用兼容性测试；UAC、高权限窗口、锁屏及跨用户会话不在支持范围内。macOS 的真实 TextEdit 评测请按 README 的显式手动步骤执行。
 
 单个端到端套件可以直接运行，例如 `pnpm build && node e2e/features.mjs`。
 
