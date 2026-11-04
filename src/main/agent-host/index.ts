@@ -21,6 +21,7 @@ const runner = new Runner({
   checkpointsPath,
   emit: (e: ChatEvent) => rpc.emit('chat.event', e),
   callTool: (req: ToolCallRequest) => rpc.call('tool.call', req),
+  workspaceWrite: (e) => rpc.call('workspace.write', e),
   usage: (e) => rpc.emit('usage', e),
 })
 

@@ -41,21 +41,25 @@ const chineseOnPage = () =>
     return [...seen]
   })
 
-const PAGES = ['chat', 'tasks', 'files', 'skills', 'connectors', 'mcp', 'memory', 'plugins', 'macros', 'models', 'usage', 'settings']
+const PAGES = ['chat', 'tasks', 'files', 'projects', 'artifacts', 'skills', 'connectors', 'mcp', 'memory', 'plugins', 'macros', 'models', 'usage', 'settings']
 
 try {
   const p = await api('providers.save', { type: 'openai-compatible', name: 'Mock', baseURL: mock.url, apiKey: 'x' })
   await api('models.save', { providerId: p.id, model: 'mock-1', displayName: 'Mock', supportsTools: true, supportsVision: false, isDefault: true })
 
   // ---------- switch to English (the windows reload)
-  await api('settings.set', { language: 'en' })
+  await api('settings.set', { language: 'en' }).catch((error) => {
+    // Changing language reloads the renderer and may tear down this invoke's evaluation context.
+    // The assertions below still require the requested language to load successfully.
+    if (!/Execution context was destroyed/.test(String(error))) throw error
+  })
   await until(async () => (await win.evaluate(() => document.documentElement.lang)) === 'en')
   win = await mainWindow(app)
   await win.waitForSelector('nav', { timeout: 10000 })
   ok((await win.evaluate(() => document.documentElement.lang)) === 'en', 'switching the language reloads the window in English')
   const nav = await win.textContent('nav')
   ok(
-    ['Chat', 'Tasks', 'Files', 'Skill', 'Connectors', 'Memory', 'Macros', 'Models', 'Usage', 'Settings'].every((n) => nav.includes(n)),
+    ['All conversations', 'Tasks', 'Files', 'Skill', 'Connectors', 'Memory', 'Macros', 'Models', 'Usage', 'Settings'].every((n) => nav.includes(n)),
     'the navigation is English',
   )
 
@@ -93,11 +97,15 @@ try {
   )
 
   // ---------- and back
-  await api('settings.set', { language: 'zh' })
+  await api('settings.set', { language: 'zh' }).catch((error) => {
+    // Changing language reloads the renderer and may tear down this invoke's evaluation context.
+    // The assertions below still require the requested language to load successfully.
+    if (!/Execution context was destroyed/.test(String(error))) throw error
+  })
   await until(async () => (await win.evaluate(() => document.documentElement.lang).catch(() => '')) === 'zh-CN')
   win = await mainWindow(app)
   await win.waitForSelector('nav', { timeout: 10000 })
-  ok((await win.textContent('nav')).includes('对话'), 'switching back restores Chinese')
+  ok((await win.textContent('nav')).includes('全部会话'), 'switching back restores Chinese')
 } catch (e) {
   await win.screenshot({ path: join(out, 'i18n-fail.png') }).catch(() => null)
   console.log('FAIL exception', e)

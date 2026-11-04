@@ -27,6 +27,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: pnpm install --frozen-lockfile
+      - run: pnpm check
       - run: pnpm build
       - name: Package & publish
         run: pnpm exec electron-builder --publish always -c.publish.provider=github -c.publish.releaseType=draft

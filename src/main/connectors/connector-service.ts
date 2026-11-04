@@ -161,7 +161,7 @@ class ConnectorService {
         const provider = new StoredOAuthProvider(id)
         const first = await auth(provider, { serverUrl: def.mcpUrl })
         if (first === 'REDIRECT') {
-          const code = await waitForAuthCode()
+          const code = await waitForAuthCode(5 * 60_000, provider.authorizationState())
           await auth(provider, { serverUrl: def.mcpUrl, authorizationCode: code })
         }
       }

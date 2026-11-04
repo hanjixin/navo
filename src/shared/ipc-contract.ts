@@ -50,6 +50,12 @@ import type {
   VoiceStatus,
   OutputFile,
   OutputPreview,
+  Project,
+  ProjectInput,
+  ProjectSummary,
+  ProjectDetail,
+  ProjectFileListing,
+  Artifact,
   ExportFormat,
   Thread,
   ThreadState,
@@ -63,15 +69,27 @@ export interface Api {
   'providers.save': (input: ProviderInput) => Provider
   'providers.delete': (id: string) => void
   'providers.fetchModels': (id: string) => string[]
+  'providers.importModels': (id: string) => { imported: number; existing: number; total: number }
   'models.list': () => ModelConfig[]
   'models.save': (input: ModelInput) => ModelConfig
   'models.delete': (id: string) => void
   'models.setDefault': (id: string) => void
+  'models.setEnabled': (id: string, enabled: boolean) => void
   'models.test': (id: string) => { ok: boolean; latencyMs: number; reply?: string; error?: string }
 
   // chat
   'threads.list': () => Thread[]
-  'threads.create': (modelId?: string | null) => Thread
+  'threads.create': (modelId?: string | null, projectId?: string | null) => Thread
+  'threads.setProject': (id: string, projectId: string | null) => void
+  'projectFiles.list': (projectId: string, path?: string, showHidden?: boolean) => ProjectFileListing
+  'projectFiles.preview': (projectId: string, path: string) => OutputPreview
+  'projectFiles.reveal': (projectId: string, path: string) => void
+  'projectFiles.openDirectory': (projectId: string) => void
+  'projects.pickDirectory': () => string | null
+  'projects.list': () => ProjectSummary[]
+  'projects.get': (id: string) => ProjectDetail | null
+  'projects.save': (input: ProjectInput) => Project
+  'projects.delete': (id: string) => void
   'threads.rename': (id: string, title: string) => void
   'threads.delete': (id: string) => void
   'threads.setModel': (id: string, modelId: string) => void
@@ -229,6 +247,13 @@ export interface Api {
   'outputs.saveAs': (id: string) => string | null
   'outputs.reveal': (id: string) => void
   'outputs.open': (id: string) => void
+  'artifacts.get': (id: string) => Artifact | null
+  'artifacts.list': (projectId?: string | null) => Artifact[]
+  'artifacts.preview': (id: string) => OutputPreview
+  'artifacts.export': (id: string, format: ExportFormat, dest?: string) => string | null
+  'artifacts.saveAs': (id: string) => string | null
+  'artifacts.reveal': (id: string) => void
+  'artifacts.open': (id: string) => void
   // computer use: the user's own browser
   'computerUse.status': () => ComputerUseStatus
   'computerUse.refreshDesktop': () => ComputerUseStatus
@@ -317,6 +342,9 @@ export interface Events {
   'memory.consolidated': { changed: number; conflicts: number }
   'chat.event': ChatEvent
   'threads.changed': void
+  'models.changed': void
+  'projects.changed': void
+  'artifacts.changed': void
   'browser.state': BrowserState
   /** Ask the renderer to show the browser panel (agent started using it, or a link opened a tab) */
   /** open: user action → open the panel; otherwise (agent activity) a collapsed panel gets the mini window */

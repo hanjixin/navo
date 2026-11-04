@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Circle, ExternalLink, Globe, Hand, Loader2, Plus, RotateCw, Square, SquareTerminal, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,7 +16,7 @@ const GUTTER = 6
 /** Dragging this far below the minimum width collapses the panel on release. */
 const COLLAPSE_SLACK = 120
 
-export function BrowserPanel() {
+export function BrowserPanel({ header, embedded = false, resizing = false }: { header?: ReactNode; embedded?: boolean; resizing?: boolean } = {}) {
   const { state, width, setWidth, setOpen, recordingSteps, lastRecorded, external } = useBrowser()
   const overlays = useOverlayStore((s) => s.count)
   const devMode = useSettings((s) => s.settings?.devMode)
@@ -43,13 +43,13 @@ export function BrowserPanel() {
 
   // The native view sits above the DOM. While dragging or while a floating layer is open we swap it
   // for a still frame of the page, so nothing is covered and nothing flashes blank.
-  const wantHidden = overlays > 0 || dragging
+  const wantHidden = overlays > 0 || dragging || resizing
   useEffect(() => {
     let cancelled = false
     if (wantHidden) {
       // hide promptly even if capturing is slow (e.g. mid page load); the still frame fills in when ready
       // (a drag has already hidden it and shows the primed frame)
-      const timer = setTimeout(() => !cancelled && setHidden(true), dragging ? 0 : 250)
+      const timer = setTimeout(() => !cancelled && setHidden(true), dragging || resizing ? 0 : 250)
       void call('browser.capture')
         .catch(() => null)
         .then((img) => {
@@ -64,7 +64,7 @@ export function BrowserPanel() {
     return () => {
       cancelled = true
     }
-  }, [wantHidden, dragging])
+  }, [wantHidden, dragging, resizing])
 
   // Keep the native WebContentsView glued to the placeholder element.
   useLayoutEffect(() => {
@@ -82,10 +82,9 @@ export function BrowserPanel() {
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', report)
+      void call('browser.setBounds', null)
     }
   }, [hidden, effective, showExternal])
-
-  useEffect(() => () => void call('browser.setBounds', null), [])
 
   // the agent's tab in the user's own browser is shown as a live picture instead of the native view
   useEffect(() => {
@@ -157,42 +156,45 @@ export function BrowserPanel() {
   }
 
   return (
-    <aside className="flex shrink-0 animate-fade-in" style={{ width: effective + GUTTER }}>
+    <aside className={cn('flex shrink-0 animate-fade-in', embedded && 'min-h-0 w-full flex-1')} style={embedded ? undefined : { width: effective + GUTTER }}>
       {/* resize gutter: lives outside the native view so it always receives the pointer */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('调整浏览器宽度（双击恢复默认，拖到最窄以收起）')}
-        aria-valuemin={BROWSER_MIN}
-        aria-valuemax={max}
-        aria-valuenow={effective}
-        tabIndex={0}
-        title={t('拖动调整宽度 · 双击恢复默认')}
-        className="group relative flex w-[6px] shrink-0 cursor-col-resize justify-center bg-background outline-none"
-        onPointerEnter={primeSnapshot}
-        onPointerDown={onHandleDown}
-        onPointerMove={onHandleMove}
-        onPointerUp={onHandleUp}
-        onPointerCancel={onHandleUp}
-        onDoubleClick={() => setWidth(BROWSER_DEFAULT)}
-        onKeyDown={onHandleKey}
-      >
+      {!embedded ? (
         <div
-          className={cn(
-            'h-full w-px bg-border transition-[width,background-color] duration-150 ease-[var(--ease)] group-hover:w-[2px] group-hover:bg-primary/60 group-focus-visible:w-[2px] group-focus-visible:bg-primary',
-            dragging && 'w-[2px] bg-primary',
-            collapseIntent && 'bg-danger',
-          )}
-        />
-        <div
-          className={cn(
-            'pointer-events-none absolute top-1/2 h-8 w-[4px] -translate-y-1/2 rounded-full bg-subtle-foreground/50 opacity-0 transition-opacity duration-150 group-hover:opacity-100',
-            dragging && 'opacity-0',
-          )}
-        />
-      </div>
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('调整浏览器宽度（双击恢复默认，拖到最窄以收起）')}
+          aria-valuemin={BROWSER_MIN}
+          aria-valuemax={max}
+          aria-valuenow={effective}
+          tabIndex={0}
+          title={t('拖动调整宽度 · 双击恢复默认')}
+          className="group relative flex w-[6px] shrink-0 cursor-col-resize justify-center bg-background outline-none"
+          onPointerEnter={primeSnapshot}
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+          onPointerCancel={onHandleUp}
+          onDoubleClick={() => setWidth(BROWSER_DEFAULT)}
+          onKeyDown={onHandleKey}
+        >
+          <div
+            className={cn(
+              'h-full w-px bg-border transition-[width,background-color] duration-150 ease-[var(--ease)] group-hover:w-[2px] group-hover:bg-primary/60 group-focus-visible:w-[2px] group-focus-visible:bg-primary',
+              dragging && 'w-[2px] bg-primary',
+              collapseIntent && 'bg-danger',
+            )}
+          />
+          <div
+            className={cn(
+              'pointer-events-none absolute top-1/2 h-8 w-[4px] -translate-y-1/2 rounded-full bg-subtle-foreground/50 opacity-0 transition-opacity duration-150 group-hover:opacity-100',
+              dragging && 'opacity-0',
+            )}
+          />
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col bg-card">
+        {header}
         {/* tabs */}
         <div className="flex h-9 shrink-0 items-end gap-px overflow-x-auto border-b border-border bg-sidebar px-1.5">
           {state.tabs.map((tab) => (

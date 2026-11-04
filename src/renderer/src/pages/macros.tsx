@@ -17,6 +17,7 @@ import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useBrowser } from '@/stores/browser'
 import { useChat } from '@/stores/chat'
+import { threadPath } from '@/lib/routes'
 import { t } from '@shared/i18n'
 
 const STEP_LABEL: Record<MacroStepType, string> = {
@@ -201,7 +202,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
   const stats = useFlowStats(macro.id)
   const navigate = useNavigate()
   const newThread = useChat((s) => s.newThread)
-  const send = useChat((s) => s.send)
+  const sendTo = useChat((s) => s.sendTo)
 
   useEffect(() => {
     setM(macro)
@@ -285,9 +286,10 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
   const handToAgent = async () => {
     if (!result || result.ok) return
     const step = m.steps[result.failedStep ?? 0]
-    await newThread()
-    navigate('/chat')
-    void send(
+    const thread = await newThread()
+    navigate(threadPath(thread))
+    void sendTo(
+      thread.id,
       t(
         '我在运行录制宏「{{v0}}」时，第 {{v1}} 步失败：{{v2}}\n失败步骤：{{v3}}\n\n全部步骤：\n{{v4}}\n\n请基于当前浏览器页面，从失败的步骤开始继续完成剩余操作。',
         {

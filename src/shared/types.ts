@@ -32,6 +32,7 @@ export interface ModelConfig {
   maxTokens?: number | null
   reasoningEffort?: 'low' | 'medium' | 'high' | null
   isDefault: boolean
+  enabled: boolean
   /** price per million tokens, for the usage page (set with models.setPricing) */
   pricing?: ModelPricing | null
 }
@@ -44,7 +45,7 @@ export interface ModelPricing {
   currency: 'CNY' | 'USD'
 }
 
-export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing'> & { id?: string; isDefault?: boolean }
+export type ModelInput = Omit<ModelConfig, 'id' | 'isDefault' | 'pricing' | 'enabled'> & { id?: string; isDefault?: boolean; enabled?: boolean }
 
 // ---------- Outputs ----------
 export type OutputKind = 'markdown' | 'html' | 'table' | 'json' | 'image' | 'pdf' | 'document' | 'text' | 'other'
@@ -63,6 +64,7 @@ export interface OutputFile {
   at: number
   /** gone since (deleted or moved) */
   missing: boolean
+  unavailableReason?: 'missing' | 'unreadable'
   /** what it can be exported to */
   exports: ExportFormat[]
 }
@@ -101,12 +103,55 @@ export interface UsageReport {
   budget: { daily: number | null; currency: ModelPricing['currency']; spentToday: number; paused: boolean }
 }
 
+export interface Project {
+  workingDirectory: string | null
+  id: string
+  name: string
+  description: string
+  createdAt: number
+  updatedAt: number
+}
+export interface ProjectSummary extends Project {
+  threadCount: number
+  artifactCount: number
+  lastActivityAt: number
+}
+export interface ProjectDetail extends ProjectSummary {
+  threads: Thread[]
+}
+export interface ProjectFileEntry {
+  name: string
+  path: string
+  kind: 'directory' | 'file'
+  size: number
+  modifiedAt: number
+}
+export interface ProjectFileListing {
+  root: string
+  path: string
+  entries: ProjectFileEntry[]
+  truncated: boolean
+}
+export interface ProjectInput {
+  workingDirectory?: string | null
+  id?: string
+  name: string
+  description?: string
+}
+
+export interface Artifact extends OutputFile {
+  projectId: string | null
+  projectName: string | null
+  threadTitle: string
+}
+
 export interface Thread {
   id: string
   title: string
   modelId: string | null
   createdAt: number
   updatedAt: number
+  projectId: string | null
 }
 
 export interface ToolCall {

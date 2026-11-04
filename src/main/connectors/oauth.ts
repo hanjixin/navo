@@ -9,7 +9,7 @@ import { t } from '@shared/i18n'
 export const OAUTH_PORT = 38765
 export const REDIRECT_URL = `http://127.0.0.1:${OAUTH_PORT}/oauth/callback`
 
-type Stored = { client?: OAuthClientInformationMixed; tokens?: OAuthTokens; verifier?: string }
+type Stored = { client?: OAuthClientInformationMixed; tokens?: OAuthTokens; verifier?: string; state?: string }
 
 export class StoredOAuthProvider implements OAuthClientProvider {
   constructor(private readonly key: string) {}
@@ -50,7 +50,12 @@ export class StoredOAuthProvider implements OAuthClientProvider {
     this.patch({ tokens })
   }
   redirectToAuthorization(url: URL) {
+    const state = url.searchParams.get('state')
+    if (state) this.patch({ state })
     void shell.openExternal(url.toString())
+  }
+  authorizationState(): string | undefined {
+    return this.load().state
   }
   saveCodeVerifier(verifier: string) {
     this.patch({ verifier })
@@ -72,10 +77,15 @@ export class StoredOAuthProvider implements OAuthClientProvider {
 }
 
 /** Waits for a single authorization code on the loopback redirect. */
-export function waitForAuthCode(timeoutMs = 5 * 60_000): Promise<string> {
+export function waitForAuthCode(timeoutMs = 5 * 60_000, expectedState?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let server: Server | null = null
+    let settled = false
+    const escapeHtml = (value: string): string =>
+      value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
     const finish = (err: Error | null, code?: string) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       server?.close()
       if (err) reject(err)
@@ -90,11 +100,17 @@ export function waitForAuthCode(timeoutMs = 5 * 60_000): Promise<string> {
       }
       const code = url.searchParams.get('code')
       const error = url.searchParams.get('error')
+      const state = url.searchParams.get('state')
+      if (expectedState && state !== expectedState) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end(t('授权请求状态无效'))
+        finish(new Error(t('授权请求状态无效')))
+        return
+      }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(
         `<html><body style="font-family:system-ui;background:#0B1220;color:#E6EAF0;display:grid;place-items:center;height:100vh;margin:0">
           <div style="text-align:center"><h2 style="font-weight:600">${code ? t('授权成功') : t('授权失败')}</h2>
-          <p style="color:#8A94A6">${code ? t('可以关闭此页面并返回 Navo。') : (error ?? '')}</p></div></body></html>`,
+          <p style="color:#8A94A6">${code ? t('可以关闭此页面并返回 Navo。') : escapeHtml(error ?? '')}</p></div></body></html>`,
       )
       finish(code ? null : new Error(error ?? t('授权失败')), code ?? undefined)
     })

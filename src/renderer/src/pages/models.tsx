@@ -1,9 +1,10 @@
 import { CheckCircle2, Coins, Cpu, Download, ExternalLink, KeyRound, MoreHorizontal, Pencil, Plus, Star, Trash2, Zap } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { ModelConfig, ModelInput, Provider, ProviderInput, ProviderType } from '@shared/types'
 import { CURRENCY_SYMBOL } from '@shared/pricing'
 import { Page, PageHeader } from '@/components/layout/page'
+import { ModelIdInput } from '@/components/models/model-id-input'
 import { PricingDialog } from '@/components/models/pricing-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -166,23 +167,12 @@ function ProviderDialog({ provider, onClose, onSaved }: { provider: Provider | '
   )
 }
 
-function ModelDialog({
-  provider,
-  model,
-  onClose,
-  onSaved,
-  autoFetch,
-}: {
-  provider: Provider
-  model: ModelConfig | null
-  onClose: () => void
-  onSaved: () => void
-  autoFetch?: boolean
-}) {
+function ModelDialog({ provider, model, onClose, onSaved }: { provider: Provider; model: ModelConfig | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<ModelInput>(
     model ?? {
       providerId: provider.id,
       model: '',
+      enabled: true,
       displayName: '',
       supportsTools: true,
       supportsVision: provider.type !== 'openai-compatible',
@@ -193,6 +183,8 @@ function ModelDialog({
     },
   )
   const [remote, setRemote] = useState<string[] | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const fetchSequence = useRef(0)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const suggestions = presetFor(provider)?.models ?? []
   const [fetching, setFetching] = useState(false)
@@ -202,32 +194,39 @@ function ModelDialog({
   const set = <K extends keyof ModelInput>(k: K, v: ModelInput[K]) =>
     setForm((f) => ({ ...f, [k]: v, ...(k === 'model' && !visionTouched ? { supportsVision: guessVision(provider.type, v as string) } : {}) }))
 
-  const fetchRemote = async (quiet = false) => {
+  const fetchRemote = async () => {
+    const sequence = ++fetchSequence.current
     setFetching(true)
     setFetchError(null)
     try {
       const list = await call('providers.fetchModels', provider.id)
+      if (sequence !== fetchSequence.current) return
       setRemote(list)
-      if (!form.model && list.length) set('model', suggestions.find((x) => list.includes(x)) ?? list[0])
+      setPickerOpen(true)
     } catch (e) {
+      if (sequence !== fetchSequence.current) return
       setFetchError(errorMessage(e).split('\n')[0])
-      if (!quiet) toast.error(t('获取模型列表失败'), { description: errorMessage(e).split('\n')[0] })
-      if (!form.model && suggestions[0]) set('model', suggestions[0])
     } finally {
-      setFetching(false)
+      if (sequence === fetchSequence.current) setFetching(false)
     }
   }
-
-  useEffect(() => {
-    if (autoFetch) void fetchRemote(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useEffect(
+    () => () => {
+      fetchSequence.current++
+    },
+    [],
+  )
 
   const save = async () => {
     if (!form.model.trim()) return setError(t('请填写模型 ID'))
     setSaving(true)
     try {
-      await call('models.save', { ...form, model: form.model.trim(), displayName: form.displayName.trim() || form.model.trim() })
+      await call('models.save', {
+        ...form,
+        isDefault: form.enabled === false ? false : form.isDefault,
+        model: form.model.trim(),
+        displayName: form.displayName.trim() || form.model.trim(),
+      })
       toast.success(t('已保存模型'))
       onSaved()
       onClose()
@@ -244,6 +243,9 @@ function ModelDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         title={model ? t('编辑模型') : t('添加模型 · {{v0}}', { v0: provider.name })}
+        onEscapeKeyDown={(event) => {
+          if (pickerOpen) event.preventDefault()
+        }}
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
@@ -266,23 +268,28 @@ function ModelDialog({
               </Button>
             }
           >
-            <Input
-              list="remote-models"
+            <ModelIdInput
               value={form.model}
-              onChange={(e) => {
-                set('model', e.target.value)
+              onChange={(value) => {
+                set('model', value)
                 setError(null)
               }}
+              options={remote ?? []}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              loading={fetching}
+              loaded={remote !== null}
               placeholder={provider.type === 'anthropic' ? 'claude-sonnet-5' : 'gpt-5.1'}
-              className="font-mono text-xs"
             />
-            <datalist id="remote-models">
-              {remote?.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
           </Field>
-          {remote ? <p className="-mt-2 text-xs text-muted-foreground">{t('已获取 {{v0}} 个模型，输入时可下拉选择。', { v0: remote.length })}</p> : null}
+          {remote ? (
+            <p className="-mt-2 text-xs text-muted-foreground">{t('已获取 {{v0}} 个模型，点击箭头选择，或输入名称筛选。', { v0: remote.length })}</p>
+          ) : null}
+          {fetchError ? (
+            <p role="alert" className="-mt-2 text-xs text-danger">
+              {fetchError}
+            </p>
+          ) : null}
           {fetchError && suggestions.length ? (
             <div className="-mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               {t('未能自动获取，常用模型：')}
@@ -300,6 +307,10 @@ function ModelDialog({
           <Field label={t('显示名称')}>
             <Input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} placeholder={form.model || t('例如 Claude Sonnet')} />
           </Field>
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span>{t('启用此模型')}</span>
+            <Switch aria-label={t('启用此模型')} checked={form.enabled !== false} onCheckedChange={(enabled) => set('enabled', enabled)} />
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Temperature" hint={t('留空使用默认')}>
               <Input type="number" step="0.1" min={0} max={2} value={form.temperature ?? ''} onChange={(e) => set('temperature', num(e.target.value))} />
@@ -354,6 +365,18 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null)
   const [pricing, setPricing] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const toggle = async (enabled: boolean) => {
+    setUpdating(true)
+    try {
+      await call('models.setEnabled', m.id, enabled)
+      reload()
+    } catch (e) {
+      toast.error(t('保存失败'), { description: errorMessage(e) })
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   const test = async () => {
     setTesting(true)
@@ -369,7 +392,7 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
   }
 
   return (
-    <div className="group flex min-h-11 items-center gap-3 px-4 py-2">
+    <div className="group flex min-h-11 flex-wrap items-center gap-3 px-4 py-2" data-testid="model-row" data-model-id={m.model}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{m.displayName}</span>
@@ -404,6 +427,15 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           </span>
         )
       ) : null}
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{m.enabled ? t('已启用') : t('已停用')}</span>
+        <Switch
+          checked={m.enabled}
+          disabled={updating}
+          onCheckedChange={(enabled) => void toggle(enabled)}
+          aria-label={t('启用模型 {{v0}}', { v0: m.displayName })}
+        />
+      </label>
       <Button variant="ghost" size="sm" loading={testing} onClick={test}>
         {!testing ? <Zap /> : null}
         {t('测试')}
@@ -415,7 +447,7 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {!m.isDefault ? (
+          {m.enabled && !m.isDefault ? (
             <DropdownMenuItem onSelect={async () => (await call('models.setDefault', m.id), reload())}>
               <Star />
               {t('设为默认')}
@@ -444,7 +476,30 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
 export function ModelsPage() {
   const { providers, models, error, load } = useModels()
   const [providerDialog, setProviderDialog] = useState<Provider | 'new' | null>(null)
-  const [modelDialog, setModelDialog] = useState<{ provider: Provider; model: ModelConfig | null; autoFetch?: boolean } | null>(null)
+  const [modelDialog, setModelDialog] = useState<{ provider: Provider; model: ModelConfig | null } | null>(null)
+  const [importing, setImporting] = useState<Set<string>>(new Set())
+  const [importErrors, setImportErrors] = useState<Record<string, string>>({})
+  const importModels = async (provider: Provider) => {
+    setImporting((current) => new Set(current).add(provider.id))
+    setImportErrors((current) => {
+      const next = { ...current }
+      delete next[provider.id]
+      return next
+    })
+    try {
+      const result = await call('providers.importModels', provider.id)
+      await load()
+      toast.success(t('新增 {{v0}} 个模型，默认停用；已有 {{v1}} 个模型保留原配置。', { v0: result.imported, v1: result.existing }))
+    } catch (e) {
+      setImportErrors((current) => ({ ...current, [provider.id]: errorMessage(e).split('\n')[0] }))
+    } finally {
+      setImporting((current) => {
+        const next = new Set(current)
+        next.delete(provider.id)
+        return next
+      })
+    }
+  }
 
   useEffect(() => {
     void load()
@@ -464,7 +519,7 @@ export function ModelsPage() {
     <Page>
       <PageHeader
         title={t('模型')}
-        description={t('管理模型提供方与可用模型。对话中可随时切换，新对话使用默认模型。')}
+        description={t('厂商模型自动导入并默认停用；启用后才会出现在对话选择器中，也可手动添加或编辑配置。')}
         actions={
           providers?.length ? (
             <Button variant="primary" onClick={() => setProviderDialog('new')}>
@@ -497,8 +552,8 @@ export function ModelsPage() {
           {providers.map((p) => {
             const list = models.filter((m) => m.providerId === p.id)
             return (
-              <Card key={p.id} className="animate-fade-in">
-                <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+              <Card key={p.id} className="animate-fade-in" data-testid="provider-card" data-provider-id={p.id}>
+                <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-base font-semibold">{p.name}</span>
@@ -514,6 +569,19 @@ export function ModelsPage() {
                     </div>
                     <div className="truncate font-mono text-xs text-muted-foreground">{p.baseURL || TYPES.find((t) => t.value === p.type)?.baseURL}</div>
                   </div>
+                  <span className="text-xs text-muted-foreground">
+                    {t('已启用 {{v0}} / {{v1}}', { v0: list.filter((model) => model.enabled).length, v1: list.length })}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={importing.has(p.id)}
+                    aria-label={t('拉取 {{v0}} 的模型', { v0: p.name })}
+                    onClick={() => void importModels(p)}
+                  >
+                    <Download />
+                    {t('拉取模型')}
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={() => setModelDialog({ provider: p, model: null })}>
                     <Plus />
                     {t('添加模型')}
@@ -537,6 +605,11 @@ export function ModelsPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                {importErrors[p.id] ? (
+                  <div role="alert" className="border-b border-border px-4 py-3 text-xs text-danger">
+                    {importErrors[p.id]} {t('可重试拉取，或手动添加模型。')}
+                  </div>
+                ) : null}
                 {list.length ? (
                   <div className="divide-y divide-border">
                     {list.map((m) => (
@@ -562,8 +635,7 @@ export function ModelsPage() {
           onClose={() => setProviderDialog(null)}
           onSaved={(p, isNew) => {
             void load()
-            // a new provider is useless without a model: continue straight into picking one
-            if (isNew) setModelDialog({ provider: p, model: null, autoFetch: true })
+            if (isNew) void importModels(p)
           }}
         />
       ) : null}

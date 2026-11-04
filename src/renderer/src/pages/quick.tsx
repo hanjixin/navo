@@ -24,7 +24,8 @@ export function QuickPage() {
   const thread = useChat((s) => s.threads?.find((t) => t.id === s.activeId))
   const draftFiles = useChat((s) => s.draftFiles)
   const loadModels = useModels((s) => s.load)
-  const noModels = useModels((s) => s.models?.length === 0)
+  const noModels = useModels((s) => s.activeModels?.length === 0)
+  const [draftModelId, setDraftModelId] = useState<string | null>(null)
   const [clip, setClip] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
@@ -136,13 +137,25 @@ export function QuickPage() {
         ) : null}
         {view?.interrupt ? <InterruptCard interrupt={view.interrupt} onDecide={decide} /> : null}
         <Composer
-          onSend={(t, fileIds) => void useChat.getState().send(t, [], fileIds)}
+          onSend={(text, fileIds) => {
+            void (async () => {
+              const id = activeId ?? (await useChat.getState().newThread(draftModelId)).id
+              await useChat.getState().sendTo(id, text, [], fileIds)
+            })().catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
+          }}
           onStop={() => activeId && void call('chat.stop', activeId)}
           running={!!view?.running}
-          modelId={thread?.modelId ?? null}
-          onModelChange={(id) => activeId && void call('threads.setModel', activeId, id)}
+          modelId={thread ? thread.modelId : draftModelId}
+          onModelChange={(id) => {
+            if (activeId)
+              void call('threads.setModel', activeId, id)
+                .then(() => useChat.getState().loadThreads())
+                .catch((e) => toast.error(t('操作失败'), { description: errorMessage(e) }))
+            else setDraftModelId(id)
+          }}
+          showModelManagementLink={false}
           disabled={noModels || !!view?.interrupt}
-          disabledReason={noModels ? t('请先在 Navo 主窗口配置模型') : t('请先处理上方的确认')}
+          disabledReason={noModels ? t('请先在 Navo 主窗口的模型页面启用模型') : t('请先处理上方的确认')}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { CalendarClock, History, ListChecks, MessageSquare, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import { CalendarClock, History, ListChecks, MessageSquare, MoreHorizontal, PackageOpen, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -67,12 +67,13 @@ const STATUS: Record<
 type Draft = Omit<Task, 'id' | 'createdAt'> & { id?: string }
 
 function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: () => void; onSaved: () => void }) {
-  const models = useModels((s) => s.models) ?? []
+  const models = useModels((s) => s.activeModels) ?? []
   const [d, setD] = useState<Draft>(task ?? { name: '', prompt: '', modelId: null, cron: null, enabled: true, kind: 'agent' })
   const presets = (d.kind ?? 'agent') === 'monitor' ? MONITOR_PRESETS : PRESETS
   const [mode, setMode] = useState(() => (!d.cron ? 'none' : presets.some((p) => p.value === d.cron) ? d.cron : 'custom'))
   const [saving, setSaving] = useState(false)
   const kind = d.kind ?? 'agent'
+  const modelAvailable = kind === 'flow' || (models.length > 0 && (!d.modelId || models.some((model) => model.id === d.modelId)))
   const flowsList = useAsync(() => call('macros.list'), [])
   const flow = flowsList.data?.find((x) => x.id === d.macroId)
   const ready = d.name.trim() && (kind === 'flow' ? !!d.macroId : kind === 'monitor' ? /^https?:\/\/\S+$/i.test(d.monitor?.url.trim() ?? '') : d.prompt.trim())
@@ -84,6 +85,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
   }
 
   const save = async () => {
+    if (!modelAvailable) return
     setSaving(true)
     try {
       await call('tasks.save', { ...d, cron: mode === 'custom' ? d.cron : mode === 'none' ? null : mode })
@@ -109,7 +111,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
             <Button variant="ghost" onClick={onClose}>
               {t('取消')}
             </Button>
-            <Button variant="primary" loading={saving} disabled={!ready} onClick={save}>
+            <Button variant="primary" loading={saving} disabled={!ready || !modelAvailable} onClick={save}>
               {t('保存')}
             </Button>
           </>
@@ -182,15 +184,24 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
           <div className="grid grid-cols-2 gap-3">
             <Field label={kind === 'monitor' ? t('判断用的模型') : t('模型')} className={cn(kind === 'flow' && 'pointer-events-none opacity-50')}>
               <Select
-                value={d.modelId ?? 'default'}
+                value={modelAvailable ? (d.modelId ?? 'default') : ''}
+                placeholder={t('请选择已启用的模型')}
                 onChange={(v) => setD({ ...d, modelId: v === 'default' ? null : v })}
-                options={[{ value: 'default', label: t('默认模型') }, ...models.map((m) => ({ value: m.id, label: m.displayName }))]}
+                options={[
+                  ...(models.length ? [{ value: 'default', label: t('默认模型') }] : []),
+                  ...models.map((m) => ({ value: m.id, label: m.displayName })),
+                ]}
               />
             </Field>
             <Field label={kind === 'monitor' ? t('检查频率') : t('计划')}>
               <Select value={mode} onChange={setMode} options={presets.map((p) => ({ value: p.value === '' ? 'none' : p.value, label: p.label }))} />
             </Field>
           </div>
+          {!modelAvailable ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {models.length ? t('当前模型已停用或不可用，请切换模型') : t('没有已启用的模型，请前往模型页面启用')}
+            </p>
+          ) : null}
           {mode === 'custom' ? (
             <Field label={t('Cron 表达式')} hint={t('分 时 日 月 周，例如 30 8 * * 1-5')}>
               <Input value={d.cron ?? ''} onChange={(e) => setD({ ...d, cron: e.target.value })} className="font-mono" />
@@ -209,6 +220,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
 export function TasksPage() {
   const tasks = useAsync(() => call('tasks.list'))
   const runs = useAsync(() => call('tasks.runs'))
+  const outputCounts = useAsync(() => call('outputs.counts'))
   const [editing, setEditing] = useState<Task | 'new' | null>(null)
   const [history, setHistory] = useState<Task | null>(null)
   const monitors = useAsync(() => call('monitor.summary'))
@@ -226,6 +238,12 @@ export function TasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(
+    () => on('outputs.changed', () => outputCounts.reload()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
   const runNow = async (task: Task) => {
     try {
       await call('tasks.run', task.id)
@@ -237,7 +255,7 @@ export function TasksPage() {
 
   const openThread = (threadId: string) => {
     select(threadId)
-    navigate('/chat')
+    navigate(`/chat/${encodeURIComponent(threadId)}`)
   }
 
   const taskName = (id: string) => tasks.data?.find((task) => task.id === id)?.name ?? t('已删除的任务')
@@ -368,10 +386,29 @@ export function TasksPage() {
                       <div className="truncate text-xs text-muted-foreground">{r.error ?? r.summary ?? (r.status === 'running' ? t('正在执行…') : '')}</div>
                     </div>
                     <span className="shrink-0 text-xs text-subtle-foreground">{timeAgo(r.startedAt)}</span>
+                    {r.threadId && outputCounts.data?.[r.threadId] ? (
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={t('这次运行产生的文件')}>
+                        <PackageOpen className="size-3.5" />
+                        {t('产出 {{v0}}', { v0: outputCounts.data[r.threadId] })}
+                      </span>
+                    ) : null}
                     {r.status === 'running' ? (
                       <Button variant="ghost" size="sm" onClick={() => void call('tasks.cancel', r.id)}>
                         <Square className="size-3 fill-current" />
                         {t('停止')}
+                      </Button>
+                    ) : null}
+                    {r.status === 'error' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const task = tasks.data?.find((x) => x.id === r.taskId)
+                          if (task) void runNow(task)
+                        }}
+                      >
+                        <RefreshCw />
+                        {t('重试')}
                       </Button>
                     ) : null}
                     {r.threadId ? (

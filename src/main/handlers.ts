@@ -1,4 +1,4 @@
-import { shell } from 'electron'
+import { shell, dialog, BrowserWindow } from 'electron'
 import { handleAll } from './core/ipc'
 import { log } from './core/logger'
 import { paths } from './core/paths'
@@ -26,12 +26,26 @@ import { usage } from './usage/usage-service'
 import { voice } from './voice/voice-service'
 import { resolveLanguage } from './core/language'
 import { outputs } from './outputs/outputs-service'
+import { projects } from './projects/project-service'
+import { projectFiles } from './projects/project-files'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
 import { navoMcpServer } from './mcp-server/navo-mcp-server'
 import { t } from '@shared/i18n'
+import { isAbsolute } from 'node:path'
 
 let sandboxRelease: NodeJS.Timeout | undefined
+
+function textArg(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 1_000_000 || value.includes('\0')) throw new Error(`非法参数: ${name}`)
+  return value
+}
+
+function absolutePath(value: unknown, name: string): string {
+  const p = textArg(value, name)
+  if (!isAbsolute(p)) throw new Error(`必须是绝对路径: ${name}`)
+  return p
+}
 
 function background(p: Promise<unknown>): void {
   p.catch((err) => log.error(err))
@@ -43,14 +57,31 @@ export function registerHandlers(): void {
     'providers.save': (input) => providers.save(input),
     'providers.delete': (id) => providers.delete(id),
     'providers.fetchModels': (id) => providers.fetchModels(id),
+    'providers.importModels': (id) => providers.importModels(id),
     'models.list': () => models.list(),
     'models.save': (input) => models.save(input),
     'models.delete': (id) => models.delete(id),
     'models.setDefault': (id) => models.setDefault(id),
+    'models.setEnabled': (id, enabled) => models.setEnabled(id, enabled),
     'models.test': (id) => testModel(id),
 
     'threads.list': () => agent.listThreads(),
-    'threads.create': (modelId) => agent.createThread(modelId),
+    'threads.create': (modelId, projectId) => agent.createThread(modelId, { projectId }),
+    'threads.setProject': (id, projectId) => agent.setThreadProject(id, projectId),
+    'projectFiles.list': (id, path, showHidden) => projectFiles.list(id, path, showHidden),
+    'projectFiles.preview': (id, path) => projectFiles.preview(id, path),
+    'projectFiles.reveal': (id, path) => projectFiles.reveal(id, path),
+    'projectFiles.openDirectory': (id) => projectFiles.openDirectory(id),
+    'projects.pickDirectory': async () => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { properties: ['openDirectory'] as 'openDirectory'[] }
+      const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      return result.canceled ? null : (result.filePaths[0] ?? null)
+    },
+    'projects.list': () => projects.list(),
+    'projects.get': (id) => projects.get(id),
+    'projects.save': (input) => projects.save(input),
+    'projects.delete': (id) => projects.delete(id),
     'threads.rename': (id, title) => agent.renameThread(id, title),
     'threads.delete': (id) => agent.deleteThread(id),
     'threads.setModel': (id, modelId) => agent.setThreadModel(id, modelId),
@@ -153,8 +184,8 @@ export function registerHandlers(): void {
 
     'plugins.list': () => plugins.list(),
     'plugins.setEnabled': (id, enabled) => plugins.setEnabled(id, enabled),
-    'plugins.readFile': (id, file) => plugins.readFile(id, file),
-    'plugins.writeFile': (id, file, content) => plugins.writeFile(id, file, content),
+    'plugins.readFile': (id, file) => plugins.readFile(textArg(id, 'id'), textArg(file, 'file')),
+    'plugins.writeFile': (id, file, content) => plugins.writeFile(textArg(id, 'id'), textArg(file, 'file'), textArg(content, 'content')),
     'plugins.create': (id, name) => plugins.create(id, name),
     'plugins.delete': (id) => plugins.delete(id),
     'plugins.import': () => plugins.import(),
@@ -198,6 +229,13 @@ export function registerHandlers(): void {
     'outputs.saveAs': (id) => outputs.saveAs(id),
     'outputs.reveal': (id) => outputs.reveal(id),
     'outputs.open': (id) => outputs.open(id),
+    'artifacts.get': (id) => outputs.artifact(id),
+    'artifacts.list': (projectId) => outputs.artifacts(projectId),
+    'artifacts.preview': (id) => outputs.preview(id),
+    'artifacts.export': (id, format, dest) => outputs.export(id, format, dest),
+    'artifacts.saveAs': (id) => outputs.saveAs(id),
+    'artifacts.reveal': (id) => outputs.reveal(id),
+    'artifacts.open': (id) => outputs.open(id),
     'computerUse.status': () => computerUse.status(),
     'computerUse.refreshDesktop': () => computerUse.refreshDesktop(),
     'computerUse.openPermission': (kind) => computerUse.openPermission(kind),
@@ -273,10 +311,11 @@ export function registerHandlers(): void {
       }
     },
     'dev.logs': () => log.lines(),
-    'app.showItemInFolder': (path) => shell.showItemInFolder(path),
+    'app.showItemInFolder': (path) => shell.showItemInFolder(absolutePath(path, 'path')),
     'app.language': () => resolveLanguage(),
     'app.openExternal': (url) => {
-      if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+      const value = textArg(url, 'url')
+      if (/^https?:\/\//i.test(value)) void shell.openExternal(value)
     },
     'app.paths': () => ({ userData: paths.userData, skills: paths.skills, plugins: paths.plugins }),
   })

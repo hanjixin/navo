@@ -11,7 +11,10 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/renderer/src/*"], "@shared/*": ["src/shared/*"] }
+    "paths": {
+      "@/*": ["src/renderer/src/*"],
+      "@shared/*": ["src/shared/*"]
+    }
   },
-  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/shared/**/*"]
+  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts", "src/shared/**/*", "tests/renderer/**/*.ts"]
 }

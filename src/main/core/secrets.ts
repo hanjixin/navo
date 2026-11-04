@@ -4,7 +4,8 @@ import { db } from './db'
 /** Secrets are encrypted with the OS keychain via safeStorage and never leave the main process. */
 export const secrets = {
   set(key: string, value: string): void {
-    const enc = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(value).toString('base64') : `plain:${Buffer.from(value).toString('base64')}`
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储不可用，无法保存敏感信息')
+    const enc = safeStorage.encryptString(value).toString('base64')
     db().prepare('INSERT INTO secrets(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, enc)
   },
   get(key: string): string | null {

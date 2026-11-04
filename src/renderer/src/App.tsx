@@ -1,3 +1,4 @@
+import { wireModelEvents } from '@/stores/models'
 import { useEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -27,6 +28,11 @@ import { SettingsPage } from '@/pages/settings'
 import { QuickPage } from '@/pages/quick'
 import { ExtensionGuideHost } from '@/components/browser/extension-guide'
 import { DesktopConsentHost } from '@/components/chat/desktop-consent'
+import { ProjectsPage } from '@/pages/projects'
+import { ProjectDetailPage } from '@/pages/project-detail'
+import { ArtifactsPage } from '@/pages/artifacts'
+import { wireProjectEvents } from '@/stores/projects'
+import { wireArtifactEvents } from '@/stores/artifacts'
 
 /** this renderer is the quick window (global shortcut), not the main window */
 const isQuick = window.location.hash.startsWith('#/quick')
@@ -37,6 +43,7 @@ export function App() {
   const settings = useSettings((s) => s.settings)
   useEffect(() => {
     void load()
+    wireModelEvents()
     wireChatEvents()
     // the quick window only needs the conversation; the app's toasts belong to the main window
     if (isQuick) return
@@ -44,6 +51,8 @@ export function App() {
     wireMemoryEvents()
     wireSkillEvents()
     wireFlowEvents()
+    wireProjectEvents()
+    wireArtifactEvents()
   }, [load])
 
   return (
@@ -61,8 +70,13 @@ export function App() {
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/chat" replace />} />
               <Route path="/chat" element={<ChatPage />} />
+              <Route path="/chat/:threadId" element={<ChatPage />} />
+              <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+              <Route path="/projects/:projectId/chat/:threadId" element={<ChatPage />} />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/files" element={<FilesPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/artifacts" element={<ArtifactsPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/connectors" element={<ConnectorsPage />} />
               <Route path="/mcp" element={<McpPage />} />

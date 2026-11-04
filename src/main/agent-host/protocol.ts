@@ -85,3 +85,9 @@ export type RpcMessage =
   | { kind: 'res'; id: number; ok: true; result: unknown }
   | { kind: 'res'; id: number; ok: false; error: string }
   | { kind: 'evt'; name: string; payload: unknown }
+
+export interface WorkspaceWrite {
+  runId: string
+  threadId: string
+  path: string
+}

@@ -38,11 +38,21 @@ try {
   await page.fill('input[placeholder="https://…/v1"]', mock.url)
   await page.fill('input[type=password]', 'sk-test')
   await page.click('button:has-text("连接")')
+  await page.getByRole('combobox').click()
+  const importedModels = await page.evaluate(() => window.api.invoke('models.list'))
+  ok(importedModels.length === 2 && importedModels.every((model) => !model.enabled), 'imported models remain disabled before explicit selection')
+  await page.getByRole('option', { name: 'mock-1', exact: true }).click()
   await page.waitForSelector('text=连接成功', { timeout: 15000 })
   ok(true, 'custom endpoint connects, lists models and passes the live test')
   await shot(app, 'onboarding-model.png')
   const settingsModels = await page.evaluate(() => window.api.invoke('models.list'))
-  ok(settingsModels.length === 1 && settingsModels[0].isDefault, 'model saved as default')
+  ok(
+    settingsModels.length === 2 &&
+      settingsModels.find((model) => model.model === 'mock-1')?.isDefault &&
+      settingsModels.find((model) => model.model === 'mock-1')?.enabled &&
+      !settingsModels.find((model) => model.model === 'mock-2')?.enabled,
+    'selected model saved as enabled default while other imported models remain disabled',
+  )
   await page.click('footer button:has-text("下一步")')
 
   // import step
@@ -96,6 +106,16 @@ try {
   ok(true, '"跳过引导" leaves onboarding')
 } catch (e) {
   console.log('FAIL exception', e)
+  console.log(
+    'Onboarding failure UI:',
+    await (
+      await mainWindow(app, { onboarding: true })
+    )
+      .locator('body')
+      .innerText()
+      .catch(() => 'unavailable'),
+  )
+  console.log('Mock model-test requests:', mock.requests.length, JSON.stringify(mock.requests.at(-1)))
   process.exitCode = 1
 } finally {
   await app.close().catch(() => undefined)
