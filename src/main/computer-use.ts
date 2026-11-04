@@ -11,7 +11,7 @@ import { log } from './core/logger'
 import { paths } from './core/paths'
 import { getSettings } from './core/settings'
 import { installExtension, type InstallResult } from './external-browser/install'
-import { ExternalPageDriver } from './external-browser/ext-tabs'
+import { ExtensionReload } from './external-browser/reload'
 import { bridge, liveView, targets } from './external-browser/instance'
 import { desktop, desktopConsent, initDesktop } from './desktop/desktop-service'
 import type { DesktopConsentDecision } from '@shared/types'
@@ -24,6 +24,10 @@ const extensionDir = () => {
   const dir = exportedDir()
   return dir && existsSync(join(dir, 'manifest.json')) ? dir : defaultDir()
 }
+const extensionReload = new ExtensionReload(
+  () => bridge.link(),
+  (error) => log.warn(`[my-browser] couldn't reload the updated extension; reload it manually in the browser: ${String(error)}`),
+)
 let watchers = 0
 const bundledExtension = () => (app.isPackaged ? join(process.resourcesPath, 'extension') : appFile('dist/extension'))
 
@@ -36,7 +40,10 @@ const EXTENSION_PAGES = {
 export const computerUse = {
   init(onAbort: (threadId: string) => void, onConsent: () => void): void {
     initDesktop(() => emit('computerUse.changed', this.status()), onAbort, onConsent)
-    bridge.onChange(() => emit('computerUse.changed', this.status()))
+    bridge.onChange(() => {
+      extensionReload.connected()
+      emit('computerUse.changed', this.status())
+    })
     void this.apply()
   },
 
@@ -58,21 +65,23 @@ export const computerUse = {
 
   /** Puts the extension in its fixed folder; a connected extension reloads to pick up a new version. */
   ensureExtension(): InstallResult {
+    const wasInstalled = existsSync(join(defaultDir(), 'manifest.json'))
     const res = installExtension(bundledExtension(), defaultDir())
+    let reload = wasInstalled && res.updated
     // the user's copy follows new versions too (the folder they loaded stays the same)
     const dir = exportedDir()
     if (dir && existsSync(dir)) {
       try {
-        if (installExtension(bundledExtension(), dir).updated) res.updated = true
+        const wasExported = existsSync(join(dir, 'manifest.json'))
+        if (installExtension(bundledExtension(), dir).updated) {
+          res.updated = true
+          reload ||= wasExported
+        }
       } catch (err) {
         log.warn(`[my-browser] couldn't update the extension in ${dir}: ${(err as Error).message}`)
       }
     }
-    if (res.updated)
-      void bridge
-        .link()
-        ?.request('ext.reload')
-        .catch(() => undefined)
+    extensionReload.updated(reload, res.updated)
     return res
   },
 
@@ -87,7 +96,9 @@ export const computerUse = {
     const picked = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (picked.canceled || !picked.filePaths[0]) return null
     const dir = join(picked.filePaths[0], 'Navo 扩展')
-    installExtension(bundledExtension(), dir)
+    const wasExported = existsSync(join(dir, 'manifest.json'))
+    const installed = installExtension(bundledExtension(), dir)
+    extensionReload.updated(wasExported, installed.updated)
     kv.set('extension.exportDir', dir)
     emit('computerUse.changed', this.status())
     return { dir }
@@ -135,9 +146,11 @@ export const computerUse = {
   },
   beginRun(threadId: string): void {
     desktop.beginRun(threadId)
+    targets.beginRun(threadId)
   },
   forget(threadId: string): void {
     desktop.forget(threadId)
+    targets.forget(threadId)
   },
   shutdown(): void {
     desktop.shutdown()
@@ -156,9 +169,8 @@ export const computerUse = {
 
   /** After a run: the user's browser gets its tabs back (no debugging banner while idle). */
   async endRun(threadId: string): Promise<void> {
+    const releasing = targets.endRun(threadId).catch(() => undefined)
     await desktop.endRun(threadId)
-    const page = targets.get(threadId) === 'mine' ? targets.page(threadId) : null
-    if (page instanceof ExternalPageDriver) await liveView.release(page)
-    await targets.endRun(threadId).catch(() => undefined)
+    await releasing
   },
 }

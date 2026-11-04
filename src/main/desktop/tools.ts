@@ -28,7 +28,7 @@ export function createDesktopTools(threadId: string, supportsVision: boolean) {
     }),
     tool((args) => desktop.action(threadId, 'click', args), {
       name: 'desktop_click',
-      description: '点击最新快照的元素引用，或最近截图内的坐标；返回更新后的元素树。坐标必须属于当前授权应用。',
+      description: '点击最新快照的元素引用，或最近截图内的坐标；返回更新后的元素树。输入绑定观察时的窗口，窗口移动、切换或操作失败后须重新获取快照。',
       schema: z
         .object({ ...location, button: z.enum(['left', 'right']).optional(), double: z.boolean().optional() })
         .refine((a) => !!a.ref || (a.x !== undefined && a.y !== undefined), '需要 ref 或 x、y'),

@@ -27,14 +27,41 @@ describe('installExtension', () => {
     expect(readFileSync(join(dest, 'background.js'), 'utf8')).toBe('a')
   })
 
-  it('leaves the same version alone', () => {
+  it('leaves identical bundled contents alone', () => {
     writeSrc('0.1.0', { 'background.js': 'a' })
     installExtension(src, dest)
     const before = statSync(join(dest, 'background.js')).mtimeMs
-    writeFileSync(join(src, 'background.js'), 'changed but same version')
     expect(installExtension(src, dest)).toEqual({ dir: dest, updated: false })
     expect(statSync(join(dest, 'background.js')).mtimeMs).toBe(before)
     expect(readFileSync(join(dest, 'background.js'), 'utf8')).toBe('a')
+  })
+
+  it('updates changed scripts without a version bump', () => {
+    writeSrc('0.1.0', { 'background.js': 'a' })
+    installExtension(src, dest)
+    const inode = statSync(dest).ino
+    writeFileSync(join(src, 'background.js'), 'changed but same version')
+    expect(installExtension(src, dest)).toEqual({ dir: dest, updated: true })
+    expect(readFileSync(join(dest, 'background.js'), 'utf8')).toBe('changed but same version')
+    expect(statSync(dest).ino).toBe(inode)
+    expect(installExtension(src, dest).updated).toBe(false)
+  })
+
+  it('detects changed icons and added or removed bundle files', () => {
+    writeSrc('0.1.0', { 'old.js': 'old' })
+    mkdirSync(join(src, 'icons'))
+    writeFileSync(join(src, 'icons', '16.png'), Buffer.from([0, 1, 2]))
+    installExtension(src, dest)
+    writeFileSync(join(src, 'icons', '16.png'), Buffer.from([0, 2, 2]))
+    expect(installExtension(src, dest).updated).toBe(true)
+    expect(readFileSync(join(dest, 'icons', '16.png'))).toEqual(Buffer.from([0, 2, 2]))
+    rmSync(join(src, 'old.js'))
+    expect(installExtension(src, dest).updated).toBe(true)
+    expect(existsSync(join(dest, 'old.js'))).toBe(false)
+    writeFileSync(join(src, 'new.js'), 'new')
+    expect(installExtension(src, dest).updated).toBe(true)
+    expect(readFileSync(join(dest, 'new.js'), 'utf8')).toBe('new')
+    expect(installExtension(src, dest).updated).toBe(false)
   })
 
   it('replaces files when the version changes, keeping the folder', () => {
@@ -72,6 +99,20 @@ describe('installExtension into a folder the user chose', () => {
     mkdirSync(dest)
     writeFileSync(join(dest, 'notes.txt'), 'mine')
     expect(() => installExtension(src, dest)).toThrow('不是 Navo 扩展')
+    expect(readFileSync(join(dest, 'notes.txt'), 'utf8')).toBe('mine')
+  })
+  it('rejects another extension even when its version matches', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ext-install-'))
+    const src = join(root, 'src')
+    const dest = join(root, 'other')
+    mkdirSync(src)
+    writeFileSync(join(src, 'manifest.json'), JSON.stringify({ name: 'Navo', version: '0.1.0' }))
+    mkdirSync(dest)
+    const manifest = JSON.stringify({ name: 'Other', version: '0.1.0' })
+    writeFileSync(join(dest, 'manifest.json'), manifest)
+    writeFileSync(join(dest, 'notes.txt'), 'mine')
+    expect(() => installExtension(src, dest)).toThrow('不是 Navo 扩展')
+    expect(readFileSync(join(dest, 'manifest.json'), 'utf8')).toBe(manifest)
     expect(readFileSync(join(dest, 'notes.txt'), 'utf8')).toBe('mine')
   })
 })

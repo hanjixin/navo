@@ -1,13 +1,24 @@
 import type { DesktopStatus } from '@shared/types'
 import type { DesktopConsent } from './consent'
 import { DesktopTransportError, type DesktopTransport } from './client'
-import { DesktopSnapshot, screenshotPoint, type AXTree, type DesktopApp, type Screenshot } from './snapshot'
+import {
+  DesktopSnapshot,
+  screenshotPoint,
+  copyWindow,
+  sameWindow,
+  treeContainsText,
+  type AXTree,
+  type DesktopApp,
+  type DesktopWindow,
+  type Screenshot,
+} from './snapshot'
 import { desktopAppKey } from './platform'
 
 type Session = {
   app?: DesktopApp
   snapshot: DesktopSnapshot
   image?: Screenshot
+  window?: DesktopWindow
   stopped: boolean
   failures: number
 }
@@ -96,6 +107,7 @@ export class DesktopController {
     for (const s of this.sessions.values()) {
       s.snapshot.clear()
       s.image = undefined
+      s.window = undefined
     }
     this.options.changed(this.active)
   }
@@ -141,7 +153,16 @@ export class DesktopController {
     return this.operation(threadId, true, async (s) => {
       await this.prepare(threadId, s, app)
       const image = await this.native<Screenshot>(threadId, s, 'screenshot', { bundleId: s.app!.bundleId })
-      s.image = image
+      const window = this.requireWindow(image.window, s)
+      if (
+        image.bounds.x !== window.bounds.x ||
+        image.bounds.y !== window.bounds.y ||
+        image.bounds.width !== window.bounds.width ||
+        image.bounds.height !== window.bounds.height
+      )
+        throw new Error('截图窗口位置不一致，请重新截图')
+      s.image = { ...image, bounds: { ...image.bounds }, window }
+      s.window = copyWindow(window)
       return image
     })
   }
@@ -153,12 +174,21 @@ export class DesktopController {
       await this.location(threadId, s, args)
       await this.prepare(threadId, s)
       const location = await this.location(threadId, s, args)
+      const window = this.requireWindow(args.ref ? s.snapshot.get(args.ref).window : 'x' in location ? s.image?.window : s.window, s)
       if ('x' in location) {
         const at = await this.native<DesktopApp | null>(threadId, s, 'window_at', location)
-        if (!at || at.bundleId !== s.app.bundleId) throw new Error('坐标不属于当前授权应用，请重新截图')
+        if (!at || at.bundleId !== s.app.bundleId) {
+          this.invalidate(s)
+          throw new Error('坐标不属于当前授权应用，请重新截图')
+        }
+        if (!sameWindow(window, at.window)) {
+          this.invalidate(s)
+          throw new Error('截图窗口已切换或移动，请重新截图')
+        }
       }
-      s.image = undefined
-      await this.native(threadId, s, cmd, { ...args, ...location, bundleId: s.app.bundleId })
+      // Consume handles before injection: an error can leave the mutation outcome unknown.
+      this.invalidate(s)
+      await this.native(threadId, s, cmd, { ...args, ...location, expectedWindow: window, bundleId: s.app.bundleId })
       await new Promise((resolve) => setTimeout(resolve, 150))
       this.check(threadId, s)
       return this.capture(threadId, s, true)
@@ -170,8 +200,9 @@ export class DesktopController {
       await this.prepare(threadId, s)
       const until = Date.now() + Math.min(Math.max(timeout, 0), 30_000)
       do {
-        const snapshot = await this.capture(threadId, s)
-        if (snapshot.includes(text)) return snapshot
+        const tree = await this.observe(threadId, s)
+        const snapshot = s.snapshot.update(tree)
+        if (treeContainsText(tree, text)) return snapshot
         if (Date.now() >= until) break
         await new Promise((resolve) => setTimeout(resolve, 250))
         this.check(threadId, s)
@@ -250,6 +281,7 @@ export class DesktopController {
     if (s.app?.bundleId !== app.bundleId) {
       s.snapshot.clear()
       s.image = undefined
+      s.window = undefined
     }
     this.active = { threadId, bundleId: app.bundleId, app: app.name }
     this.options.changed(this.active)
@@ -261,8 +293,26 @@ export class DesktopController {
   }
 
   private async capture(threadId: string, s: Session, diff = false): Promise<string> {
-    const tree = await this.native<AXTree>(threadId, s, 'ax_tree', { bundleId: s.app!.bundleId })
+    const tree = await this.observe(threadId, s)
     return diff ? s.snapshot.diff(tree) : s.snapshot.update(tree)
+  }
+
+  private async observe(threadId: string, s: Session): Promise<AXTree> {
+    const tree = await this.native<AXTree>(threadId, s, 'ax_tree', { bundleId: s.app!.bundleId })
+    s.window = copyWindow(tree.window)
+    return tree
+  }
+
+  private requireWindow(window: DesktopWindow | undefined, s: Session): DesktopWindow {
+    const observed = copyWindow(window)
+    if (!observed || observed.pid !== s.app?.pid) throw new Error('无法确认目标窗口，请重新获取快照或截图')
+    return observed
+  }
+
+  private invalidate(s: Session): void {
+    s.image = undefined
+    s.snapshot.clear()
+    s.window = undefined
   }
 
   private async location(threadId: string, s: Session, args: DesktopLocation): Promise<Record<string, unknown>> {

@@ -49,9 +49,34 @@ func selectedScreenshotIndex(_ candidates: [(CGRect, String?)], bounds: CGRect?,
   return titled.count == 1 ? titled[0] : matches.count == 1 ? matches[0] : nil
 }
 
+// Identity and geometry are both required: reusing coordinates after a move is unsafe.
+func sameWindow(_ expected: [String: Any], _ current: [String: Any]) -> Bool {
+  guard let id = expected["id"] as? String, !id.isEmpty, id == current["id"] as? String,
+        let pid = expected["pid"] as? Int, pid > 0, pid == current["pid"] as? Int,
+        let a = expected["bounds"] as? [String: Any], let b = current["bounds"] as? [String: Any] else { return false }
+  return ["x", "y", "width", "height"].allSatisfy { key in
+    guard let ax = a[key] as? NSNumber, let by = b[key] as? NSNumber else { return false }
+    let x = ax.doubleValue, y = by.doubleValue
+    return x.isFinite && y.isFinite && x == y && (!["width", "height"].contains(key) || x > 0)
+  }
+}
+func takeoverReason(_ type: CGEventType, key: Int64, injected: Bool, distance: Double) -> String? {
+  if injected { return nil }
+  switch type {
+  case .keyDown: return key == 53 ? "escape" : "keyboard"
+  case .flagsChanged: return "keyboard"
+  case .leftMouseDown, .rightMouseDown, .otherMouseDown: return "mouse_button"
+  case .scrollWheel: return "scroll"
+  case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged: return "drag"
+  case .mouseMoved: return distance > 20 ? "mouse" : nil
+  default: return nil
+  }
+}
+
 final class Helper {
   let fake = CommandLine.arguments.contains("--fake")
   var refs: [String: (AXUIElement, String, CGRect?)] = [:]
+  var expectedWindow: [String: Any]?
   var serial = 0
   var tap: CFMachPort?
   var tapSource: CFRunLoopSource?
@@ -72,6 +97,38 @@ final class Helper {
       return NSRunningApplication(processIdentifier: pid)
     }
     return nil
+  }
+  func windowInfo(_ w: [String: Any]) -> [String: Any]? {
+    guard let number = w[kCGWindowNumber as String] as? UInt32,
+          let pid = w[kCGWindowOwnerPID as String] as? Int,
+          let raw = w[kCGWindowBounds as String] as? NSDictionary,
+          let bounds = CGRect(dictionaryRepresentation: raw) else { return nil }
+    return ["id": String(number), "pid": pid, "bounds": rect(bounds), "title": w[kCGWindowName as String] as? String ?? ""]
+  }
+  func windowAt(_ p: CGPoint) -> [String: Any]? {
+    for w in windows() {
+      guard (w[kCGWindowLayer as String] as? Int ?? -1) >= 0,
+            (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+            let raw = w[kCGWindowBounds as String] as? NSDictionary,
+            let bounds = CGRect(dictionaryRepresentation: raw), bounds.contains(p) else { continue }
+      return windowInfo(w)
+    }
+    return nil
+  }
+  func currentWindow(_ app: NSRunningApplication) -> [String: Any]? {
+    guard let selected = selectedWindow(app), let bounds = frame(selected) else { return nil }
+    let candidates = windows().filter { ($0[kCGWindowOwnerPID as String] as? Int32) == app.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    let info = candidates.compactMap { w -> (CGRect, String?)? in
+      guard let raw = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: raw) else { return nil }
+      return (r, w[kCGWindowName as String] as? String)
+    }
+    guard info.count == candidates.count, let index = selectedScreenshotIndex(info, bounds: bounds, title: string(selected, kAXTitleAttribute)) else { return nil }
+    return windowInfo(candidates[index])
+  }
+  func guardWindow(_ id: String) throws {
+    guard let expectedWindow, let current = currentWindow(try find(id)), sameWindow(expectedWindow, current) else {
+      throw fail("目标窗口或位置已改变，请重新获取快照")
+    }
   }
   func guardApp(_ id: String) throws {
     if stopped { throw fail("用户已停止桌面操作，请重新开始") }
@@ -100,7 +157,7 @@ final class Helper {
   }
   func selectedWindow(_ app: NSRunningApplication) -> AXUIElement? {
     let root = AXUIElementCreateApplication(app.processIdentifier)
-    for key in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
+    for key in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
       if let value = attr(root, key), CFGetTypeID(value) == AXUIElementGetTypeID() { return (value as! AXUIElement) }
     }
     return nil
@@ -119,12 +176,13 @@ final class Helper {
   }
   func guardInput(_ id: String) throws {
     try guardApp(id)
+    try guardWindow(id)
     guard watching, let tap, CGEvent.tapIsEnabled(tap: tap) else { throw fail("用户输入监听未启用，已拒绝桌面操作") }
   }
   func post(_ event: CGEvent?, _ id: String) throws {
     try guardInput(id)
     guard let event else { throw fail("无法创建输入事件") }
-    if [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel].contains(event.type), owner(event.location)?.bundleIdentifier != id { throw fail("目标窗口已移动或被遮挡，请重新截图") }
+    if [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .scrollWheel].contains(event.type), (windowAt(event.location).map { current in expectedWindow.map { sameWindow($0, current) } ?? false } ?? false) == false { throw fail("目标窗口已移动或被遮挡，请重新截图") }
     event.setIntegerValueField(.eventSourceUserData, value: marker)
     if [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(event.type) { mouseAnchor = event.location }
     event.post(tap: .cghidEventTap)
@@ -142,7 +200,8 @@ final class Helper {
     if !enabled { return }
     stopped = true
     if fake { watching = true; stopped = false; return }
-    let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.mouseMoved.rawValue) | (1 << CGEventType.leftMouseDragged.rawValue) | (1 << CGEventType.rightMouseDragged.rawValue)
+    let types: [CGEventType] = [.keyDown, .flagsChanged, .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+    let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
     // A default tap uses the Accessibility grant already required for desktop control.
     // Every callback branch returns the original event unchanged; user input is never swallowed.
     tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: CGEventMask(mask), callback: { _, type, event, context in
@@ -154,12 +213,9 @@ final class Helper {
         return Unmanaged.passUnretained(event)
       }
       guard event.getIntegerValueField(.eventSourceUserData) != marker, !helper.stopped else { return Unmanaged.passUnretained(event) }
-      var reason: String?
-      if type == .keyDown && event.getIntegerValueField(.keyboardEventKeycode) == 53 { reason = "escape" }
-      if type == .mouseMoved || type == .leftMouseDragged || type == .rightMouseDragged {
-        let anchor = helper.mouseAnchor ?? event.location; helper.mouseAnchor = anchor
-        if hypot(event.location.x - anchor.x, event.location.y - anchor.y) > 20 { reason = "mouse" }
-      }
+      let anchor = helper.mouseAnchor ?? event.location
+      helper.mouseAnchor = anchor
+      let reason = takeoverReason(type, key: event.getIntegerValueField(.keyboardEventKeycode), injected: false, distance: hypot(event.location.x - anchor.x, event.location.y - anchor.y))
       if let reason { helper.stopped = true; helper.release(); emit(["event": "user_input", "reason": reason]) }
       return Unmanaged.passUnretained(event)
     }, userInfo: Unmanaged.passUnretained(self).toOpaque())
@@ -197,7 +253,7 @@ final class Helper {
       return ["bundleId": bundleId, "name": bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent, "pid": 0, "windows": []] as [String: Any]
     }
     if cmd == "frontmost" { guard let app = NSWorkspace.shared.frontmostApplication else { throw fail("没有前台 App") }; return appInfo(app) }
-    if cmd == "window_at" { guard let x = a["x"] as? Double, let y = a["y"] as? Double else { throw fail("缺少坐标") }; if let owner = owner(CGPoint(x: x, y: y)) { return appInfo(owner) }; return NSNull() }
+    if cmd == "window_at" { guard let x = a["x"] as? Double, let y = a["y"] as? Double else { throw fail("缺少坐标") }; if let owner = owner(CGPoint(x: x, y: y)) { var result = appInfo(owner); result["window"] = windowAt(CGPoint(x: x, y: y)); return result }; return NSNull() }
     guard let id = a["bundleId"] as? String else { throw fail("缺少 bundleId") }
     if cmd == "activate" {
       if stopped { throw fail("用户已停止桌面操作") }
@@ -251,6 +307,7 @@ final class Helper {
           for child in children { try await walk(child, depth + 1, emptyContainer ? visibleDepth : visibleDepth + 1) }
         }
       }
+      let observedWindow = currentWindow(app)
       let targetWindow = selectedWindow(app)
       // Surface focus only when it belongs to the selected main window, not a floating preview.
       if let focused = attr(root, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(), !secureContext(focused as! AXUIElement) {
@@ -270,7 +327,10 @@ final class Helper {
         let ar = rank(a.element), br = rank(b.element)
         return ar == br ? a.offset < b.offset : ar < br
       }.map { $0.element }
-      try guardApp(id); return ["app": appInfo(app), "nodes": nodes]
+      try guardApp(id)
+      var result: [String: Any] = ["app": appInfo(app), "nodes": nodes]
+      if let observedWindow { guard let current = currentWindow(app), sameWindow(observedWindow, current) else { throw fail("读取期间窗口已改变，请重新获取快照") }; result["window"] = observedWindow }
+      return result
     }
     if cmd == "screenshot" {
       guard CGPreflightScreenCaptureAccess() else { throw fail("需要在系统设置中允许屏幕录制权限") }
@@ -293,8 +353,10 @@ final class Helper {
             let rawBounds = latest[kCGWindowBounds as String] as? NSDictionary,
             let currentBounds = CGRect(dictionaryRepresentation: rawBounds), currentBounds == w.frame else { throw fail("截图期间窗口位置已改变，请重新截图") }
       guard let data = NSBitmapImageRep(cgImage: cg).representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else { throw fail("截图编码失败") }
-      return ["data": data.base64EncodedString(), "width": cg.width, "height": cg.height, "bounds": rect(w.frame)]
+      return ["data": data.base64EncodedString(), "width": cg.width, "height": cg.height, "bounds": rect(w.frame), "window": ["id": String(w.windowID), "pid": Int(app.processIdentifier), "bounds": rect(w.frame), "title": w.title ?? ""]]
     }
+    expectedWindow = a["expectedWindow"] as? [String: Any]
+    defer { expectedWindow = nil }
     try guardInput(id)
     let n = try node(a, id)
     if cmd == "click" {
@@ -360,22 +422,25 @@ final class Helper {
     }
     throw fail("未知命令：\(cmd)")
   }
+  let fakeWindow: [String: Any] = ["id": "fake-window:1", "pid": 123, "bounds": ["x": 100, "y": 100, "width": 600, "height": 400]]
   func fakeExecute(_ cmd: String, _ a: [String: Any]) async throws -> Any {
     if ["activate", "click", "type", "key", "scroll"].contains(cmd) {
       guard !stopped, watching else { throw fail("用户已停止桌面操作或用户输入监听未启用") }
+      if cmd != "activate" { guard let expected = a["expectedWindow"] as? [String: Any], sameWindow(expected, fakeWindow) else { throw fail("目标窗口或位置已改变，请重新获取快照") } }
       if let ref = a["ref"] as? String, ref != fakeRef { throw fail("元素引用已失效，请重新获取快照") }
     }
     switch cmd {
     case "permissions": return ["accessibility": true, "screenRecording": true]
     case "apps": return [fakeApp]
-    case "resolve", "frontmost", "activate", "window_at": return fakeApp
+    case "resolve", "frontmost", "activate": return fakeApp
+    case "window_at": var result = fakeApp; result["window"] = fakeWindow; return result
     case "ax_tree":
       serial += 1; fakeRef = "fake:\(serial)"
-      return ["app": fakeApp, "nodes": [["id": fakeRef, "role": "AXTextArea", "title": "Document", "value": fakeText, "enabled": true, "depth": 0, "frame": ["x": 100, "y": 100, "width": 600, "height": 400]]]]
+      return ["app": fakeApp, "window": fakeWindow, "nodes": [["id": fakeRef, "role": "AXTextArea", "title": "Document", "value": fakeText, "enabled": true, "depth": 0, "frame": ["x": 100, "y": 100, "width": 600, "height": 400]]]]
     case "screenshot":
       let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 400, bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
       memset(bitmap.bitmapData!, 245, bitmap.bytesPerRow * bitmap.pixelsHigh)
-      return ["data": bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8])!.base64EncodedString(), "width": 600, "height": 400, "bounds": ["x":100,"y":100,"width":600,"height":400]]
+      return ["data": bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8])!.base64EncodedString(), "width": 600, "height": 400, "bounds": ["x":100,"y":100,"width":600,"height":400], "window": fakeWindow]
     case "type":
       for character in a["text"] as? String ?? "" {
         try await Task.sleep(nanoseconds: 1_000_000)

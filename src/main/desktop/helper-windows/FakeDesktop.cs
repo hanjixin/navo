@@ -5,7 +5,8 @@ namespace NavoDesktop;
 internal sealed class FakeDesktop(Safety safety)
 {
     string text = "Hello Navo", reference = "fake:0"; int serial; long refGeneration = -1;
-    object App => new { bundleId = "com.apple.TextEdit", name = "TextEdit", pid = 123, windows = new[] { "Untitled" } };
+    internal static readonly Native.WindowIdentity Window = new("fake-window:1", 123, new(100, 100, 600, 400));
+    object App => new { bundleId = "com.apple.TextEdit", name = "TextEdit", pid = 123, windows = new[] { "Untitled" }, window = Window };
     public object? Execute(string cmd, JsonElement a, long generation)
     {
         if (cmd == "permissions")
@@ -33,30 +34,35 @@ internal sealed class FakeDesktop(Safety safety)
             return new
             {
                 app = App,
-                nodes = new[] { new { id = reference, role = "AXTextArea", title = "Document", value = text, enabled = true, depth = 0, frame = new { x = 0, y = 0, width = 800, height = 600 } } }
+                window = Window,
+                nodes = new[] { new { id = reference, role = "AXTextArea", title = "Document", value = text, enabled = true, depth = 0, frame = new { x = 100, y = 100, width = 600, height = 400 } } }
             };
         }
         if (cmd == "screenshot")
         {
-            using var bitmap = new System.Drawing.Bitmap(800, 600);
+            using var bitmap = new System.Drawing.Bitmap(600, 400);
             using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
                 graphics.Clear(System.Drawing.Color.White);
             using var stream = new MemoryStream();
             bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Jpeg);
             return new
             {
+                window = Window,
                 data = Convert.ToBase64String(stream.ToArray()),
-                width = 800,
-                height = 600,
+                width = 600,
+                height = 400,
                 bounds = new
                 {
-                    x = 0,
-                    y = 0,
-                    width = 800,
-                    height = 600
+                    x = 100,
+                    y = 100,
+                    width = 600,
+                    height = 400
                 }
             };
         }
+        var expected = a.TryGetProperty("expectedWindow", out var expectedJson) ? expectedJson.Deserialize<Native.WindowIdentity>() : null;
+        if (expected == null || !Native.SameWindow(expected, Window))
+            throw new InvalidOperationException("目标窗口或位置已改变，请重新获取快照");
         if (a.Text("ref") is var r && r.Length > 0 && (r != reference || refGeneration != generation))
             throw new InvalidOperationException("元素引用已失效");
         if (cmd == "type")

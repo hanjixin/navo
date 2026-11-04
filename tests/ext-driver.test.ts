@@ -10,7 +10,7 @@ type Params = Record<string, unknown>
 type Cdp = { method: string; params: Params }
 
 /** A stand-in for the extension: answers requests like a browser with tabs 7, 8, 9 would. */
-function fakeLink(over: { tabs?: number[]; evaluate?: (p: Params) => unknown } = {}) {
+function fakeLink(over: { tabs?: number[]; evaluate?: (p: Params) => unknown; request?: (method: ExtMethod, params: Params) => Promise<void> } = {}) {
   const calls: { method: ExtMethod; params: Params }[] = []
   const listeners = new Map<ExtEventName, Set<(p: unknown) => void>>()
   let world = 0
@@ -24,6 +24,7 @@ function fakeLink(over: { tabs?: number[]; evaluate?: (p: Params) => unknown } =
     async request<T>(method: ExtMethod, params: Params = {}): Promise<T> {
       if (closed) throw new Error('与浏览器扩展的连接已断开')
       calls.push({ method, params })
+      await over.request?.(method, params)
       const r = (v: unknown) => v as T
       if (method === 'tabs.create') return r({ tabId: 7, url: params.url ?? 'about:blank', title: '' })
       if (method === 'tabs.list') return r((over.tabs ?? [7, 8, 9]).map((tabId) => ({ tabId, url: `https://t${tabId}.test/`, title: `T${tabId}` })))
@@ -330,5 +331,272 @@ describe('LiveView', () => {
     const before = sent.length
     await view.release(p)
     expect(sent).toHaveLength(before)
+  })
+})
+
+describe('browser ownership and revocation', () => {
+  function deferred() {
+    let resolve!: () => void
+    const promise = new Promise<void>((r) => {
+      resolve = r
+    })
+    return { promise, resolve }
+  }
+  function handed(link: ReturnType<typeof fakeLink>) {
+    const tabs = new ExtTabs(async () => link)
+    tabs.watch(link)
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    return tabs
+  }
+
+  it('revokes cached drivers permanently and clears live frames immediately', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const old = tabs.driver(9)
+    const frames: (LiveFrame | null)[] = []
+    const live = new LiveView((f) => frames.push(f))
+    await live.setWatching(true)
+    await live.use(old)
+    link.emit('revoke', { tabId: 9 })
+    expect(old.gone).toBe(true)
+    expect(frames.at(-1)).toBeNull()
+    await expect(old.evalMain('return 1')).rejects.toThrow('控制已结束')
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const fresh = tabs.driver(9)
+    expect(fresh).not.toBe(old)
+    await fresh.evalMain('return 2')
+    await expect(old.evalMain('return 3')).rejects.toThrow()
+    expect(link.calls.filter((c) => c.method === 'debugger.detach')).toHaveLength(1)
+    expect(link.cdpCalls('Runtime.evaluate')).toHaveLength(1)
+  })
+
+  it('serializes pending attach cleanup before a new handover can attach', async () => {
+    const attached = deferred()
+    const started = deferred()
+    let attaches = 0
+    const link = fakeLink({
+      request: async (method) => {
+        if (method === 'debugger.attach' && ++attaches === 1) {
+          started.resolve()
+          await attached.promise
+        }
+      },
+    })
+    const tabs = handed(link)
+    const old = tabs.driver(9)
+    const operation = old.evalMain('return dangerousMutation()')
+    const rejected = expect(operation).rejects.toThrow('控制已结束')
+    await started.promise
+    link.emit('revoke', { tabId: 9 })
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const fresh = tabs.driver(9)
+    const next = fresh.evalMain('return safeRead()')
+    attached.resolve()
+    await rejected
+    await next
+    expect(link.calls.map((c) => c.method)).toEqual(['debugger.attach', 'debugger.detach', 'debugger.attach', 'cdp.send'])
+    expect(link.cdpCalls('Runtime.evaluate')).toHaveLength(1)
+  })
+
+  it('rejects another conversation switching or closing an occupied tab and releases safely', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const first = targets.useTab('one', 9)
+    await first.evalMain('return 1')
+    expect(() => targets.useTab('two', 9)).toThrow('另一个对话')
+    await expect(targets.close('two', 9)).rejects.toThrow('另一个对话')
+    await targets.endRun('one')
+    const second = targets.useTab('two', 9)
+    await second.evalMain('return 2')
+    const detachCount = link.calls.filter((c) => c.method === 'debugger.detach').length
+    await targets.endRun('one')
+    expect(link.calls.filter((c) => c.method === 'debugger.detach')).toHaveLength(detachCount)
+    expect(second.gone).toBe(false)
+  })
+
+  it('concurrent automatic selection reserves handed tabs and deduplicates one conversation', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const [a, same, b] = await Promise.all([targets.useMine('one'), targets.useMine('one'), targets.useMine('two')])
+    expect(a).toBe(same)
+    expect(a.tabId).not.toBe(b.tabId)
+    await targets.useBuiltin('one')
+    expect(targets.useTab('two', 9).tabId).toBe(9)
+  })
+
+  it('does not replay a submitted mutation after disconnect', async () => {
+    const link = fakeLink({
+      request: async (method) => {
+        if (method === 'cdp.send') throw new Error('connection lost')
+      },
+    })
+    const tabs = handed(link)
+    await expect(tabs.driver(9).evalMain('return mutate()')).rejects.toThrow('connection lost')
+    expect(link.cdpCalls('Runtime.evaluate')).toHaveLength(1)
+  })
+  it('rechecks revocation after waiting for a connection', async () => {
+    const connected = deferred()
+    const link = fakeLink()
+    let delayed = false
+    const tabs = new ExtTabs(async () => {
+      if (delayed) await connected.promise
+      return link
+    })
+    tabs.watch(link)
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const driver = tabs.driver(9)
+    // A fresh link is only requested when the cached transport is closed.
+    link.close()
+    delayed = true
+    const operation = driver.evalMain('return mutate()')
+    const rejected = expect(operation).rejects.toThrow()
+    link.emit('revoke', { tabId: 9 })
+    connected.resolve()
+    await rejected
+    expect(link.calls).toHaveLength(0)
+  })
+
+  it('forget releases ownership and closing another free tab preserves current selection', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    link.emit('handover', { tabId: 8, url: '', title: '' })
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const driver = targets.useTab('one', 9)
+    await targets.close('one', 8)
+    expect(targets.page('one')).toBe(driver)
+    expect(driver.gone).toBe(false)
+    targets.forget('one')
+    expect(driver.gone).toBe(true)
+    expect(targets.useTab('two', 9)).not.toBe(driver)
+  })
+
+  it('ending a run while a new tab is being created prevents the late selection', async () => {
+    const started = deferred()
+    const completed = deferred()
+    const link = fakeLink({
+      request: async (method) => {
+        if (method === 'tabs.create') {
+          started.resolve()
+          await completed.promise
+        }
+      },
+    })
+    const tabs = new ExtTabs(async () => link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const pending = targets.useMine('one')
+    const rejected = expect(pending).rejects.toThrow('选择已取消')
+    await started.promise
+    await targets.endRun('one')
+    completed.resolve()
+    await rejected
+    expect(targets.get('one')).toBe('builtin')
+  })
+  it('reacquires a fresh driver for a normal next run without reviving the old driver', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const old = targets.useTab('one', 9)
+    await targets.endRun('one')
+    targets.beginRun('one')
+    expect(targets.page('one')).not.toBe(old)
+    expect(old.gone).toBe(true)
+    await targets.page('one').evalMain('return 1')
+  })
+
+  it('beginRun records a conflict or revocation without silently selecting another tab', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    targets.useTab('one', 9)
+    await targets.endRun('one')
+    targets.useTab('two', 9)
+    expect(() => targets.beginRun('one')).not.toThrow()
+    expect(() => targets.page('one')).toThrow('另一个对话')
+    await expect(targets.useMine('one')).rejects.toThrow('另一个对话')
+    link.emit('revoke', { tabId: 9 })
+    targets.beginRun('two')
+    expect(() => targets.page('two')).toThrow('没有交给 Navo')
+    expect(link.calls.filter((c) => c.method === 'tabs.create')).toHaveLength(0)
+    await targets.useBuiltin('one')
+    expect(() => targets.page('one')).not.toThrow()
+  })
+
+  it('debugger cancellation also removes the permission to reacquire the tab', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const old = tabs.driver(9)
+    await old.evalMain('return 1')
+    link.emit('detached', { tabId: 9, reason: 'canceled_by_user' })
+    expect(old.gone).toBe(true)
+    expect(() => tabs.driver(9)).toThrow('没有交给 Navo')
+  })
+  it('successive handovers cannot bypass cleanup from an older pending attach', async () => {
+    const started = deferred()
+    const completed = deferred()
+    let first = true
+    const link = fakeLink({
+      request: async (method) => {
+        if (method === 'debugger.attach' && first) {
+          first = false
+          started.resolve()
+          await completed.promise
+        }
+      },
+    })
+    const tabs = handed(link)
+    const old = tabs.driver(9)
+    const work = expect(old.evalMain('return oldMutation()')).rejects.toThrow()
+    await started.promise
+    link.emit('revoke', { tabId: 9 })
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const middle = tabs.driver(9)
+    const middleWork = expect(middle.evalMain('return middleMutation()')).rejects.toThrow()
+    link.emit('revoke', { tabId: 9 })
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const next = tabs.driver(9).evalMain('return newRead()')
+    completed.resolve()
+    await Promise.all([work, middleWork, next])
+    expect(link.calls.map((c) => c.method)).toEqual(['debugger.attach', 'debugger.detach', 'debugger.attach', 'cdp.send'])
+  })
+  it('a delayed old tab list cannot remove a tab created while the list was pending', async () => {
+    const listed = deferred()
+    const completed = deferred()
+    const link = fakeLink({
+      tabs: [],
+      request: async (method) => {
+        if (method === 'tabs.list') {
+          listed.resolve()
+          await completed.promise
+        }
+      },
+    })
+    const tabs = new ExtTabs(async () => link)
+    const listing = tabs.list()
+    await listed.promise
+    const created = await tabs.create()
+    completed.resolve()
+    await listing
+    expect(tabs.driver(created.tabId)).toBe(created)
+    expect(created.gone).toBe(false)
+    await created.evalMain('return 1')
+  })
+  it('propagates physical tab closure to old drivers after debugger cancellation', async () => {
+    const link = fakeLink()
+    const tabs = handed(link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
+    const old = targets.useTab('one', 9)
+    await old.evalMain('return 1')
+    link.emit('detached', { tabId: 9, reason: 'canceled_by_user' })
+    await expect(old.evalMain('return 2')).rejects.toThrow('控制已结束')
+    link.emit('tabRemoved', { tabId: 9 })
+    await expect(old.evalMain('return 3')).rejects.toThrow('标签页已被关闭')
+    expect(() => targets.page('one')).toThrow('标签页已被关闭')
+    // A reused numeric ID denotes a different physical tab, never reviving the old one.
+    link.emit('handover', { tabId: 9, url: '', title: '' })
+    const fresh = tabs.driver(9)
+    await fresh.evalMain('return 4')
+    await expect(old.evalMain('return 5')).rejects.toThrow('标签页已被关闭')
   })
 })

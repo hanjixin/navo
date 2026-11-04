@@ -35,7 +35,11 @@ const client = new DesktopClient({
   args: fake ? ['--fake'] : [],
   onInput: (reason) => {
     // Keep diagnostics free of app contents and input text.
-    const known = ['mouse', 'escape', 'monitor_unavailable', 'monitor_timeout', 'monitor_disabled'].includes(reason) ? reason : 'unknown'
+    const known = ['mouse', 'mouse_button', 'keyboard', 'scroll', 'drag', 'escape', 'monitor_unavailable', 'monitor_timeout', 'monitor_disabled'].includes(
+      reason,
+    )
+      ? reason
+      : 'unknown'
     log.info(`[desktop] control stopped: ${known}`)
     desktop.stop()
   },

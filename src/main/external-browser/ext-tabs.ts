@@ -22,6 +22,8 @@ const SCREENCAST = { format: 'jpeg', quality: 70, maxWidth: 1120, maxHeight: 140
 const OFFLINE = '与浏览器扩展的连接已断开，请确认浏览器已打开、Navo 扩展已启用'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+type TabLifetime = { closed: boolean }
+
 type Evaluated<T> = { result?: { value?: T }; exceptionDetails?: { text?: string; exception?: { description?: string } } }
 
 /** The message of an exception thrown in the page, without its stack. */
@@ -39,8 +41,9 @@ export class ExternalPageDriver implements PageDriver {
   private attachedOn: Link | null = null
   private preparedOn: Link | null = null
   private contextId: number | null = null
-  private closedTab = false
   private cancelled = false
+  private attaching: Promise<Link> | null = null
+  private invalidated = new Set<() => void>()
   private notices: string[] = []
   private pendingChooser: { backendNodeId: number } | null = null
   private policy: DialogPolicy = { confirm: false, prompt: null }
@@ -51,6 +54,7 @@ export class ExternalPageDriver implements PageDriver {
     private tabs: ExtTabs,
     readonly tabId: number,
     info: { url: string; title: string },
+    private lifetime: TabLifetime,
   ) {
     this.id = `ext:${tabId}`
     this.info = { ...info }
@@ -58,7 +62,7 @@ export class ExternalPageDriver implements PageDriver {
 
   /** the tab was closed, or the user took it back by cancelling the debugging session */
   get gone(): boolean {
-    return this.closedTab || this.cancelled
+    return this.lifetime.closed || this.cancelled
   }
 
   url(): string {
@@ -69,24 +73,53 @@ export class ExternalPageDriver implements PageDriver {
     return this.info.title
   }
 
+  assertActive(): void {
+    if (this.lifetime.closed) throw new Error('标签页已被关闭，请用 browser_tabs 新建一个')
+    if (this.cancelled) throw new Error('用户在浏览器里取消了调试，或标签页控制已结束，请重新选择标签页')
+  }
+
+  onInvalidated(fn: () => void): () => void {
+    this.invalidated.add(fn)
+    return () => this.invalidated.delete(fn)
+  }
+
   private async ensure(): Promise<Link> {
-    if (this.closedTab) throw new Error('标签页已被关闭，请用 browser_tabs 新建一个')
-    if (this.cancelled) throw new Error('用户在浏览器里取消了调试，这个标签页已收回')
+    this.assertActive()
+    await this.tabs.settled(this.tabId)
+    this.assertActive()
     const link = await this.tabs.connect(RECONNECT_MS)
+    this.assertActive()
     if (this.attachedOn !== link) {
-      this.contextId = null
-      this.preparedOn = null
-      await link.request('debugger.attach', { tabId: this.tabId })
-      this.attachedOn = link
-      // a new debugging session doesn't carry the stream over
-      if (this.onFrame) await link.request('cdp.send', { tabId: this.tabId, method: 'Page.startScreencast', params: SCREENCAST }).catch(() => undefined)
+      if (!this.attaching) {
+        this.attaching = (async () => {
+          this.contextId = null
+          this.preparedOn = null
+          await link.request('debugger.attach', { tabId: this.tabId })
+          this.attachedOn = link
+          this.assertActive()
+          if (this.onFrame) {
+            await link.request('cdp.send', { tabId: this.tabId, method: 'Page.startScreencast', params: SCREENCAST })
+            this.assertActive()
+          }
+          return link
+        })()
+      }
+      try {
+        await this.attaching
+      } finally {
+        this.attaching = null
+      }
     }
+    this.assertActive()
     return link
   }
 
   cdp = async <T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
     const link = await this.ensure()
-    return link.request<T>('cdp.send', { tabId: this.tabId, method, params })
+    this.assertActive()
+    const result = await link.request<T>('cdp.send', { tabId: this.tabId, method, params })
+    this.assertActive()
+    return result
   }
 
   private async world(): Promise<number> {
@@ -148,6 +181,7 @@ export class ExternalPageDriver implements PageDriver {
   async waitForLoad(timeout = 15000): Promise<void> {
     const deadline = Date.now() + timeout
     while (Date.now() < deadline) {
+      this.assertActive()
       const state = await this.evaluate<string>('document.readyState').catch(() => null)
       if (state === 'complete') return
       await sleep(200)
@@ -172,6 +206,7 @@ export class ExternalPageDriver implements PageDriver {
 
   async bringToFront(): Promise<void> {
     const link = await this.ensure()
+    this.assertActive()
     await link.request('tabs.activate', { tabId: this.tabId })
     await this.cdp('Page.bringToFront')
   }
@@ -197,6 +232,7 @@ export class ExternalPageDriver implements PageDriver {
 
   /** Streams the tab's picture (for Navo's browser panel) until stopScreencast. */
   async startScreencast(onFrame: (image: string) => void): Promise<void> {
+    this.assertActive()
     const first = !this.onFrame
     this.onFrame = onFrame
     if (first && this.attachedOn) await this.cdp('Page.startScreencast', SCREENCAST)
@@ -209,18 +245,32 @@ export class ExternalPageDriver implements PageDriver {
     if (this.attachedOn && !this.attachedOn.closed) await this.cdp('Page.stopScreencast').catch(() => undefined)
   }
 
-  /** Lets the user's browser have the tab back (the agent can attach again later). */
-  async detach(): Promise<void> {
-    const link = this.attachedOn
-    this.attachedOn = null
-    this.preparedOn = null
-    this.contextId = null
-    if (link && !link.closed && !this.closedTab) await link.request('debugger.detach', { tabId: this.tabId }).catch(() => undefined)
+  /** Permanently invalidates this control object before waiting for debugger cleanup. */
+  invalidate(): Promise<void> {
+    this.cancelled = true
+    this.onFrame = null
+    this.pendingChooser = null
+    for (const fn of this.invalidated) fn()
+    this.invalidated.clear()
+    const pending = this.attaching
+    return (async () => {
+      await pending?.catch(() => undefined)
+      const link = this.attachedOn
+      this.attachedOn = null
+      this.preparedOn = null
+      this.contextId = null
+      if (link && !link.closed && !this.lifetime.closed) await link.request('debugger.detach', { tabId: this.tabId }).catch(() => undefined)
+    })()
+  }
+
+  detach(): Promise<void> {
+    return this.tabs.release(this)
   }
 
   // ---------- events from the extension (routed by ExtTabs) ----------
 
   onCdp(method: string, raw: Record<string, unknown>): void {
+    if (this.gone) return
     const params = raw as {
       frame?: { id?: string; parentId?: string; url?: string }
       args?: { value?: unknown }[]
@@ -288,7 +338,8 @@ export class ExternalPageDriver implements PageDriver {
   }
 
   onRemoved(): void {
-    this.closedTab = true
+    this.lifetime.closed = true
+    void this.invalidate()
     this.attachedOn = null
   }
 
@@ -296,8 +347,8 @@ export class ExternalPageDriver implements PageDriver {
     this.attachedOn = null
     this.preparedOn = null
     this.contextId = null
-    if (reason === 'canceled_by_user') this.cancelled = true
-    if (reason === 'target_closed') this.closedTab = true
+    if (reason === 'canceled_by_user') void this.tabs.release(this)
+    if (reason === 'target_closed') this.onRemoved()
   }
 }
 
@@ -311,6 +362,12 @@ export class ExtTabs {
   private owned = new Set<number>()
   private handedTabs = new Map<number, ExtTab & { at: number }>()
   private drivers = new Map<number, ExternalPageDriver>()
+  // Shared by all control generations of a physical tab. Keep only a small state
+  // object so a later close reaches revoked drivers without retaining the drivers.
+  private lifetimes = new Map<number, TabLifetime>()
+  private revision = 0
+  private changed = new Map<number, number>()
+  private cleanup = new Map<number, Promise<void>>()
   private recent: { filename: string; url: string }[] = []
 
   constructor(private getLink: GetLink) {}
@@ -329,7 +386,10 @@ export class ExtTabs {
     for (const off of this.unwatch) off()
     this.link = link
     this.unwatch = [
-      link.on<ExtTab>('handover', (t) => this.handedTabs.set(t.tabId, { ...t, at: Date.now() })),
+      link.on<ExtTab>('handover', (t) => {
+        this.changed.set(t.tabId, ++this.revision)
+        this.handedTabs.set(t.tabId, { ...t, at: Date.now() })
+      }),
       link.on<{ tabId: number }>('revoke', ({ tabId }) => this.forget(tabId, false)),
       link.on<{ tabId: number }>('tabRemoved', ({ tabId }) => {
         this.drivers.get(tabId)?.onRemoved()
@@ -340,34 +400,74 @@ export class ExtTabs {
         const h = this.handedTabs.get(t.tabId)
         if (h) Object.assign(h, { url: t.url, title: t.title })
       }),
-      link.on<{ tabId: number; reason: string }>('detached', ({ tabId, reason }) => this.drivers.get(tabId)?.onDetached(reason)),
+      link.on<{ tabId: number; reason: string }>('detached', ({ tabId, reason }) => {
+        if (reason === 'canceled_by_user' || reason === 'target_closed') this.forget(tabId, reason === 'target_closed')
+        else this.drivers.get(tabId)?.onDetached(reason)
+      }),
       link.on<{ tabId: number; method: string; params: Record<string, unknown> }>('cdp', ({ tabId, method, params }) =>
         this.drivers.get(tabId)?.onCdp(method, params ?? {}),
       ),
     ]
   }
 
+  private lifetime(tabId: number): TabLifetime {
+    let lifetime = this.lifetimes.get(tabId)
+    if (!lifetime) {
+      lifetime = { closed: false }
+      this.lifetimes.set(tabId, lifetime)
+    }
+    return lifetime
+  }
+
   private forget(tabId: number, closed: boolean): void {
+    if (closed) {
+      const lifetime = this.lifetimes.get(tabId)
+      if (lifetime) lifetime.closed = true
+      this.lifetimes.delete(tabId)
+    }
+    this.changed.set(tabId, ++this.revision)
     this.handedTabs.delete(tabId)
-    if (closed) this.owned.delete(tabId)
-    if (closed || !this.owned.has(tabId)) this.drivers.delete(tabId)
+    this.owned.delete(tabId)
+    const driver = this.drivers.get(tabId)
+    if (closed) driver?.onRemoved()
+    if (driver) void this.release(driver)
+  }
+
+  settled(tabId: number): Promise<void> {
+    return this.cleanup.get(tabId) ?? Promise.resolve()
+  }
+
+  release(driver: ExternalPageDriver): Promise<void> {
+    if (this.drivers.get(driver.tabId) !== driver) return this.settled(driver.tabId)
+    this.drivers.delete(driver.tabId)
+    const previous = this.cleanup.get(driver.tabId)
+    const invalidating = driver.invalidate()
+    const pending = Promise.all([previous, invalidating]).then(() => undefined)
+    this.cleanup.set(driver.tabId, pending)
+    void pending.finally(() => {
+      if (this.cleanup.get(driver.tabId) === pending) this.cleanup.delete(driver.tabId)
+    })
+    return pending
   }
 
   async create(url?: string): Promise<ExternalPageDriver> {
     const link = await this.connect(RECONNECT_MS)
     const tab = await link.request<ExtTab>('tabs.create', { url: url ? normalizeUrl(url) : 'about:blank' })
+    this.changed.set(tab.tabId, ++this.revision)
     this.owned.add(tab.tabId)
-    const driver = new ExternalPageDriver(this, tab.tabId, tab)
+    const driver = new ExternalPageDriver(this, tab.tabId, tab, this.lifetime(tab.tabId))
     this.drivers.set(tab.tabId, driver)
     return driver
   }
 
   async list(): Promise<ExtTabInfo[]> {
     const link = await this.connect(RECONNECT_MS)
+    const revision = this.revision
     const all = await link.request<(ExtTab & { handed?: boolean })[]>('tabs.list')
     const present = new Set(all.map((t) => t.tabId))
-    for (const id of [...this.owned]) if (!present.has(id)) this.forget(id, true)
+    for (const id of [...this.lifetimes.keys()]) if (!present.has(id) && (this.changed.get(id) ?? 0) <= revision) this.forget(id, true)
     for (const t of all) {
+      if ((this.changed.get(t.tabId) ?? 0) > revision) continue
       // the extension remembers handovers made while Navo wasn't listening
       if (t.handed === true && !this.handedTabs.has(t.tabId)) this.handedTabs.set(t.tabId, { ...t, at: Date.now() })
       if (t.handed === false && this.handedTabs.has(t.tabId)) this.forget(t.tabId, false)
@@ -387,7 +487,7 @@ export class ExtTabs {
     let d = this.drivers.get(tabId)
     if (!d) {
       const h = this.handedTabs.get(tabId)
-      d = new ExternalPageDriver(this, tabId, { url: h?.url ?? '', title: h?.title ?? '' })
+      d = new ExternalPageDriver(this, tabId, { url: h?.url ?? '', title: h?.title ?? '' }, this.lifetime(tabId))
       this.drivers.set(tabId, d)
     }
     return d
@@ -395,7 +495,9 @@ export class ExtTabs {
 
   async close(tabId: number): Promise<void> {
     if (!this.owned.has(tabId) && !this.handedTabs.has(tabId)) throw new Error(`这个标签页（${tabId}）没有交给 Navo`)
+    const driver = this.driver(tabId)
     const link = await this.connect(RECONNECT_MS)
+    driver.assertActive()
     await link.request('tabs.close', { tabId })
     this.drivers.get(tabId)?.onRemoved()
     this.forget(tabId, true)

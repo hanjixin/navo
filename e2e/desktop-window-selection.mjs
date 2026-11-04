@@ -28,6 +28,19 @@ assert(selectedScreenshotIndex([(main, nil), (main, nil)], bounds: main, title: 
 assert(selectedScreenshotIndex([(preview, "Preview"), (main, "Chat")], bounds: nil, title: nil) == nil)
 assert(selectedScreenshotIndex([(main, "Chat")], bounds: nil, title: nil) == 0)
 assert(selectedScreenshotIndex([], bounds: nil, title: nil) == nil)
+let identity: [String: Any] = ["id": "1", "pid": 123, "bounds": rect(main)]
+assert(sameWindow(identity, identity))
+assert(!sameWindow(identity, ["id": "2", "pid": 123, "bounds": rect(main)]))
+assert(!sameWindow(identity, ["id": "1", "pid": 124, "bounds": rect(main)]))
+assert(!sameWindow(identity, ["id": "1", "pid": 123, "bounds": rect(main.offsetBy(dx: 1, dy: 0))]))
+assert(!sameWindow([:], identity))
+for type: CGEventType in [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged] {
+  assert(takeoverReason(type, key: 0, injected: false, distance: 0) != nil)
+  assert(takeoverReason(type, key: 0, injected: true, distance: 100) == nil)
+}
+assert(takeoverReason(.keyDown, key: 53, injected: false, distance: 0) == "escape")
+assert(takeoverReason(.mouseMoved, key: 0, injected: false, distance: 19) == nil)
+assert(takeoverReason(.mouseMoved, key: 0, injected: false, distance: 21) == "mouse")
 print("PASS native window selection: main window over preview, exact title, ambiguity rejection and single-window fallback")
 `,
   )

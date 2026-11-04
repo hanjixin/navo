@@ -10,7 +10,9 @@ export type { LiveFrame }
  */
 export class LiveView {
   private watching = false
+  private selection = 0
   private current: ExternalPageDriver | null = null
+  private unwatch: (() => void) | null = null
   private casting: ExternalPageDriver | null = null
 
   constructor(private send: (f: LiveFrame | null) => void) {}
@@ -22,8 +24,22 @@ export class LiveView {
   /** The agent acted on this tab: it is the one shown. */
   async use(d: ExternalPageDriver): Promise<void> {
     if (this.current === d) return
+    const selection = ++this.selection
     await this.stop()
+    if (selection !== this.selection) return
     this.current = d
+    this.unwatch?.()
+    this.unwatch = d.onInvalidated(() => {
+      if (this.current !== d) return
+      this.current = null
+      this.casting = null
+      this.send(null)
+    })
+    if (d.gone) {
+      this.current = null
+      this.send(null)
+      return
+    }
     await this.sync()
   }
 
@@ -35,9 +51,12 @@ export class LiveView {
   /** The run ended or switched back to the built-in browser. */
   async release(d: ExternalPageDriver): Promise<void> {
     if (this.current !== d) return
-    await this.stop()
+    const selection = ++this.selection
     this.current = null
-    this.send(null)
+    this.unwatch?.()
+    this.unwatch = null
+    await this.stop()
+    if (selection === this.selection) this.send(null)
   }
 
   private async sync(): Promise<void> {
