@@ -1,5 +1,6 @@
 export type Rect = { x: number; y: number; width: number; height: number }
-export type DesktopApp = { bundleId: string; name: string; pid: number; windows?: string[] }
+export type DesktopWindow = { id: string; pid: number; bounds: Rect; title?: string }
+export type DesktopApp = { bundleId: string; name: string; pid: number; windows?: string[]; window?: DesktopWindow }
 export type AXNode = {
   id: string
   role: string
@@ -12,9 +13,40 @@ export type AXNode = {
   frame?: Rect
   depth: number
 }
-export type AXTree = { app: DesktopApp; nodes: AXNode[] }
-export type Screenshot = { data: string; width: number; height: number; bounds: Rect }
-type Target = { id: string; bundleId: string; frame?: Rect }
+export type AXTree = { app: DesktopApp; nodes: AXNode[]; window?: DesktopWindow }
+export type Screenshot = { data: string; width: number; height: number; bounds: Rect; window?: DesktopWindow }
+type Target = { id: string; bundleId: string; frame?: Rect; window?: DesktopWindow }
+
+/** Validate and copy native window identity before retaining it across requests. */
+export function copyWindow(window: DesktopWindow | undefined): DesktopWindow | undefined {
+  if (!window || typeof window.id !== 'string' || !window.id || !Number.isInteger(window.pid) || window.pid <= 0) return undefined
+  const bounds = window.bounds
+  if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return undefined
+  return { ...window, bounds: { ...bounds } }
+}
+
+export function sameWindow(a: DesktopWindow | undefined, b: DesktopWindow | undefined): boolean {
+  const first = copyWindow(a),
+    second = copyWindow(b)
+  return !!(
+    first &&
+    second &&
+    first.id === second.id &&
+    first.pid === second.pid &&
+    first.bounds.x === second.bounds.x &&
+    first.bounds.y === second.bounds.y &&
+    first.bounds.width === second.bounds.width &&
+    first.bounds.height === second.bounds.height
+  )
+}
+
+/** Match AX text before escaping or the display budget can omit the target. */
+export function treeContainsText(tree: AXTree, text: string): boolean {
+  const needle = text.replace(/\r\n/g, '\n')
+  return [tree.app.name, tree.window?.title, ...tree.nodes.flatMap((node) => [node.title, node.value, node.placeholder, node.identifier])].some(
+    (value) => typeof value === 'string' && value.replace(/\r\n/g, '\n').includes(needle),
+  )
+}
 
 /** References deliberately expire at every capture, including unchanged captures. */
 export class DesktopSnapshot {
@@ -64,7 +96,7 @@ export class DesktopSnapshot {
     }
     for (const { node, ref, line, index } of candidates) {
       if (!selected.has(index) || !append(line)) continue
-      this.refs.set(ref, { id: node.id, bundleId: tree.app.bundleId, ...(node.frame ? { frame: { ...node.frame } } : {}) })
+      this.refs.set(ref, { id: node.id, bundleId: tree.app.bundleId, ...(node.frame ? { frame: { ...node.frame } } : {}), window: copyWindow(tree.window) })
     }
     const omitted = tree.nodes.length - this.refs.size
     if (omitted) append(`… ${omitted} 个元素因预算省略`)
@@ -74,7 +106,7 @@ export class DesktopSnapshot {
   get(ref: string): Target {
     const target = this.refs.get(ref.replace(/^\[(d\d+)\]$/, '$1'))
     if (!target) throw new Error(`桌面元素 ${ref} 已失效，请重新获取快照`)
-    return { ...target, ...(target.frame ? { frame: { ...target.frame } } : {}) }
+    return { ...target, ...(target.frame ? { frame: { ...target.frame } } : {}), window: copyWindow(target.window) }
   }
 
   diff(tree: AXTree, budget = 12_000): string {

@@ -373,8 +373,13 @@ class AgentService {
   /** The page the conversation's browser tools are on: its tab in the user's browser, or the built-in one. */
   private pageInfo(threadId: string): { title: string; url: string; mine?: boolean } | null {
     if (targets.get(threadId) === 'mine') {
-      const p = targets.page(threadId)
-      return { title: p.title(), url: p.url(), mine: true }
+      try {
+        const p = targets.page(threadId)
+        return { title: p.title(), url: p.url(), mine: true }
+      } catch {
+        // A revoked or occupied tab must not prevent the run from explaining the error.
+        return null
+      }
     }
     const tab = sessions.peek(threadId)
     return tab && !tab.isDestroyed() ? { title: tab.getTitle(), url: tab.getURL() } : null

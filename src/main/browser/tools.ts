@@ -396,10 +396,15 @@ async function myBrowserTabs(ctx: ToolCtx, action: 'list' | 'new' | 'switch' | '
     }
     case 'close':
       if (tabId == null) return '需要 tabId'
-      await extTabs.close(tabId)
+      await targets.close(threadId, tabId)
       return `已关闭 ${tabId}`
     default: {
-      const mine = targets.page(threadId).id
+      let mine: string | null = null
+      try {
+        mine = targets.page(threadId).id
+      } catch {
+        // Listing is the recovery path after the selected page is revoked or occupied.
+      }
       const tabs = await extTabs.list()
       return JSON.stringify(tabs.map(({ tabId: id, url: u, title, owned }) => ({ id, url: u, title, current: `ext:${id}` === mine, openedByAgent: owned })))
     }

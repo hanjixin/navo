@@ -48,7 +48,8 @@ internal sealed class Desktop(Safety safety)
             bundleId = Identity(p),
             name = DisplayName(p),
             pid = p.Id,
-            windows = new[] { name.ToString() }
+            windows = new[] { name.ToString() },
+            window = Native.DescribeWindow(Native.GetAncestor(h, 2))
         };
     }
     static nint Find(string id)
@@ -274,6 +275,7 @@ internal sealed class Desktop(Safety safety)
         }
         Guard(id, generation);
         var window = Native.GetForegroundWindow();
+        var observedWindow = Native.DescribeWindow(window);
         if (cmd == "ax_tree")
         {
             refs.Clear();
@@ -343,8 +345,10 @@ internal sealed class Desktop(Safety safety)
             }
             Walk(AutomationElement.FromHandle(window), 0, 0);
             Guard(id, generation);
+            Native.ValidateWindow(observedWindow);
             return new
             {
+                window = observedWindow,
                 app = App(window),
                 nodes
             };
@@ -381,8 +385,10 @@ internal sealed class Desktop(Safety safety)
             using var stream = new MemoryStream();
             resized.Save(stream, ImageFormat.Jpeg);
             Guard(id, generation);
+            Native.ValidateWindow(observedWindow);
             return new
             {
+                window = observedWindow,
                 data = Convert.ToBase64String(stream.ToArray()),
                 width = imageWidth,
                 height = imageHeight,
@@ -395,7 +401,11 @@ internal sealed class Desktop(Safety safety)
                 }
             };
         }
+        var expected = a.TryGetProperty("expectedWindow", out var expectedJson) ? expectedJson.Deserialize<Native.WindowIdentity>() : null;
+        if (expected == null || !Native.SameWindow(expected, observedWindow))
+            throw new InvalidOperationException("目标窗口或位置已改变，请重新获取快照");
         Guard(id, generation, true);
+        Native.ValidateWindow(expected);
         var node = Node(a, id);
         if (cmd == "type")
         {
@@ -410,7 +420,7 @@ internal sealed class Desktop(Safety safety)
                 Guard(id, generation, true);
                 FocusSafe(node);
                 Guard(id, generation, true);
-                safety.Send(generation, chunk.SelectMany(unit => new[] { Native.Key(unit, false, true), Native.Key(unit, true, true) }).ToArray(), window);
+                safety.Send(generation, chunk.SelectMany(unit => new[] { Native.Key(unit, false, true), Native.Key(unit, true, true) }).ToArray(), expected);
                 Thread.Sleep(1);
             }
             return null;
@@ -426,7 +436,7 @@ internal sealed class Desktop(Safety safety)
             foreach (var p in parts)
                 keys.Add(KeyCode(p));
             Guard(id, generation, true);
-            safety.Send(generation, keys.Select(k => Native.Key(k)).Concat(keys.AsEnumerable().Reverse().Select(k => Native.Key(k, true))).ToArray(), window);
+            safety.Send(generation, keys.Select(k => Native.Key(k)).Concat(keys.AsEnumerable().Reverse().Select(k => Native.Key(k, true))).ToArray(), expected);
             return null;
         }
         if (cmd is "click" or "scroll")
@@ -450,11 +460,11 @@ internal sealed class Desktop(Safety safety)
                 for (int i = 0; i < (a.Bool("double") ? 2 : 1); i++)
                 {
                     Guard(id, generation, true);
-                    safety.Send(generation, new[] { move, Native.Mouse(down), Native.Mouse(down * 2) }, window, point);
+                    safety.Send(generation, new[] { move, Native.Mouse(down), Native.Mouse(down * 2) }, expected, point);
                 }
             }
             else
-                safety.Send(generation, new[] { move, Native.Mouse(0x800, data: -(int)a.Number("dy")), Native.Mouse(0x1000, data: (int)a.Number("dx")) }, window, point);
+                safety.Send(generation, new[] { move, Native.Mouse(0x800, data: -(int)a.Number("dy")), Native.Mouse(0x1000, data: (int)a.Number("dx")) }, expected, point);
             return null;
         }
         throw new InvalidOperationException("未知命令");

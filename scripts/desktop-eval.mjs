@@ -71,20 +71,26 @@ try {
   await request('watch_user_input', { enabled: true })
   await request('activate', { bundleId })
   await assert.rejects(request('key', { bundleId: 'com.apple.finder', combo: 'space' }), /前台|未运行/)
-  await request('key', { bundleId, combo: 'cmd+n' })
+  const initial = await request('ax_tree', { bundleId })
+  assert.ok(initial.window, 'The initial window must be identifiable before input.')
+  await request('key', { bundleId, combo: 'cmd+n', expectedWindow: initial.window }).catch((error) => {
+    // Opening a document can change the window between key-down and key-up. Observe, never replay.
+    if (!/窗口.*改变/.test(error.message)) throw error
+  })
   await pause(700)
   const tree = await request('ax_tree', { bundleId })
+  assert.ok(tree.window && tree.window.id !== initial.window.id, 'A distinct new window is required before typing; existing documents are never modified.')
   const editor = tree.nodes.find((node) => node.role === 'AXTextArea' && node.enabled)
   assert.ok(editor, 'TextEdit must show a new editable document; close any initial file picker then rerun.')
   const marker = 'Navo desktop smoke — 你好，桌面！'
-  await request('type', { bundleId, ref: editor.id, text: marker })
+  await request('type', { bundleId, ref: editor.id, text: marker, expectedWindow: tree.window })
   await pause(300)
   const updated = await request('ax_tree', { bundleId })
   assert.ok(
     updated.nodes.some((node) => typeof node.value === 'string' && node.value.includes(marker)),
     'Unicode text must appear in the AX tree.',
   )
-  await assert.rejects(request('click', { bundleId, ref: editor.id }), /引用已失效/)
+  await assert.rejects(request('click', { bundleId, ref: editor.id, expectedWindow: updated.window }), /引用已失效/)
   const shot = await request('screenshot', { bundleId })
   assert.ok(shot.width > 0 && shot.height > 0 && shot.bounds.width > 0)
   const jpeg = Buffer.from(shot.data, 'base64')
@@ -95,7 +101,7 @@ try {
   assert.equal((await request('window_at', center))?.bundleId, bundleId, 'Screenshot bounds must map to the target window in Quartz screen coordinates.')
   if (process.argv.includes('--stop-test')) {
     console.log('Press Escape NOW while the helper types. Do not switch apps.')
-    const typing = request('type', { bundleId, text: '\nStop test '.repeat(2000) }, 60_000)
+    const typing = request('type', { bundleId, text: '\nStop test '.repeat(2000), expectedWindow: shot.window }, 60_000)
     await assert.rejects(typing, /停止|监听/)
     assert.equal(inputEvent?.reason, 'escape', 'Must receive the real Escape event, not merely a timeout.')
     await assert.rejects(request('key', { bundleId, combo: 'space' }), /停止|监听/)

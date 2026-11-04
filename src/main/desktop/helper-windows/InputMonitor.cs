@@ -48,7 +48,7 @@ internal sealed class Safety : IDisposable
             Interlocked.Increment(ref generation);
         }
     }
-    public void Send(long token, Native.INPUT[] events, nint expectedWindow, Native.POINT? location = null)
+    public void Send(long token, Native.INPUT[] events, Native.WindowIdentity expectedWindow, Native.POINT? location = null)
     {
         Require(token);
         // Reinstall before every batch: Windows has no supported query for a hook
@@ -62,9 +62,8 @@ internal sealed class Safety : IDisposable
         {
             Require(token);
             Native.SafeDesktop();
-            if (Native.GetForegroundWindow() != expectedWindow)
-                throw new InvalidOperationException("输入前目标窗口已改变");
-            if (location is Native.POINT point && Native.GetAncestor(Native.WindowFromPoint(point), 2) != expectedWindow)
+            Native.ValidateWindow(expectedWindow);
+            if (location is Native.POINT point && Native.GetAncestor(Native.WindowFromPoint(point), 2).ToString() != expectedWindow.id)
                 throw new InvalidOperationException("坐标已被其他窗口遮挡");
             Native.Send(events);
         }
@@ -96,6 +95,14 @@ internal sealed class InputMonitor : IDisposable
     readonly Native.HookProc keyCallback, mouseCallback;
     Native.POINT anchor;
     readonly ManualResetEventSlim ready = new();
+    internal static string? MouseReason(nint message, bool injected, bool dragging, double distance)
+    {
+        if (injected) return null;
+        if (message == 0x201 || message == 0x204 || message == 0x207 || message == 0x20b) return "mouse_button";
+        if (message == 0x20a || message == 0x20e) return "scroll";
+        if (message == 0x200 && dragging) return "drag";
+        return message == 0x200 && distance > 20 ? "mouse" : null;
+    }
     public InputMonitor(Safety s)
     {
         safety = s;
@@ -104,22 +111,23 @@ internal sealed class InputMonitor : IDisposable
             if (code >= 0 && (w == 0x100 || w == 0x104))
             {
                 var data = Marshal.PtrToStructure<Native.KBDLLHOOKSTRUCT>(l);
-                if (data.dwExtraInfo != Native.Marker && data.vkCode == 27)
-                    safety.UserInput("escape");
+                if (data.dwExtraInfo != Native.Marker)
+                    safety.UserInput(data.vkCode == 27 ? "escape" : "keyboard");
             }
             return Native.CallNextHookEx(0, code, w, l);
         };
         mouseCallback = (code, w, l) =>
         {
-            if (code >= 0 && w == 0x200)
+            if (code >= 0)
             {
                 var data = Marshal.PtrToStructure<Native.MSLLHOOKSTRUCT>(l);
                 if (data.dwExtraInfo == Native.Marker)
                     anchor = data.pt;
-                else if (Math.Sqrt(Math.Pow(data.pt.x - anchor.x, 2) + Math.Pow(data.pt.y - anchor.y, 2)) > 20)
+                else
                 {
-                    anchor = data.pt;
-                    safety.UserInput("mouse");
+                    bool dragging = (Native.GetAsyncKeyState(1) & 0x8000) != 0 || (Native.GetAsyncKeyState(2) & 0x8000) != 0 || (Native.GetAsyncKeyState(4) & 0x8000) != 0;
+                    var reason = MouseReason(w, false, dragging, Math.Sqrt(Math.Pow(data.pt.x - anchor.x, 2) + Math.Pow(data.pt.y - anchor.y, 2)));
+                    if (reason != null) safety.UserInput(reason);
                 }
             }
             return Native.CallNextHookEx(0, code, w, l);

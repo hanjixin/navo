@@ -5,6 +5,24 @@ namespace NavoDesktop;
 
 internal static class Native
 {
+    internal sealed record WindowBounds(double x, double y, double width, double height);
+    internal sealed record WindowIdentity(string id, int pid, WindowBounds bounds);
+    internal static WindowIdentity DescribeWindow(nint handle)
+    {
+        if (handle == 0 || !GetWindowRect(handle, out var r))
+            throw new InvalidOperationException("无法确定目标窗口");
+        GetWindowThreadProcessId(handle, out uint pid);
+        return new(handle.ToString(), (int)pid, new(r.left, r.top, r.right - r.left, r.bottom - r.top));
+    }
+    internal static bool SameWindow(WindowIdentity expected, WindowIdentity actual) =>
+        expected == actual && expected.id.Length > 0 && expected.pid > 0 &&
+        double.IsFinite(expected.bounds.x) && double.IsFinite(expected.bounds.y) &&
+        double.IsFinite(expected.bounds.width) && double.IsFinite(expected.bounds.height) &&
+        expected.bounds.width > 0 && expected.bounds.height > 0;
+    internal static void ValidateWindow(WindowIdentity expected) {
+        if (!SameWindow(expected, DescribeWindow(GetForegroundWindow())))
+            throw new InvalidOperationException("目标窗口或位置已改变，请重新获取快照");
+    }
     public static readonly nuint Marker = 0x4e41564f;
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
@@ -66,7 +84,7 @@ internal static class Native
     [DllImport("user32.dll")] public static extern nint WindowFromPoint(POINT p);
     [DllImport("user32.dll")] public static extern nint GetAncestor(nint h, uint flag);
     [DllImport("user32.dll")] public static extern bool PrintWindow(nint h, nint dc, uint flags);
-    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] public static extern uint SendInput(uint count, INPUT[] input, int size);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int n);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);

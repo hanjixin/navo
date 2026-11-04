@@ -4,9 +4,10 @@ import { DesktopConsent } from '../src/main/desktop/consent'
 import { DesktopTransportError, type DesktopTransport } from '../src/main/desktop/client'
 import type { DesktopConsentRequest } from '../src/shared/types'
 
-const app = { name: 'Notes', bundleId: 'com.apple.Notes', pid: 123 }
-const tree = { app, nodes: [{ id: 'native-1', role: 'AXButton', title: 'Save', enabled: true, depth: 0 }] }
-const image = { data: '', width: 200, height: 100, bounds: { x: -100, y: 20, width: 100, height: 50 } }
+const window = { id: 'window-1', pid: 123, bounds: { x: -100, y: 20, width: 100, height: 50 } }
+const app = { name: 'Notes', bundleId: 'com.apple.Notes', pid: 123, window }
+const tree = { app, window, nodes: [{ id: 'native-1', role: 'AXButton', title: 'Save', enabled: true, depth: 0 }] }
+const image = { data: '', width: 200, height: 100, bounds: { x: -100, y: 20, width: 100, height: 50 }, window }
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => {
@@ -205,19 +206,23 @@ describe('desktop controller', () => {
     expect(f.calls.find((c) => c.cmd === 'window_at')?.args).toEqual({ x: -50, y: 45 })
     expect(f.calls.some((c) => c.cmd === 'click')).toBe(false)
     f.state.at = app
+    await expect(f.controller.action('one', 'click', { x: 100, y: 50 })).rejects.toThrow('截图')
+    await f.controller.screenshot('one')
     await f.controller.action('one', 'click', { x: 100, y: 50 })
     expect(f.calls.find((c) => c.cmd === 'click')?.args).toMatchObject({ x: -50, y: 45, bundleId: app.bundleId })
     await expect(f.controller.action('one', 'click', { x: 100, y: 50 })).rejects.toThrow('截图')
   })
 
-  it('pauses after three transport failures without retrying a mutation', async () => {
+  it('pauses after three transport failures without retrying an uncertain mutation', async () => {
     const f = setup()
     await f.snapshot()
-    f.intercept((cmd) => (cmd === 'type' ? Promise.reject(new DesktopTransportError('crashed')) : undefined))
-    for (let i = 0; i < 2; i++) await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('crashed')
-    await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('三次')
+    f.intercept((cmd) => (cmd === 'type' || cmd === 'ax_tree' ? Promise.reject(new DesktopTransportError('crashed')) : undefined))
+    await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('crashed')
+    await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('快照')
+    await expect(f.controller.snapshot('one')).rejects.toThrow('crashed')
+    await expect(f.controller.snapshot('one')).rejects.toThrow('三次')
     await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('中止')
-    expect(f.calls.filter((c) => c.cmd === 'type')).toHaveLength(3)
+    expect(f.calls.filter((c) => c.cmd === 'type')).toHaveLength(1)
     await settle()
     expect(f.calls.filter((c) => c.cmd === 'release')).toHaveLength(1)
     expect(f.abort).not.toHaveBeenCalled()
@@ -308,5 +313,71 @@ describe('desktop controller', () => {
     const rearmed = commands.findIndex((c) => c.cmd === 'watch_user_input' && c.args.enabled === true)
     expect(rearmed).toBeGreaterThan(-1)
     expect(commands.findIndex((c) => c.cmd === 'activate')).toBeGreaterThan(rearmed)
+  })
+
+  it('rejects a different window, process or geometry even when the app identity matches', async () => {
+    for (const changed of [
+      { ...window, id: 'window-2' },
+      { ...window, pid: 456 },
+      { ...window, bounds: { ...window.bounds, x: 12 } },
+      { ...window, bounds: { ...window.bounds, width: 101 } },
+    ]) {
+      const f = setup()
+      await f.snapshot()
+      await f.controller.screenshot('one')
+      f.state.at = { ...app, window: changed }
+      await expect(f.controller.action('one', 'click', { x: 100, y: 50 })).rejects.toThrow('窗口')
+      f.state.at = app
+      await expect(f.controller.action('one', 'click', { x: 100, y: 50 })).rejects.toThrow('截图')
+      expect(f.calls.some((call) => call.cmd === 'click')).toBe(false)
+    }
+  })
+
+  it('passes the observed window identity for ref, keyboard and coordinate input', async () => {
+    const f = setup()
+    const snapshot = await f.snapshot()
+    await f.controller.action('one', 'type', { ref: snapshot.match(/\[(d\d+)\]/)![1], text: 'hello' })
+    await f.controller.action('one', 'key', { combo: 'tab' })
+    await f.controller.screenshot('one')
+    await f.controller.action('one', 'click', { x: 10, y: 20 })
+    for (const cmd of ['type', 'key', 'click']) expect(f.calls.find((call) => call.cmd === cmd)?.args.expectedWindow).toEqual(window)
+  })
+
+  it('keeps reads available but refuses input without a verifiable window', async () => {
+    const f = setup()
+    f.intercept((cmd) => (cmd === 'ax_tree' ? Promise.resolve({ ...tree, window: undefined }) : undefined))
+    const snapshot = await f.snapshot()
+    expect(snapshot).toContain('Save')
+    await expect(f.controller.action('one', 'click', { ref: snapshot.match(/\[(d\d+)\]/)![1] })).rejects.toThrow('目标窗口')
+    await expect(f.controller.action('one', 'key', { combo: 'enter' })).rejects.toThrow('目标窗口')
+    expect(f.calls.some((call) => ['click', 'key'].includes(call.cmd))).toBe(false)
+  })
+
+  it('discards handles after native refusal instead of replaying old input', async () => {
+    const f = setup()
+    const snapshot = await f.snapshot()
+    const ref = snapshot.match(/\[(d\d+)\]/)![1]
+    f.intercept((cmd) => (cmd === 'click' ? Promise.reject(new Error('目标窗口已变化')) : undefined))
+    await expect(f.controller.action('one', 'click', { ref })).rejects.toThrow('窗口')
+    await expect(f.controller.action('one', 'click', { ref })).rejects.toThrow('失效')
+    await expect(f.controller.action('one', 'key', { combo: 'enter' })).rejects.toThrow('快照')
+    expect(f.calls.filter((call) => call.cmd === 'click')).toHaveLength(1)
+  })
+
+  it('matches unescaped and budget-omitted text while waiting', async () => {
+    const f = setup()
+    await f.snapshot()
+    const raw = 'He said "ready"\nnext line'
+    f.intercept((cmd) => (cmd === 'ax_tree' ? Promise.resolve({ ...tree, nodes: [{ ...tree.nodes[0], title: raw }] }) : undefined))
+    await expect(f.controller.waitFor('one', raw, 0)).resolves.toBeTypeOf('string')
+    const nodes = [
+      ...Array.from({ length: 200 }, (_, index) => ({ ...tree.nodes[0], id: `control-${index}`, title: 'button'.repeat(40) })),
+      { ...tree.nodes[0], role: 'AXStaticText', id: 'target', title: raw, value: 'Windows\r\ntext' + '.'.repeat(700) },
+    ]
+    f.intercept((cmd) => (cmd === 'ax_tree' ? Promise.resolve({ ...tree, nodes }) : undefined))
+    const result = await f.controller.waitFor('one', raw, 0)
+    expect(result).not.toContain('ready')
+    await expect(f.controller.waitFor('one', 'Windows\ntext', 0)).resolves.toBeTypeOf('string')
+    await expect(f.controller.waitFor('one', 'missing', 0)).rejects.toThrow('等待超时')
   })
 })

@@ -54,29 +54,44 @@ export async function checkDesktopHelper() {
     })
   }
   const bundleId = 'com.apple.TextEdit'
+  let expectedWindow
   try {
-    await assert.rejects(request('type', { bundleId, text: 'x' }), /监听|停止/)
+    await assert.rejects(request('type', { bundleId, expectedWindow, text: 'x' }), /监听|停止/)
     await request('watch_user_input', { enabled: true })
     await request('activate', { bundleId })
-    const first = (await request('ax_tree', { bundleId })).nodes[0]
-    await request('type', { bundleId, ref: first.id, text: '你好' })
+    const snapshot = await request('ax_tree', { bundleId })
+    expectedWindow = snapshot.window
+    assert.ok(expectedWindow?.id)
+    const screenshot = await request('screenshot', { bundleId })
+    assert.deepEqual(screenshot.window, expectedWindow)
+    assert.deepEqual(screenshot.bounds, expectedWindow.bounds)
+    assert.deepEqual((await request('window_at', { x: 110, y: 110 })).window, expectedWindow)
+    await assert.rejects(request('click', { bundleId }), /窗口/)
+    for (const changed of [
+      { ...expectedWindow, id: 'other-window' },
+      { ...expectedWindow, pid: expectedWindow.pid + 1 },
+      { ...expectedWindow, bounds: { ...expectedWindow.bounds, x: expectedWindow.bounds.x + 1 } },
+    ])
+      await assert.rejects(request('click', { bundleId, expectedWindow: changed }), /窗口/)
+    const first = snapshot.nodes[0]
+    await request('type', { bundleId, expectedWindow, ref: first.id, text: '你好' })
     const second = (await request('ax_tree', { bundleId })).nodes[0]
     assert.ok(second.value.includes('你好'))
-    await assert.rejects(request('click', { bundleId, ref: first.id }), /引用已失效/)
+    await assert.rejects(request('click', { bundleId, expectedWindow, ref: first.id }), /引用已失效/)
 
-    const typing = assert.rejects(request('type', { bundleId, text: 'x'.repeat(10_000) }), /停止/)
+    const typing = assert.rejects(request('type', { bundleId, expectedWindow, text: 'x'.repeat(10_000) }), /停止/)
     await new Promise((r) => setTimeout(r, 30))
-    const queued = assert.rejects(request('key', { bundleId, combo: 'space' }), /停止/)
+    const queued = assert.rejects(request('key', { bundleId, expectedWindow, combo: 'space' }), /停止/)
     const start = performance.now()
     await request('release')
     await Promise.all([typing, queued])
     assert.ok(performance.now() - start < 1000, 'Release must interrupt long typing within one second')
-    await assert.rejects(request('key', { bundleId, combo: 'space' }), /停止|监听/)
+    await assert.rejects(request('key', { bundleId, expectedWindow, combo: 'space' }), /停止|监听/)
     await request('watch_user_input', { enabled: false })
     await assert.rejects(request('activate', { bundleId }), /停止|监听/)
     await request('watch_user_input', { enabled: true })
     await request('activate', { bundleId })
-    await request('key', { bundleId, combo: 'space' })
+    await request('key', { bundleId, expectedWindow, combo: 'space' })
     console.log('PASS native helper: Unicode, stale refs, release interrupts long input, queued input canceled, stop lock and explicit recovery')
   } finally {
     await request('release').catch(() => undefined)
