@@ -53,6 +53,7 @@ function setup() {
   let prompt: DesktopConsentRequest | null = null
   const consent = new DesktopConsent({
     blocked: () => state.blocked,
+    revoked: (threadId) => controller.stop(threadId, true, 'authorization_revoked'),
     publish: (value) => {
       prompt = value
     },
@@ -68,7 +69,7 @@ function setup() {
     changed: vi.fn(),
     abort,
   })
-  const approve = async (decision: 'once' | 'session' = 'session') => {
+  const approve = async (decision: 'once' | 'session' | 'execution' = 'session') => {
     await settle()
     expect(prompt).not.toBeNull()
     consent.resolve(prompt!.id, decision)
@@ -112,6 +113,8 @@ describe('desktop controller', () => {
     await expect(f.controller.snapshot('one')).rejects.toThrow('辅助功能')
     f.state.accessibility = true
     f.state.screenRecording = false
+    expect(f.controller.status().lastStop?.reason).toBe('permission_missing')
+    f.controller.beginRun('one')
     await expect(f.controller.screenshot('one')).rejects.toThrow('屏幕录制')
     expect(f.prompt()).toBeNull()
     expect(f.calls.some((c) => c.cmd === 'ax_tree')).toBe(false)
@@ -192,7 +195,8 @@ describe('desktop controller', () => {
     const second = await f.controller.snapshot('one')
     await expect(f.controller.action('one', 'click', { ref })).rejects.toThrow('失效')
     f.controller.failed()
-    await expect(f.controller.action('one', 'click', { ref: second.match(/\[(d\d+)\]/)![1] })).rejects.toThrow('失效')
+    await expect(f.controller.action('one', 'click', { ref: second.match(/\[(d\d+)\]/)![1] })).rejects.toThrow('服务故障')
+    expect(f.controller.status().lastStop?.reason).toBe('service_failure')
     expect(f.calls.some((c) => c.cmd === 'click')).toBe(false)
   })
 
@@ -221,7 +225,7 @@ describe('desktop controller', () => {
     await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('快照')
     await expect(f.controller.snapshot('one')).rejects.toThrow('crashed')
     await expect(f.controller.snapshot('one')).rejects.toThrow('三次')
-    await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('中止')
+    await expect(f.controller.action('one', 'type', { text: 'a' })).rejects.toThrow('服务故障')
     expect(f.calls.filter((c) => c.cmd === 'type')).toHaveLength(1)
     await settle()
     expect(f.calls.filter((c) => c.cmd === 'release')).toHaveLength(1)
@@ -282,11 +286,13 @@ describe('desktop controller', () => {
     await f.approve('once')
     await screenshot
     const action = f.controller.action('one', 'click', { x: 100, y: 50 })
-    const rejected = expect(action).rejects.toThrow(/截图|失效/)
+    const rejected = expect(action).rejects.toThrow(/取消/)
     await settle()
     expect(f.prompt()).not.toBeNull()
+    const stale = f.prompt()!.id
     f.controller.failed()
-    await f.approve('once')
+    expect(f.prompt()).toBeNull()
+    expect(() => f.consent.resolve(stale, 'once')).toThrow('失效')
     await rejected
     expect(f.calls.some((c) => c.cmd === 'click')).toBe(false)
   })
@@ -379,5 +385,52 @@ describe('desktop controller', () => {
     expect(result).not.toContain('ready')
     await expect(f.controller.waitFor('one', 'Windows\ntext', 0)).resolves.toBeTypeOf('string')
     await expect(f.controller.waitFor('one', 'missing', 0)).rejects.toThrow('等待超时')
+  })
+})
+
+describe('desktop authorization lifecycle and state', () => {
+  it('keeps execution grants across tool approval resumes, then clears them on completion', async () => {
+    const f = setup()
+    f.controller.beginRun('one', 'task')
+    const first = f.controller.snapshot('one', app.name)
+    await f.approve('execution')
+    await first
+    await f.controller.endRun('one')
+    expect(f.consent.grants()).toHaveLength(1)
+    f.controller.beginRun('one', 'task')
+    expect(await f.controller.snapshot('one', app.name)).toContain('Save')
+    expect(f.prompt()).toBeNull()
+    await f.controller.endRun('one')
+    f.controller.endExecution('one', 'task')
+    expect(f.consent.grants()).toEqual([])
+  })
+  it('revocation stops further actions and reports the authorization reason', async () => {
+    const f = setup()
+    await f.snapshot()
+    f.consent.revoke(f.consent.grants()[0].id)
+    expect(f.abort).toHaveBeenCalledWith('one')
+    expect(f.controller.status().lastStop).toMatchObject({ reason: 'authorization_revoked', threadId: 'one' })
+    await expect(f.controller.action('one', 'type', { text: 'not sent' })).rejects.toThrow('撤销')
+    expect(f.calls.some((call) => call.cmd === 'type')).toBe(false)
+  })
+  it('preserves takeover reason when the agent stops the same run afterward', async () => {
+    const f = setup()
+    await f.snapshot()
+    f.controller.stop('one', true, 'user_takeover')
+    f.controller.stop('one', false)
+    expect(f.controller.status().lastStop?.reason).toBe('user_takeover')
+  })
+  it('reports untested/checking states and merges concurrent refreshes', async () => {
+    const f = setup(),
+      gate = deferred<unknown>()
+    expect(f.controller.status()).toMatchObject({ checkedAt: null, checking: false })
+    f.intercept((cmd) => (cmd === 'permissions' ? gate.promise : undefined))
+    const first = f.controller.refresh(),
+      second = f.controller.refresh()
+    expect(f.controller.status()).toMatchObject({ checkedAt: null, checking: true })
+    expect(f.calls.filter((call) => call.cmd === 'permissions')).toHaveLength(1)
+    gate.resolve({ accessibility: true, screenRecording: true })
+    await Promise.all([first, second])
+    expect(f.controller.status()).toMatchObject({ checkedAt: expect.any(Number), checking: false, helper: 'ok' })
   })
 })

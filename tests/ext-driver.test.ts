@@ -10,7 +10,9 @@ type Params = Record<string, unknown>
 type Cdp = { method: string; params: Params }
 
 /** A stand-in for the extension: answers requests like a browser with tabs 7, 8, 9 would. */
-function fakeLink(over: { tabs?: number[]; evaluate?: (p: Params) => unknown; request?: (method: ExtMethod, params: Params) => Promise<void> } = {}) {
+function fakeLink(
+  over: { handed?: number[]; tabs?: number[]; evaluate?: (p: Params) => unknown; request?: (method: ExtMethod, params: Params) => Promise<void> } = {},
+) {
   const calls: { method: ExtMethod; params: Params }[] = []
   const listeners = new Map<ExtEventName, Set<(p: unknown) => void>>()
   let world = 0
@@ -27,7 +29,8 @@ function fakeLink(over: { tabs?: number[]; evaluate?: (p: Params) => unknown; re
       await over.request?.(method, params)
       const r = (v: unknown) => v as T
       if (method === 'tabs.create') return r({ tabId: 7, url: params.url ?? 'about:blank', title: '' })
-      if (method === 'tabs.list') return r((over.tabs ?? [7, 8, 9]).map((tabId) => ({ tabId, url: `https://t${tabId}.test/`, title: `T${tabId}` })))
+      if (method === 'tabs.list')
+        return r((over.tabs ?? [7, 8, 9]).map((tabId) => ({ tabId, url: `https://t${tabId}.test/`, title: `T${tabId}`, handed: over.handed?.includes(tabId) })))
       if (method !== 'cdp.send') return r(null)
       const c = params as unknown as Cdp
       if (c.method === 'Page.getFrameTree') return r({ frameTree: { frame: { id: 'F1', url: 'https://a.test/' } } })
@@ -200,6 +203,28 @@ describe('Targets', () => {
     return { link, tabs, targets }
   }
 
+  it('notifies observation immediately when an explicitly selected tab changes', async () => {
+    const link = fakeLink({ handed: [8, 9] })
+    const tabs = new ExtTabs(async () => link)
+    const selected = vi.fn()
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => builtin, selected })
+    const first = await targets.useMine('view')
+    expect(selected).toHaveBeenLastCalledWith(first)
+    const second = targets.useTab('view', first.tabId === 9 ? 8 : 9)
+    expect(selected).toHaveBeenLastCalledWith(second)
+    await targets.endRun('view')
+    await targets.beginRun('view')
+    expect(selected).toHaveBeenLastCalledWith(targets.page('view'))
+  })
+
+  it('synchronizes extension handovers before the first automatic selection', async () => {
+    const link = fakeLink({ handed: [9] })
+    const tabs = new ExtTabs(async () => link)
+    const targets = new Targets({ tabs, linked: () => true, builtin: () => builtin })
+    expect((await targets.useMine('first')).tabId).toBe(9)
+    expect(link.calls.some((call) => call.method === 'tabs.create')).toBe(false)
+  })
+
   it('defaults to the built-in browser', () => {
     const { targets } = setup()
     expect(targets.get('t1')).toBe('builtin')
@@ -319,13 +344,65 @@ describe('LiveView', () => {
     expect(sent.at(-1)).toEqual({ tabId: 7, url: 'https://a.test', title: '', image: 'data:image/jpeg;base64,AAA' })
   })
 
-  it('release stops casting and clears the picture', async () => {
+  it('resynchronizes authorization on use after a failed initial connection sync', async () => {
+    const link = fakeLink()
+    const tabs = new ExtTabs(async () => link)
+    const p = await tabs.create()
+    const synchronize = vi.fn(async () => {
+      await tabs.list()
+      return 'Chrome'
+    })
+    const view = new LiveView(
+      () => {},
+      () => {},
+      synchronize,
+    )
+    await view.connection(false, null)
+    await view.setWatching(true)
+    await view.use(p)
+    expect(synchronize).toHaveBeenCalledOnce()
+    expect(view.state()).toMatchObject({ status: 'connecting', browser: 'Chrome' })
+    link.emit('cdp', { tabId: 7, method: 'Page.screencastFrame', params: { data: 'AAA', sessionId: 1 } })
+    expect(view.state().status).toBe('live')
+    synchronize.mockImplementationOnce(async () => {
+      await p.detach()
+      return 'Chrome'
+    })
+    await view.retry()
+    expect(view.state().status).toBe('released')
+    expect(link.cdpCalls('Page.startScreencast')).toHaveLength(1)
+  })
+
+  it('marks disconnection without clearing the last frame and retries observation without input', async () => {
+    const { link, tabs, sent, view } = await setup()
+    const p = await tabs.create()
+    await view.setWatching(true)
+    await view.use(p)
+    link.emit('cdp', { tabId: 7, method: 'Page.screencastFrame', params: { data: 'AAA', sessionId: 1 } })
+    expect(view.state().status).toBe('live')
+    const image = sent.at(-1)
+    await view.connection(false, 'Chrome')
+    expect(view.state().status).toBe('disconnected')
+    expect(sent.at(-1)).toBe(image)
+    await view.connection(true, 'Chrome')
+    expect(view.state().status).toBe('connecting')
+    expect(link.cdpCalls('Runtime.evaluate')).toHaveLength(0)
+    await p.detach()
+    expect(view.state().status).toBe('released')
+    const count = link.calls.length
+    await view.retry()
+    expect(link.calls).toHaveLength(count)
+    await expect(view.focus()).rejects.toThrow()
+  })
+
+  it('release stops casting and marks the view released', async () => {
     const { link, tabs, sent, view } = await setup()
     const p = await tabs.create()
     await view.setWatching(true)
     await view.use(p)
     await view.release(p)
     expect(link.cdpCalls('Page.stopScreencast')).toHaveLength(1)
+    expect(view.state().status).toBe('released')
     expect(sent.at(-1)).toBeNull()
     // releasing a tab that isn't shown changes nothing
     const before = sent.length
@@ -349,7 +426,7 @@ describe('browser ownership and revocation', () => {
     return tabs
   }
 
-  it('revokes cached drivers permanently and clears live frames immediately', async () => {
+  it('revokes cached drivers permanently and stops live observation immediately', async () => {
     const link = fakeLink()
     const tabs = handed(link)
     const old = tabs.driver(9)
@@ -499,7 +576,7 @@ describe('browser ownership and revocation', () => {
     const targets = new Targets({ tabs, linked: () => true, builtin: () => ({}) as PageDriver })
     const old = targets.useTab('one', 9)
     await targets.endRun('one')
-    targets.beginRun('one')
+    await targets.beginRun('one')
     expect(targets.page('one')).not.toBe(old)
     expect(old.gone).toBe(true)
     await targets.page('one').evalMain('return 1')
@@ -512,11 +589,11 @@ describe('browser ownership and revocation', () => {
     targets.useTab('one', 9)
     await targets.endRun('one')
     targets.useTab('two', 9)
-    expect(() => targets.beginRun('one')).not.toThrow()
+    await expect(targets.beginRun('one')).resolves.toBeUndefined()
     expect(() => targets.page('one')).toThrow('另一个对话')
     await expect(targets.useMine('one')).rejects.toThrow('另一个对话')
     link.emit('revoke', { tabId: 9 })
-    targets.beginRun('two')
+    await targets.beginRun('two')
     expect(() => targets.page('two')).toThrow('没有交给 Navo')
     expect(link.calls.filter((c) => c.method === 'tabs.create')).toHaveLength(0)
     await targets.useBuiltin('one')

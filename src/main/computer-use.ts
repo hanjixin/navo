@@ -110,6 +110,16 @@ export const computerUse = {
     void liveView.setWatching(watchers > 0)
   },
 
+  viewState() {
+    return liveView.state()
+  },
+  retryView(): Promise<void> {
+    return liveView.retry()
+  },
+  focusView(): Promise<void> {
+    return liveView.focus()
+  },
+
   status(): ComputerUseStatus {
     return { browser: { ...bridge.status(), extensionDir: extensionDir() }, desktop: desktop.status() }
   },
@@ -144,9 +154,21 @@ export const computerUse = {
   stopRun(threadId: string): void {
     desktop.stop(threadId, false)
   },
-  beginRun(threadId: string): void {
-    desktop.beginRun(threadId)
-    targets.beginRun(threadId)
+  async beginRun(threadId: string, executionId?: string): Promise<void> {
+    desktop.beginRun(threadId, executionId)
+    await targets.beginRun(threadId)
+  },
+  endExecution(threadId: string, executionId: string): void {
+    desktop.endExecution(threadId, executionId)
+  },
+  grants() {
+    return desktopConsent.grants()
+  },
+  revokeGrant(id: string): void {
+    desktopConsent.revoke(id)
+  },
+  consents() {
+    return desktopConsent.pending()
   },
   forget(threadId: string): void {
     desktop.forget(threadId)

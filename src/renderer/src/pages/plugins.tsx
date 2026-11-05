@@ -203,7 +203,11 @@ export function PluginsPage() {
                         checked={p.enabled}
                         disabled={!!p.error}
                         onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={async (v) => (await call('plugins.setEnabled', p.id, v), list.reload())}
+                        onCheckedChange={async (v) => {
+                          await call('plugins.setEnabled', p.id, v)
+                          list.reload()
+                          if (!v) toast.info(t('插件已停用，后续动作不会执行；已派发的动作可能仍在完成。'))
+                        }}
                         aria-label={t('启用')}
                       />
                     </div>

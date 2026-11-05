@@ -97,7 +97,8 @@ describe('desktop consent', () => {
     const first = consent.request('one', app)
     const same = consent.request('one', app)
     const other = consent.request('two', app)
-    expect(published).toHaveLength(1)
+    expect(new Set(published.filter(Boolean).map((request) => request!.id)).size).toBe(1)
+    expect(consent.pending()).toHaveLength(3)
     consent.resolve(current().id, 'session')
     await Promise.all([first, same])
     expect(current().threadId).toBe('two')
@@ -117,7 +118,7 @@ describe('desktop consent', () => {
     const two = consent.request('one', app)
     const rejected = expect(two).rejects.toThrow('拒绝')
     expect(current().id).not.toBe(old)
-    consent.resolve(old, 'session')
+    expect(() => consent.resolve(old, 'session')).toThrow('失效')
     consent.resolve(current().id, 'deny')
     await rejected
   })
@@ -152,5 +153,50 @@ describe('desktop consent', () => {
     consent.cancel()
     await cancelled
     expect(current()).toBeNull()
+  })
+})
+
+describe('execution-scoped desktop authorization', () => {
+  it('keeps task authorization across resume but expires it at task completion', async () => {
+    const { consent, current } = approvals()
+    consent.beginExecution('one', 'task-1')
+    const requested = consent.request('one', app)
+    expect(current()).toMatchObject({ executionId: 'task-1', createdAt: expect.any(Number) })
+    consent.resolve(current().id, 'execution')
+    await requested
+    consent.beginExecution('one', 'task-1')
+    await consent.request('one', app)
+    expect(consent.grants()).toHaveLength(1)
+    consent.endExecution('one', 'task-1')
+    expect(consent.allowed('one', app.bundleId)).toBe(false)
+    expect(consent.grants()).toEqual([])
+  })
+  it('a new execution invalidates pending requests and cannot inherit prior task grants', async () => {
+    const { consent, current } = approvals()
+    consent.beginExecution('one', 'old')
+    const request = consent.request('one', app)
+    const rejected = expect(request).rejects.toThrow('取消')
+    const stale = current().id
+    consent.beginExecution('one', 'new')
+    expect(() => consent.resolve(stale, 'execution')).toThrow('失效')
+    await rejected
+    expect(consent.pending()).toEqual([])
+  })
+  it('revocation stops the grant owner and restart clears conversation grants', async () => {
+    const revoked: string[] = []
+    const consent = new DesktopConsent({ blocked: () => [], publish: () => {}, revoked: (threadId) => revoked.push(threadId) })
+    const requested = consent.request('one', app)
+    consent.resolve(consent.current()!.id, 'session')
+    await requested
+    const grant = consent.grants()[0]
+    consent.revoke(grant.id)
+    expect(revoked).toEqual(['one'])
+    expect(consent.allowed('one', app.bundleId)).toBe(false)
+    expect(() => consent.revoke(grant.id)).toThrow('失效')
+    const again = consent.request('one', app)
+    consent.resolve(consent.current()!.id, 'session')
+    await again
+    consent.clear()
+    expect(consent.grants()).toEqual([])
   })
 })

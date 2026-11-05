@@ -1,4 +1,13 @@
+import type { ProjectFilePage, ProjectFileSearchResult, ArtifactsQuery, ArtifactsPage } from './files-query'
+import type { DesktopGrant, UnifiedApproval } from './control-state'
+import type { ExternalViewState } from './external-view'
+import type { TracingIntegrationStatus } from './tracing'
 import type {
+  ChatDraft,
+  DraftScope,
+  DraftSaveInput,
+  ChatSubmitInput,
+  ChatSubmitReceipt,
   Bounds,
   BrowserState,
   ChatEvent,
@@ -64,6 +73,13 @@ import type {
 
 /** Request/response methods: renderer -> main via ipcRenderer.invoke */
 export interface Api {
+  'settings.integrationStatus': () => TracingIntegrationStatus
+  'drafts.get': (scope: DraftScope) => ChatDraft
+  'drafts.save': (input: DraftSaveInput) => ChatDraft
+  'drafts.clear': (scope: DraftScope, version: number) => boolean
+  'drafts.move': (source: DraftScope, target: DraftScope, version: number) => { moved: boolean; draft: ChatDraft }
+  'chat.submit': (input: ChatSubmitInput) => ChatSubmitReceipt
+  'approvals.list': () => UnifiedApproval[]
   // models
   'providers.list': () => Provider[]
   'providers.save': (input: ProviderInput) => Provider
@@ -75,6 +91,8 @@ export interface Api {
   'models.delete': (id: string) => void
   'models.setDefault': (id: string) => void
   'models.setEnabled': (id: string, enabled: boolean) => void
+  'models.setEnabledMany': (ids: string[], enabled: boolean) => void
+  'models.affectedTasks': (ids: string[]) => { id: string; name: string }[]
   'models.test': (id: string) => { ok: boolean; latencyMs: number; reply?: string; error?: string }
 
   // chat
@@ -82,6 +100,9 @@ export interface Api {
   'threads.create': (modelId?: string | null, projectId?: string | null) => Thread
   'threads.setProject': (id: string, projectId: string | null) => void
   'projectFiles.list': (projectId: string, path?: string, showHidden?: boolean) => ProjectFileListing
+  'projectFiles.listPage': (projectId: string, path?: string, showHidden?: boolean, cursor?: string, limit?: number) => ProjectFilePage
+  'projectFiles.search': (projectId: string, query: string, requestId: string, showHidden?: boolean) => ProjectFileSearchResult
+  'projectFiles.cancelSearch': (requestId: string) => void
   'projectFiles.preview': (projectId: string, path: string) => OutputPreview
   'projectFiles.reveal': (projectId: string, path: string) => void
   'projectFiles.openDirectory': (projectId: string) => void
@@ -96,7 +117,8 @@ export interface Api {
   'threads.state': (id: string) => ThreadState
   'chat.send': (threadId: string, text: string, images?: string[], fileIds?: string[]) => void
   /** alwaysAllow: tool names to stop asking about in this conversation */
-  'chat.resume': (threadId: string, decisions: Decision[], alwaysAllow?: string[]) => void
+  'chat.resume': (threadId: string, decisions: Decision[], alwaysAllow?: string[], interruptId?: string) => void
+  'chat.retrySubmission': (threadId: string, messageId: string) => void
   /** Re-run from a user message; pass text to edit it first */
   'chat.regenerate': (threadId: string, messageId: string, text?: string) => void
   'chat.stop': (threadId: string) => void
@@ -148,7 +170,7 @@ export interface Api {
   'quick.hide': () => void
   'quick.screenshot': () => void
   /** shows the main window (and opens the conversation there) */
-  'quick.openInMain': (threadId: string | null) => void
+  'quick.openInMain': (threadId: string | null, source?: DraftScope) => void
   /** every recorded state of a local skill, newest first */
   'skills.versions': (name: string) => SkillVersion[]
   'skills.rollback': (name: string, version: number) => void
@@ -249,6 +271,7 @@ export interface Api {
   'outputs.open': (id: string) => void
   'artifacts.get': (id: string) => Artifact | null
   'artifacts.list': (projectId?: string | null) => Artifact[]
+  'artifacts.query': (query?: ArtifactsQuery) => ArtifactsPage
   'artifacts.preview': (id: string) => OutputPreview
   'artifacts.export': (id: string, format: ExportFormat, dest?: string) => string | null
   'artifacts.saveAs': (id: string) => string | null
@@ -256,11 +279,17 @@ export interface Api {
   'artifacts.open': (id: string) => void
   // computer use: the user's own browser
   'computerUse.status': () => ComputerUseStatus
+  'computerUse.viewState': () => ExternalViewState
+  'computerUse.retryView': () => void
+  'computerUse.focusView': () => void
   'computerUse.refreshDesktop': () => ComputerUseStatus
   'computerUse.openPermission': (kind: 'accessibility' | 'screenRecording') => void
   'computerUse.restart': () => void
   'computerUse.consent': (id: string, decision: DesktopConsentDecision) => void
   'computerUse.pendingConsent': () => DesktopConsentRequest | null
+  'computerUse.consents': () => DesktopConsentRequest[]
+  'computerUse.grants': () => DesktopGrant[]
+  'computerUse.revokeGrant': (id: string) => void
   'computerUse.stop': () => void
   /** the user compared the pairing code the extension shows */
   'computerUse.confirmPairing': (approve: boolean) => void
@@ -325,6 +354,9 @@ export interface Api {
 
 /** Push events: main -> renderer */
 export interface Events {
+  'integrations.changed': void
+  'drafts.changed': DraftScope
+  'approvals.changed': void
   'memory.changed': void
   'memory.learned': MemoryLearned
   /** a skill was improved / created by itself, or a suggestion is waiting */
@@ -333,7 +365,8 @@ export interface Events {
   /** to the quick window when it opens: what it may use as context */
   'quick.opened': { clipboard: string | null; fileIds: string[] }
   /** to the main window: show this conversation */
-  'quick.openThread': string
+  'quick.openThread': string | null
+  'quick.transferDraft': { source: DraftScope; target: DraftScope }
   'quick.status': QuickStatus
   /** a browser task that sounds like it will come back: offer to keep it as a fixed flow */
   'flows.suggest': { threadId: string; actions: number }
@@ -370,6 +403,7 @@ export interface Events {
   'computerUse.guide': void
   /** the agent's tab in the user's browser; null when it stopped working there */
   'computerUse.frame': LiveFrame | null
+  'computerUse.viewChanged': ExternalViewState
   'files.changed': FileRecord
 }
 

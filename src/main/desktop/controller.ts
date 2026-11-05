@@ -1,4 +1,6 @@
 import type { DesktopStatus } from '@shared/types'
+import type { DesktopStop, DesktopStopReason } from '@shared/control-state'
+import { randomUUID } from 'node:crypto'
 import type { DesktopConsent } from './consent'
 import { DesktopTransportError, type DesktopTransport } from './client'
 import {
@@ -15,6 +17,7 @@ import {
 import { desktopAppKey } from './platform'
 
 type Session = {
+  executionId: string
   app?: DesktopApp
   snapshot: DesktopSnapshot
   image?: Screenshot
@@ -34,6 +37,10 @@ export class DesktopController {
   private permissions = { accessibility: false, screenRecording: false }
   private helper: DesktopStatus['helper'] = 'missing'
   private releasing: Promise<void> | null = null
+  private checkedAt: number | null = null
+  private checking = false
+  private lastStop: DesktopStop | null = null
+  private refreshing: Promise<void> | null = null
 
   constructor(
     private readonly options: {
@@ -57,22 +64,46 @@ export class DesktopController {
       ...this.permissions,
       helper: this.options.available() ? this.helper : 'missing',
       active: this.active,
+      checkedAt: this.checkedAt,
+      checking: this.checking,
+      lastStop: this.lastStop,
     }
   }
 
   async refresh(request?: 'accessibility' | 'screenRecording'): Promise<void> {
-    if (!this.options.supported() || !this.options.available()) return
-    try {
-      this.permissions = await this.options.client.request('permissions', request ? { request } : {})
-      this.helper = 'ok'
-    } catch {
-      this.helper = 'failed'
+    if (this.refreshing) {
+      await this.refreshing
+      if (!request) return
     }
+    this.checking = true
     this.options.changed(this.active)
+    this.refreshing = (async () => {
+      try {
+        if (!this.options.supported() || !this.options.available()) return
+        this.permissions = await this.options.client.request('permissions', request ? { request } : {})
+        this.helper = 'ok'
+      } catch {
+        this.helper = 'failed'
+      } finally {
+        this.checkedAt = Date.now()
+        this.checking = false
+        this.options.changed(this.active)
+      }
+    })()
+    try {
+      await this.refreshing
+    } finally {
+      this.refreshing = null
+    }
   }
 
-  beginRun(threadId: string): void {
-    this.sessions.set(threadId, { snapshot: new DesktopSnapshot(), stopped: false, failures: 0 })
+  beginRun(threadId: string, executionId: string = randomUUID()): void {
+    this.options.consent.beginExecution(threadId, executionId)
+    this.sessions.set(threadId, { executionId, snapshot: new DesktopSnapshot(), stopped: false, failures: 0 })
+  }
+
+  endExecution(threadId: string, executionId: string): void {
+    this.options.consent.endExecution(threadId, executionId)
   }
 
   async endRun(threadId: string): Promise<void> {
@@ -88,7 +119,9 @@ export class DesktopController {
     void this.endRun(threadId)
   }
 
-  stop(threadId = this.owner, notify = true): void {
+  stop(threadId = this.owner, notify = true, reason: DesktopStopReason = 'user_stop'): void {
+    if (!threadId || !this.sessions.get(threadId)?.stopped) this.lastStop = { reason, threadId, at: Date.now() }
+    this.options.changed(this.active)
     if (!threadId) {
       this.options.consent.cancel()
       return
@@ -103,6 +136,11 @@ export class DesktopController {
   /** A restart invalidates all native element IDs and captured coordinate maps. */
   failed(): void {
     this.helper = 'failed'
+    if (this.owner) this.stop(this.owner, true, 'service_failure')
+    else {
+      this.lastStop = { reason: 'service_failure', threadId: null, at: Date.now() }
+      this.options.changed(this.active)
+    }
     this.watching = false
     for (const s of this.sessions.values()) {
       s.snapshot.clear()
@@ -115,7 +153,7 @@ export class DesktopController {
   shutdown(): void {
     if (this.owner) this.stop(this.owner, true)
     for (const s of this.sessions.values()) s.stopped = true
-    this.options.consent.cancel()
+    this.options.consent.clear()
     this.options.client.close()
   }
 
@@ -223,7 +261,9 @@ export class DesktopController {
     this.busy = true
     try {
       this.permissions = await this.native(threadId, s, 'permissions')
+      this.checkedAt = Date.now()
       if ((access && !this.permissions.accessibility) || (screen && !this.permissions.screenRecording)) {
+        this.stop(threadId, false, 'permission_missing')
         if (this.options.platform === 'win32') throw new Error('当前 Windows 桌面不可操作，请解锁电脑并关闭系统安全提示后重试')
         throw new Error(
           access && !this.permissions.accessibility ? '缺少辅助功能权限，请到 设置 → 电脑操作 授权' : '缺少屏幕录制权限，请到 设置 → 电脑操作 授权',
@@ -234,7 +274,7 @@ export class DesktopController {
       return result
     } catch (err) {
       if (err instanceof DesktopTransportError && ++s.failures >= 3) {
-        this.stop(threadId, false)
+        this.stop(threadId, false, 'service_failure')
         throw new Error('桌面控制服务连续失败三次，本次运行已暂停桌面工具', { cause: err })
       }
       throw err
@@ -248,7 +288,16 @@ export class DesktopController {
     if (!this.options.enabled()) throw new Error('桌面控制尚未开启，请到 设置 → 电脑操作 开启')
     if (!this.options.supported()) throw new Error('桌面控制需要 macOS 14+ 或 Windows 10/11')
     if (!this.options.available()) throw new Error('桌面控制服务缺失，请重新构建或安装 Navo')
-    if (s.stopped || this.sessions.get(threadId) !== s) throw new Error('桌面操作已被用户中止，请等待用户继续')
+    if (s.stopped || this.sessions.get(threadId) !== s)
+      throw new Error(
+        this.lastStop?.reason === 'permission_missing'
+          ? '桌面操作因权限缺失已暂停，请检查系统权限'
+          : this.lastStop?.reason === 'service_failure'
+            ? '桌面操作因服务故障已暂停，请检查服务状态'
+            : this.lastStop?.reason === 'authorization_revoked'
+              ? '桌面操作授权已撤销，请重新授权'
+              : '桌面操作已被用户中止，请等待用户继续',
+      )
   }
 
   private blocked(bundleId: string): boolean {

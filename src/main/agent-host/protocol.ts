@@ -13,6 +13,7 @@ export interface ToolDescriptor {
 }
 
 export interface RunRequest {
+  executionId?: string
   runId: string
   threadId: string
   input:

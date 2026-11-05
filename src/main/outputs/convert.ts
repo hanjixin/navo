@@ -17,7 +17,7 @@ import {
 } from 'docx'
 import { marked, type Token, type Tokens } from 'marked'
 import * as XLSX from 'xlsx'
-import type { ExportFormat, OutputKind } from '@shared/types'
+import type { ExportFormat } from '@shared/types'
 import { decodeText } from '../files/text-utils'
 import { t } from '@shared/i18n'
 
@@ -28,39 +28,8 @@ import { t } from '@shared/i18n'
 
 export type { ExportFormat, OutputKind } from '@shared/types'
 
-const EXT: Record<string, OutputKind> = {
-  md: 'markdown',
-  markdown: 'markdown',
-  html: 'html',
-  htm: 'html',
-  csv: 'table',
-  tsv: 'table',
-  xlsx: 'table',
-  xls: 'table',
-  json: 'json',
-  png: 'image',
-  jpg: 'image',
-  jpeg: 'image',
-  gif: 'image',
-  webp: 'image',
-  svg: 'image',
-  pdf: 'pdf',
-  docx: 'document',
-  doc: 'document',
-  pptx: 'document',
-  txt: 'text',
-  log: 'text',
-  xml: 'text',
-  yaml: 'text',
-  yml: 'text',
-  js: 'text',
-  ts: 'text',
-  py: 'text',
-  sh: 'text',
-  sql: 'text',
-}
-
-export const kindOf = (name: string): OutputKind => EXT[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'other'
+import { kindOf } from './kind'
+export { kindOf } from './kind'
 
 /** What a file can be exported to (besides being saved as is). */
 export function exportTargets(name: string, text?: string): ExportFormat[] {

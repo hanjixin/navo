@@ -45,12 +45,18 @@ const tool = async (name, args = {}) => {
   }
 }
 const consent = page.getByTestId('desktop-consent')
+const openInbox = async () => {
+  await waitFor(async () => (await api('computerUse.consents')).length > 0)
+  await page.getByRole('button', { name: /有 \d+ 个待确认操作|确认中心/ }).click()
+}
 const allow = async (operation, decision) => {
+  await openInbox()
   await consent.waitFor({ state: 'visible', timeout: 10000 })
   ok((await consent.textContent()).includes('com.apple.TextEdit'), 'consent identifies the exact app')
   await consent.getByRole('button', { name: decision, exact: true }).click()
   const result = await operation
   await consent.waitFor({ state: 'detached' })
+  await page.keyboard.press('Escape')
   return result
 }
 const refOf = (snapshot) => /\[(d\d+)\]/.exec(snapshot)?.[1]
@@ -90,15 +96,20 @@ try {
     'fake native helper lists TextEdit',
   )
 
-  // One-time approval is consumed by a single tool call; closing the next request denies it.
+  // One-time approval is consumed by one tool call; hiding the inbox never denies the next request.
   const activated = await allow(tool('desktop_activate', { app: 'com.apple.TextEdit' }), '仅这一次')
   ok(snapshotOK(activated), 'one-time approval returns an accessible element snapshot')
   await page.getByTestId('desktop-control-bar').waitFor({ state: 'visible' })
   ok((await api('computerUse.status')).desktop.active?.bundleId === 'com.apple.TextEdit', 'active control is visible in status and the stop bar')
   const denied = tool('desktop_snapshot')
+  await openInbox()
   await consent.waitFor({ state: 'visible' })
   await page.keyboard.press('Escape')
-  ok((await denied).includes('授权被拒绝'), 'closing the consent dialog denies the pending tool')
+  ok((await api('computerUse.consents')).length === 1, 'closing the inbox preserves pending consent')
+  await openInbox()
+  await consent.getByRole('button', { name: '拒绝', exact: true }).click()
+  ok((await denied).includes('授权被拒绝'), 'explicit denial rejects the pending tool')
+  await page.keyboard.press('Escape')
 
   const granted = await allow(tool('desktop_activate', { app: 'com.apple.TextEdit' }), '本对话允许')
   ok(snapshotOK(granted), 'conversation approval resumes the pending tool')
@@ -132,10 +143,15 @@ try {
 
   await page.getByTestId('desktop-control-bar').getByRole('button', { name: '停止操作', exact: true }).click()
   await waitFor(async () => !(await api('computerUse.status')).desktop.active)
-  await page.getByTestId('desktop-control-bar').waitFor({ state: 'detached' })
+  ok((await api('computerUse.status')).desktop.lastStop?.reason === 'user_stop', 'stop status identifies explicit user stop')
+  await page.getByTestId('desktop-control-bar').getByRole('button', { name: '关闭', exact: true }).click()
   ok((await tool('desktop_key', { combo: 'enter' })).includes('中止'), 'the stop button cancels subsequent desktop input')
   await api('computerUse.stop')
   ok(!(await api('computerUse.status')).desktop.active, 'repeated stop is safe')
+  const grants = await api('computerUse.grants')
+  ok(grants.length === 1 && grants[0].scope === 'session', 'conversation authorization is listed for revocation')
+  await api('computerUse.revokeGrant', grants[0].id)
+  ok((await api('computerUse.grants')).length === 0, 'revocation removes the grant')
   await toggle.click()
   await waitFor(async () => !(await api('settings.get')).computerUse.desktop)
   ok(!(await api('dev.tools')).some((t) => t.name.startsWith('desktop_')), 'disabling desktop removes its tools')

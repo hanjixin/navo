@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3'
+import { basename } from 'node:path'
+import { kindOf } from '../outputs/kind'
 
 const MIGRATIONS: string[] = [
   `
@@ -148,6 +150,33 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
   `,
+  `
+  CREATE TABLE chat_drafts (
+    scope TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE agent_executions (
+    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL, updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX agent_executions_thread ON agent_executions(thread_id, updated_at DESC);
+  CREATE TABLE chat_submissions (
+    request_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL UNIQUE, execution_id TEXT NOT NULL,
+    message TEXT NOT NULL, input TEXT NOT NULL, checkpointed INTEGER NOT NULL DEFAULT 0, superseded INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+  );
+  CREATE INDEX chat_submissions_thread ON chat_submissions(thread_id, created_at);
+  CREATE TABLE approval_summaries (
+    thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+    execution_id TEXT NOT NULL, interrupt TEXT NOT NULL, updated_at INTEGER NOT NULL
+  );
+  ALTER TABLE task_runs ADD COLUMN execution_id TEXT;
+  CREATE INDEX task_runs_execution ON task_runs(execution_id);
+  ALTER TABLE outputs ADD COLUMN name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE outputs ADD COLUMN kind TEXT NOT NULL DEFAULT 'other';
+  CREATE INDEX outputs_at_id ON outputs(at DESC, id DESC);
+  CREATE INDEX outputs_thread_at_id ON outputs(thread_id, at DESC, id DESC);
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */
@@ -163,6 +192,13 @@ export function openDatabase(path: string): Database.Database {
       d.pragma(`user_version = ${i + 1}`)
     })()
   }
+  // Only legacy rows have an empty name; metadata backfill never reads file contents.
+  const legacyOutputs = d.prepare("SELECT id,path FROM outputs WHERE name = ''").all() as { id: string; path: string }[]
+  if (legacyOutputs.length)
+    d.transaction(() => {
+      const update = d.prepare('UPDATE outputs SET name=?,kind=? WHERE id=?')
+      for (const row of legacyOutputs) update.run(basename(row.path), kindOf(row.path), row.id)
+    })()
   // Keep diagnostic/history tables bounded. User conversations, files and memories are
   // intentionally excluded; these limits only prevent telemetry from growing forever.
   const prune = d.transaction(() => {

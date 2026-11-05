@@ -206,6 +206,18 @@ const LANGFUSE_HOSTS = [
 ]
 
 /** Langfuse tracing: every agent run becomes a trace (session = conversation). */
+function TracingDiagnostic({ integration }: { integration: 'langsmith' | 'langfuse' }) {
+  const settings = useSettings((state) => state.settings)
+  const status = useAsync(() => call('settings.integrationStatus'), [settings])
+  useEffect(() => on('integrations.changed', status.reload), [status.reload])
+  const error = status.data?.[integration].error
+  return error ? (
+    <div role="alert" className="mb-3 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+      {error}
+    </div>
+  ) : null
+}
+
 function LangfuseSection() {
   const { settings, update } = useSettings()
   const lf = settings!.langfuse
@@ -253,6 +265,7 @@ function LangfuseSection() {
           />
         </Row>
         <div className="grid gap-3 px-5 py-4">
+          <TracingDiagnostic integration="langfuse" />
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
               <span className="text-xs text-muted-foreground">{t('服务地址')}</span>
@@ -452,6 +465,7 @@ export function SettingsPage() {
         </Row>
         <div className={cn('px-5 py-4', !settings.devMode && 'opacity-50')}>
           <div className="text-sm font-medium">{t('LangSmith 追踪')}</div>
+          <TracingDiagnostic integration="langsmith" />
           <div className="mt-0.5 mb-3 text-xs text-muted-foreground">{t('可选。配置后在开发者模式下将运行轨迹上报到 LangSmith。')}</div>
           <div className="grid grid-cols-2 gap-3">
             <Input

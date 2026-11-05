@@ -81,7 +81,7 @@ try {
   const runsBefore = (await api('tasks.runs', task.id)).length
   c = await api('monitor.check', task.id)
   ok(c.triggered && judgments() === 2 && /1499/.test(c.summary ?? ''), `the price dropped below 1500: triggered (${c.summary})`)
-  const run = await until(async () => (await api('tasks.runs', task.id)).find((r) => r.status === 'success'), 30000)
+  const run = await until(async () => (await api('tasks.runs', task.id)).find((r) => r.threadId === c.threadId && r.status === 'success'), 30000)
   ok(
     !!c.threadId && run?.threadId === c.threadId && (await api('tasks.runs', task.id)).length === runsBefore + 1,
     "the trigger ran the agent as one of the task's runs",

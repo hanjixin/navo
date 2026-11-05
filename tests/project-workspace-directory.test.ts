@@ -164,3 +164,30 @@ describe('artifact file availability', () => {
     expect(file.exports).not.toContain('xlsx')
   })
 })
+
+it('queries artifacts with server-side filters and stable pagination without reading file content', () => {
+  const project = projects.save({ name: 'Search Project' })
+  state.db.prepare('UPDATE threads SET project_id=? WHERE id=?').run(project.id, 'thread')
+  for (let i = 0; i < 105; i++) {
+    const name = `report-${String(i).padStart(3, '0')}.md`
+    writeFileSync(join(state.workspace, name), '| A |\n|---|\n| 1 |')
+    outputs.recordWorkspaceWrite('thread', '/' + name)
+  }
+  state.db.prepare('UPDATE outputs SET at=100').run()
+  let page = outputs.query({ projectId: project.id, kind: 'markdown', q: 'report' })
+  expect(page.items).toHaveLength(50)
+  expect(page.items[0].exports).toEqual(['docx', 'pdf']) // Content-derived xlsx targets are deferred to detail.
+  const ids = page.items.map((item) => item.id)
+  while (page.nextCursor) {
+    page = outputs.query({ projectId: project.id, kind: 'markdown', q: 'report', cursor: page.nextCursor })
+    ids.push(...page.items.map((item) => item.id))
+  }
+  expect(new Set(ids).size).toBe(105)
+  expect(outputs.query({ projectId: null }).items).toEqual([])
+  expect(outputs.query({ threadId: 'other' }).items).toEqual([])
+  expect(outputs.query({ q: 'report-001' }).items).toHaveLength(1)
+  const cursor = outputs.query({ projectId: project.id }).nextCursor!
+  expect(() => outputs.query({ projectId: null, cursor })).toThrow()
+  projects.delete(project.id)
+  expect(outputs.query({ projectId: null }).items).toHaveLength(50)
+})

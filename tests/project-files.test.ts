@@ -15,7 +15,7 @@ vi.mock('../src/main/core/paths', () => ({
   },
 }))
 vi.mock('../src/main/core/logger', () => ({ log: { info: vi.fn() } }))
-vi.mock('../src/main/files/file-service', () => ({ files: { markdownOf: vi.fn() } }))
+vi.mock('../src/main/files/file-service', () => ({ files: { markdownOf: vi.fn(), addData: vi.fn((name, data) => ({ id: name + ':' + data.toString() })) } }))
 vi.mock('electron', () => ({ BrowserWindow: {}, dialog: {}, shell: { showItemInFolder: state.show, openPath: state.open } }))
 import { projects } from '../src/main/projects/project-service'
 import { projectFiles } from '../src/main/projects/project-files'
@@ -54,6 +54,38 @@ describe('project file browsing', () => {
     expect(root.entries.map((e) => e.name)).toEqual(['z-dir', 'a.txt'])
     expect(projectFiles.list(id, '', true).entries.map((e) => e.name)).toContain('.hidden')
     expect(projectFiles.list(id, 'z-dir').entries[0]).toMatchObject({ name: 'nested.tsx', path: 'z-dir/nested.tsx', kind: 'file' })
+  })
+  it('paginates all 501 entries and rejects a cursor when directory membership changes', async () => {
+    for (let i = 0; i < 501; i++) writeFileSync(join(state.workspace, `${i}.txt`), '')
+    let page = await projectFiles.listPage(id)
+    const firstCursor = page.nextCursor!
+    const names = page.entries.map((entry) => entry.name)
+    while (page.nextCursor) {
+      page = await projectFiles.listPage(id, '', false, page.nextCursor)
+      names.push(...page.entries.map((entry) => entry.name))
+    }
+    expect(new Set(names).size).toBe(501)
+    writeFileSync(join(state.workspace, 'new.txt'), '')
+    await expect(projectFiles.listPage(id, '', false, firstCursor)).rejects.toThrow()
+  })
+  it('searches paths, excludes dependency folders and supports cancellation', async () => {
+    mkdirSync(join(state.workspace, 'src'))
+    mkdirSync(join(state.workspace, 'node_modules'))
+    writeFileSync(join(state.workspace, 'src', 'match.ts'), 'ok')
+    writeFileSync(join(state.workspace, 'node_modules', 'match.ts'), 'skip')
+    expect((await projectFiles.search(id, 'match', 'request')).entries.map((entry) => entry.path)).toEqual(['src/match.ts'])
+    const pending = projectFiles.search(id, 'match', 'cancel')
+    projectFiles.cancelSearch('cancel')
+    expect((await pending).cancelled).toBe(true)
+  })
+  it('captures latest source bytes and rejects a changed project or root', async () => {
+    const ref = { projectId: id, root: state.workspace, path: 'latest.txt' }
+    writeFileSync(join(state.workspace, ref.path), 'old')
+    writeFileSync(join(state.workspace, ref.path), 'latest')
+    expect((await projectFiles.captureReferences([ref], id)).fileIds).toEqual(['latest.txt:latest'])
+    await expect(projectFiles.captureReferences([ref], 'other')).rejects.toThrow()
+    projects.save({ id, name: 'Files', workingDirectory: dir() })
+    await expect(projectFiles.captureReferences([ref], id)).rejects.toThrow()
   })
   it('caps at 500 entries and explicitly reports truncation', () => {
     for (let i = 0; i < 501; i++) writeFileSync(join(state.workspace, `${i}.txt`), '')

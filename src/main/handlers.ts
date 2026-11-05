@@ -2,9 +2,10 @@ import { shell, dialog, BrowserWindow } from 'electron'
 import { handleAll } from './core/ipc'
 import { log } from './core/logger'
 import { paths } from './core/paths'
-import { getSettings, setSettings, testLangfuse } from './core/settings'
+import { getSettings, setSettings, testLangfuse, getIntegrationStatus } from './core/settings'
 import { models, providers, testModel } from './models/registry'
 import { agent } from './agent/agent-service'
+import { drafts } from './chat/drafts'
 import { collectTools, describeTools } from './agent/tool-registry'
 import { activeTabCtx } from './browser/tools'
 import { sessions } from './browser/agent-session'
@@ -14,6 +15,7 @@ import { memory } from './memory/memory-service'
 import { flows } from './flows/flows'
 import { quick } from './quick/quick-service'
 import { computerUse } from './computer-use'
+import { desktopConsent } from './desktop/desktop-service'
 import { skillEvolution } from './skills/evolution'
 import { skillVersions } from './skills/versions'
 import { mcp } from './mcp/mcp-service'
@@ -53,6 +55,24 @@ function background(p: Promise<unknown>): void {
 
 export function registerHandlers(): void {
   handleAll({
+    'settings.integrationStatus': () => getIntegrationStatus(),
+    'drafts.get': (scope) => drafts.get(scope),
+    'drafts.save': (input) => drafts.save(input),
+    'drafts.clear': (scope, version) => drafts.clear(scope, version),
+    'drafts.move': (source, target, version) => drafts.move(source, target, version),
+    'chat.submit': (input) => agent.submit(input),
+    'approvals.list': async () => [
+      ...(await agent.approvalSummaries()).map((item) => ({ ...item, kind: 'tool' as const })),
+      ...desktopConsent.pending().map((request) => ({
+        kind: 'desktop' as const,
+        id: request.id,
+        threadId: request.threadId,
+        threadTitle: agent.getThread(request.threadId)?.title ?? t('新对话'),
+        executionId: request.executionId,
+        createdAt: request.createdAt,
+        request,
+      })),
+    ],
     'providers.list': () => providers.list(),
     'providers.save': (input) => providers.save(input),
     'providers.delete': (id) => providers.delete(id),
@@ -63,12 +83,17 @@ export function registerHandlers(): void {
     'models.delete': (id) => models.delete(id),
     'models.setDefault': (id) => models.setDefault(id),
     'models.setEnabled': (id, enabled) => models.setEnabled(id, enabled),
+    'models.setEnabledMany': (ids, enabled) => models.setEnabledMany(ids, enabled),
+    'models.affectedTasks': (ids) => models.affectedTasks(ids),
     'models.test': (id) => testModel(id),
 
     'threads.list': () => agent.listThreads(),
     'threads.create': (modelId, projectId) => agent.createThread(modelId, { projectId }),
     'threads.setProject': (id, projectId) => agent.setThreadProject(id, projectId),
     'projectFiles.list': (id, path, showHidden) => projectFiles.list(id, path, showHidden),
+    'projectFiles.listPage': (id, path, showHidden, cursor, limit) => projectFiles.listPage(id, path, showHidden, cursor, limit),
+    'projectFiles.search': (id, query, requestId, showHidden) => projectFiles.search(id, query, requestId, showHidden),
+    'projectFiles.cancelSearch': (requestId) => projectFiles.cancelSearch(requestId),
     'projectFiles.preview': (id, path) => projectFiles.preview(id, path),
     'projectFiles.reveal': (id, path) => projectFiles.reveal(id, path),
     'projectFiles.openDirectory': (id) => projectFiles.openDirectory(id),
@@ -87,12 +112,16 @@ export function registerHandlers(): void {
     'threads.setModel': (id, modelId) => agent.setThreadModel(id, modelId),
     'threads.state': (id) => agent.threadState(id),
     // runs stream via events; the invoke returns immediately
-    'chat.send': (threadId, text, images, fileIds) => {
-      if (agent.isRunning(threadId)) throw new Error(t('该会话正在运行中'))
-      background(agent.send_(threadId, text, images, {}, fileIds ?? []))
+    'chat.send': async (threadId, text, images, fileIds) => {
+      await agent.submit({ requestId: crypto.randomUUID(), threadId, text, images, fileIds })
     },
-    'chat.resume': (threadId, decisions, alwaysAllow) => {
-      background(agent.resume(threadId, decisions, alwaysAllow))
+    'chat.resume': async (threadId, decisions, alwaysAllow, interruptId) => {
+      await agent.assertPendingApproval(threadId, interruptId)
+      background(agent.resume(threadId, decisions, alwaysAllow, interruptId))
+    },
+    'chat.retrySubmission': async (threadId, messageId) => {
+      await agent.assertRetryableSubmission(threadId, messageId)
+      background(agent.retrySubmission(threadId, messageId))
     },
     'chat.regenerate': async (threadId, messageId, text) => {
       if (agent.isRunning(threadId)) throw new Error(t('该会话正在运行中'))
@@ -134,7 +163,7 @@ export function registerHandlers(): void {
     'quick.show': () => void quick.show(),
     'quick.hide': () => quick.hide(),
     'quick.screenshot': () => void quick.screenshotAsk(),
-    'quick.openInMain': (threadId) => quick.openInMain(threadId),
+    'quick.openInMain': (threadId, source) => quick.openInMain(threadId, source),
     'skills.versions': (name) => skillVersions.history(name),
     'skills.rollback': (name, version) => skills.rollback(name, version),
     'skills.proposals': () => skillEvolution.proposals(),
@@ -231,17 +260,24 @@ export function registerHandlers(): void {
     'outputs.open': (id) => outputs.open(id),
     'artifacts.get': (id) => outputs.artifact(id),
     'artifacts.list': (projectId) => outputs.artifacts(projectId),
+    'artifacts.query': (query) => outputs.query(query),
     'artifacts.preview': (id) => outputs.preview(id),
     'artifacts.export': (id, format, dest) => outputs.export(id, format, dest),
     'artifacts.saveAs': (id) => outputs.saveAs(id),
     'artifacts.reveal': (id) => outputs.reveal(id),
     'artifacts.open': (id) => outputs.open(id),
     'computerUse.status': () => computerUse.status(),
+    'computerUse.viewState': () => computerUse.viewState(),
+    'computerUse.retryView': () => computerUse.retryView(),
+    'computerUse.focusView': () => computerUse.focusView(),
     'computerUse.refreshDesktop': () => computerUse.refreshDesktop(),
     'computerUse.openPermission': (kind) => computerUse.openPermission(kind),
     'computerUse.restart': () => computerUse.restart(),
     'computerUse.consent': (id, decision) => computerUse.consent(id, decision),
     'computerUse.pendingConsent': () => computerUse.pendingConsent(),
+    'computerUse.consents': () => desktopConsent.pending(),
+    'computerUse.grants': () => computerUse.grants(),
+    'computerUse.revokeGrant': (id) => computerUse.revokeGrant(id),
     'computerUse.stop': () => computerUse.stop(),
     'computerUse.confirmPairing': (approve) => computerUse.confirmPairing(approve),
     'computerUse.installExtension': () => ({ dir: computerUse.ensureExtension().dir }),

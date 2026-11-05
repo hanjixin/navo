@@ -16,7 +16,7 @@ wireProjectEvents()
 wireArtifactEvents()
 beforeEach(() => {
   vi.useFakeTimers()
-  call.mockReset().mockResolvedValue([])
+  call.mockReset().mockImplementation(async (method) => (method === 'artifacts.query' ? { items: [], nextCursor: null } : []))
 })
 afterEach(() => vi.useRealTimers())
 
@@ -31,7 +31,7 @@ it('coalesces the events from a write into one request per visible store', async
     emit('outputs.changed')
     expect(call).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(50)
-    expect(call.mock.calls).toEqual([['projects.list'], ['artifacts.list', 'project']])
+    expect(call.mock.calls).toEqual([['projects.list'], ['artifacts.query', { projectId: 'project', cursor: undefined }]])
     expect(useProjects.getState().revision).toBe(revision + 1)
   } finally {
     unwatch()

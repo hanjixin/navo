@@ -12,9 +12,9 @@ import { skills } from '../skills/skill-service'
 import { recorderScript } from './recorder-script'
 import { appendEvent, fillTemplate, placeholders, type RawEvent } from './steps'
 import { t } from '@shared/i18n'
+import { cancellable, checkCancelled, pause } from '../flows/cancellation'
 
 const RECORDER_SRC = `(${recorderScript.toString()})();`
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 class RecorderService {
   private steps: MacroStep[] = []
@@ -110,85 +110,120 @@ class RecorderService {
   }
 
   // ---------- playback ----------
-  private async find(wc: WebContents, selectors: string[], timeout: number): Promise<string> {
+  private async find(wc: WebContents, selectors: string[], timeout: number, signal?: AbortSignal): Promise<string> {
     const deadline = Date.now() + timeout
     while (Date.now() < deadline) {
+      checkCancelled(signal)
       const ref = await browser.evalIn<string | null>(
         wc,
         `(() => { const el = __agent.query(${JSON.stringify(selectors)}); return el ? __agent.refFor(el) : null })()`,
       )
+      checkCancelled(signal)
       if (ref) return ref
-      await sleep(300)
+      await pause(300, signal)
     }
     throw new Error(t('未找到元素: {{v0}}', { v0: selectors[0] ?? t('(无选择器)') }))
   }
 
   /** Plays a macro on `wc` (the active tab by default). Agent runs pass their own tab and keep control afterwards. */
-  async run(id: string, params: Record<string, string> = {}, wc: WebContents = browser.active(), release = true): Promise<MacroRunResult> {
+  async run(
+    id: string,
+    params: Record<string, string> = {},
+    wc: WebContents = browser.active(),
+    release = true,
+    signal?: AbortSignal,
+  ): Promise<MacroRunResult> {
+    checkCancelled(signal)
     const macro = this.get(id)
     const values = Object.fromEntries(macro.params.map((p) => [p.name, params[p.name] ?? p.default ?? '']))
     const extracted: Record<string, string> = {}
     await browser.setControlled(wc, true)
     try {
+      checkCancelled(signal)
       if (macro.startUrl) {
-        await browser.navigate(macro.startUrl, wc)
-        await browser.waitForLoad(wc)
+        checkCancelled(signal)
+        await cancellable(browser.navigate(macro.startUrl, wc), signal)
+        await cancellable(browser.waitForLoad(wc), signal)
       }
       for (let i = 0; i < macro.steps.length; i++) {
         const s = macro.steps[i]
         const timeout = s.timeout ?? 10000
         try {
-          await this.runStep(wc, s, values, extracted, timeout)
+          checkCancelled(signal)
+          await this.runStep(wc, s, values, extracted, timeout, signal)
         } catch (err) {
-          return { ok: false, failedStep: i, error: (err as Error).message, extracted }
+          return { ok: false, aborted: signal?.aborted || undefined, failedStep: i, error: (err as Error).message, extracted }
         }
-        await sleep(250)
+        await pause(250, signal)
       }
       return { ok: true, extracted }
+    } catch (err) {
+      if (signal?.aborted) return { ok: false, aborted: true, extracted, error: String(err) }
+      throw err
     } finally {
       if (release) await browser.setControlled(wc, false)
     }
   }
 
-  private async runStep(wc: WebContents, s: MacroStep, values: Record<string, string>, extracted: Record<string, string>, timeout: number): Promise<void> {
+  private async runStep(
+    wc: WebContents,
+    s: MacroStep,
+    values: Record<string, string>,
+    extracted: Record<string, string>,
+    timeout: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    checkCancelled(signal)
     switch (s.type) {
       case 'navigate':
-        await browser.navigate(fillTemplate(s.url, values), wc)
-        await browser.waitForLoad(wc)
+        checkCancelled(signal)
+        await cancellable(browser.navigate(fillTemplate(s.url, values), wc), signal)
+        await cancellable(browser.waitForLoad(wc), signal)
         return
       case 'click': {
-        const ref = await this.find(wc, s.selectors ?? [], timeout)
+        const ref = await this.find(wc, s.selectors ?? [], timeout, signal)
+        checkCancelled(signal)
         await browser.clickRef(builtinDriver(wc), ref)
-        await sleep(300)
-        await browser.waitForLoad(wc)
+        await pause(300, signal)
+        await cancellable(browser.waitForLoad(wc), signal)
         return
       }
       case 'type': {
-        const ref = await this.find(wc, s.selectors ?? [], timeout)
+        const ref = await this.find(wc, s.selectors ?? [], timeout, signal)
+        checkCancelled(signal)
         await browser.typeRef(builtinDriver(wc), ref, fillTemplate(s.value, values))
         return
       }
       case 'select': {
-        const ref = await this.find(wc, s.selectors ?? [], timeout)
+        const ref = await this.find(wc, s.selectors ?? [], timeout, signal)
+        checkCancelled(signal)
         await browser.evalIn(wc, `__agent.setValue(${JSON.stringify(ref)}, ${JSON.stringify(fillTemplate(s.value, values))})`)
         return
       }
       case 'press':
         {
-          const ref = s.selectors?.length ? await this.find(wc, s.selectors, timeout).catch(() => null) : null
+          const ref = s.selectors?.length
+            ? await this.find(wc, s.selectors, timeout, signal).catch(() => {
+                checkCancelled(signal)
+                return null
+              })
+            : null
+          checkCancelled(signal)
           if (ref) await browser.evalIn(wc, `__agent.focus(${JSON.stringify(ref)}, false)`)
           // Enter in a field also works when the tab isn't drawn (replaying in the background)
+          checkCancelled(signal)
           if (ref && (s.key ?? 'Enter') === 'Enter') await browser.submitRef(builtinDriver(wc), ref)
           else await browser.pressKey(builtinDriver(wc), s.key ?? 'Enter')
         }
-        await sleep(400)
-        await browser.waitForLoad(wc)
+        await pause(400, signal)
+        await cancellable(browser.waitForLoad(wc), signal)
         return
       case 'wait':
-        if (s.selectors?.length) await this.find(wc, s.selectors, timeout)
-        else await sleep(Number(s.value) || 1000)
+        if (s.selectors?.length) await this.find(wc, s.selectors, timeout, signal)
+        else await pause(Number(s.value) || 1000, signal)
         return
       case 'scroll':
+        checkCancelled(signal)
         await browser.scroll(builtinDriver(wc), 0, Number(s.value) || 600)
         return
       case 'extract': {

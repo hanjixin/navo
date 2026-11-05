@@ -563,7 +563,7 @@ export function Onboarding() {
       const chat = useChat.getState()
       const thread = await chat.newThread(m.modelId)
       navigate(threadPath(thread))
-      void chat.sendTo(thread.id, prompt)
+      void chat.sendTo(thread.id, prompt).catch(() => undefined)
     }
   }
 

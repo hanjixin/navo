@@ -4,6 +4,8 @@ import type { LangfuseSettings, Settings } from '@shared/types'
 import { kv } from './db'
 import { emit } from './ipc'
 import { secrets } from './secrets'
+import type { TracingIntegrationStatus } from '@shared/tracing'
+import { t } from '@shared/i18n'
 
 const DEFAULTS: Settings = {
   theme: 'system',
@@ -99,38 +101,99 @@ export function setSettings(patch: Partial<Settings> & { langsmithApiKey?: strin
   return next
 }
 
-/** LangSmith tracing is opt-in and only enabled in dev mode with a key configured. */
+const integrationStatus: TracingIntegrationStatus = {
+  langsmith: { state: 'disabled' },
+  langfuse: { state: 'disabled' },
+}
+
+function setIntegrationStatus(key: keyof TracingIntegrationStatus, status: TracingIntegrationStatus['langsmith']): void {
+  if (JSON.stringify(integrationStatus[key]) === JSON.stringify(status)) return
+  integrationStatus[key] = status
+  emit('integrations.changed')
+}
+
+/** Diagnostics contain no credentials and do not attempt decryption. */
+export function getIntegrationStatus(): TracingIntegrationStatus {
+  return { langsmith: { ...integrationStatus.langsmith }, langfuse: { ...integrationStatus.langfuse } }
+}
+
+function clearLangsmithEnv(): void {
+  process.env.LANGSMITH_TRACING = 'false'
+  process.env.LANGCHAIN_TRACING_V2 = 'false'
+  for (const name of ['LANGSMITH_API_KEY', 'LANGSMITH_PROJECT', 'LANGCHAIN_API_KEY', 'LANGCHAIN_PROJECT']) delete process.env[name]
+}
+
+function clearLangfuseEnv(): void {
+  for (const name of ['LANGFUSE_SECRET_KEY', 'LANGFUSE_PUBLIC_KEY', 'LANGFUSE_HOST', 'LANGFUSE_BASE_URL']) delete process.env[name]
+}
+
+/** Optional integrations must never prevent startup or an ordinary conversation. */
 export function applyTracingEnv(): void {
   const s = getSettings()
-  const key = secrets.get('langsmith')
-  if (s.devMode && key) {
-    process.env.LANGSMITH_TRACING = 'true'
-    process.env.LANGSMITH_API_KEY = key
-    process.env.LANGSMITH_PROJECT = s.langsmithProject || 'navo'
-  } else {
-    process.env.LANGSMITH_TRACING = 'false'
+  clearLangsmithEnv()
+  if (!s.devMode) setIntegrationStatus('langsmith', { state: 'disabled' })
+  else {
+    try {
+      const key = secrets.get('langsmith')
+      if (key) {
+        process.env.LANGSMITH_TRACING = 'true'
+        process.env.LANGSMITH_API_KEY = key
+        process.env.LANGSMITH_PROJECT = s.langsmithProject || 'navo'
+        setIntegrationStatus('langsmith', { state: 'ready' })
+      } else setIntegrationStatus('langsmith', { state: 'unconfigured' })
+    } catch {
+      setIntegrationStatus('langsmith', { state: 'error', error: t('追踪密钥无法读取，已暂停此集成。请重新配置密钥。') })
+    }
   }
+  // Diagnose Langfuse independently; a broken key in either integration leaves the other usable.
+  langfuseConfig()
 }
 
 /** Langfuse credentials for the agent process, or undefined when tracing is off / incomplete. */
 export function langfuseConfig() {
   const { langfuse: l } = getSettings()
-  const secretKey = secrets.get('langfuse.secret')
-  if (!l.enabled || !l.publicKey || !secretKey) return undefined
-  return {
-    publicKey: l.publicKey,
-    secretKey,
-    baseUrl: l.baseUrl.replace(/\/+$/, ''),
-    environment: l.environment || 'production',
-    includeScreenshots: l.includeScreenshots,
-    projectId: l.projectId ?? null,
+  clearLangfuseEnv()
+  if (!l.enabled) {
+    setIntegrationStatus('langfuse', { state: 'disabled' })
+    return undefined
+  }
+  if (!l.publicKey) {
+    setIntegrationStatus('langfuse', { state: 'unconfigured' })
+    return undefined
+  }
+  try {
+    const secretKey = secrets.get('langfuse.secret')
+    if (!secretKey) {
+      setIntegrationStatus('langfuse', { state: 'unconfigured' })
+      return undefined
+    }
+    setIntegrationStatus('langfuse', { state: 'ready' })
+    return {
+      publicKey: l.publicKey,
+      secretKey,
+      baseUrl: l.baseUrl.replace(/\/+$/, ''),
+      environment: l.environment || 'production',
+      includeScreenshots: l.includeScreenshots,
+      projectId: l.projectId ?? null,
+    }
+  } catch {
+    setIntegrationStatus('langfuse', { state: 'error', error: t('追踪密钥无法读取，已暂停此集成。请重新配置密钥。') })
+    return undefined
   }
 }
 
 /** Verifies the keys against the Langfuse public API and caches the project id for trace links. */
 export async function testLangfuse(): Promise<{ ok: boolean; projectId?: string; projectName?: string; error?: string }> {
   const { langfuse: l } = getSettings()
-  const secretKey = secrets.get('langfuse.secret')
+  let secretKey: string | null
+  try {
+    secretKey = secrets.get('langfuse.secret')
+  } catch {
+    const error = t('追踪密钥无法读取，已暂停此集成。请重新配置密钥。')
+    setIntegrationStatus('langfuse', { state: 'error', error })
+    clearLangfuseEnv()
+    return { ok: false, error }
+  }
   if (!l.publicKey || !secretKey) return { ok: false, error: '请填写 Public Key 和 Secret Key' }
   try {
     const res = await fetch(`${l.baseUrl.replace(/\/+$/, '')}/api/public/projects`, {

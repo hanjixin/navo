@@ -26,8 +26,40 @@ export const extTabs = new ExtTabs((ms) => (bridge.link() ? Promise.resolve(brid
 export const targets = new Targets({
   tabs: extTabs,
   linked: () => !!bridge.link(),
+  selected: (driver) => {
+    emit('browser.reveal', { open: false })
+    void liveView.use(driver)
+  },
   builtin: (threadId) => builtinDriver(threadId === SANDBOX ? browser.active() : sessions.tabFor(threadId), { agent: true }),
 })
 
 /** The picture of the agent's tab in the user's browser, for Navo's browser panel. */
-export const liveView = new LiveView((f) => emit('computerUse.frame', f))
+export const liveView = new LiveView(
+  (f) => emit('computerUse.frame', f),
+  (state) => emit('computerUse.viewChanged', state),
+  async () => {
+    const link = bridge.link()
+    if (!link) throw new Error('与浏览器扩展的连接已断开')
+    await extTabs.list()
+    if (bridge.link() !== link) throw new Error('浏览器连接已变化，请重试')
+    return link.browser
+  },
+)
+
+// Synchronize authorizations before resuming observation on a fresh connection.
+let connectionVersion = 0
+bridge.onChange((state) => {
+  const version = ++connectionVersion
+  if (!state.paired) {
+    void liveView.connection(false, state.browser)
+    return
+  }
+  void extTabs
+    .list()
+    .then(() => {
+      if (version === connectionVersion) return liveView.connection(true, state.browser)
+    })
+    .catch(() => {
+      if (version === connectionVersion) void liveView.connection(!!bridge.link(), state.browser)
+    })
+})

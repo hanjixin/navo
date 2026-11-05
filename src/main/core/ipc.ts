@@ -1,6 +1,8 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { Api, ApiMethod, EventName, Events, IpcResult } from '@shared/ipc-contract'
 import { log } from './logger'
+import { drafts } from '../chat/drafts'
+import type { ChatDraft } from '@shared/reliability'
 
 type Handler<M extends ApiMethod> = (...args: Parameters<Api[M]>) => ReturnType<Api[M]> | Promise<ReturnType<Api[M]>>
 
@@ -15,6 +17,17 @@ export function handleAll(map: { [M in ApiMethod]?: Handler<M> }): void {
 }
 
 export function registerIpc(): void {
+  ipcMain.on('drafts.flush', (event, draft: ChatDraft) => {
+    try {
+      const url = event.senderFrame?.url ?? ''
+      const own = url.startsWith('file://') || (!!process.env.ELECTRON_RENDERER_URL && url.startsWith(process.env.ELECTRON_RENDERER_URL))
+      if (!own) throw new Error('Untrusted draft sender')
+      drafts.save({ ...draft, expectedVersion: draft.version })
+      event.returnValue = { ok: true, data: null }
+    } catch (e) {
+      event.returnValue = { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
   ipcMain.handle('api', async (_e, method: string, args: unknown[]): Promise<IpcResult<unknown>> => {
     const fn = handlers.get(method)
     if (!fn) return { ok: false, error: `Unknown method: ${method}` }

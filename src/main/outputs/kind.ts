@@ -1,0 +1,35 @@
+import type { OutputKind } from '@shared/types'
+
+const EXT: Record<string, OutputKind> = {
+  md: 'markdown',
+  markdown: 'markdown',
+  html: 'html',
+  htm: 'html',
+  csv: 'table',
+  tsv: 'table',
+  xlsx: 'table',
+  xls: 'table',
+  json: 'json',
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  gif: 'image',
+  webp: 'image',
+  svg: 'image',
+  pdf: 'pdf',
+  docx: 'document',
+  doc: 'document',
+  pptx: 'document',
+  txt: 'text',
+  log: 'text',
+  xml: 'text',
+  yaml: 'text',
+  yml: 'text',
+  js: 'text',
+  ts: 'text',
+  py: 'text',
+  sh: 'text',
+  sql: 'text',
+}
+
+export const kindOf = (name: string): OutputKind => EXT[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'other'

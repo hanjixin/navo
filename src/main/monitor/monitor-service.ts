@@ -8,6 +8,7 @@ import { log } from '../core/logger'
 import { trackedModel } from '../usage/usage-service'
 import { diffLines, FAIL_ALERT, hashText, judgeMessages, normalize, parseJudge } from './monitor-core'
 import { t } from '@shared/i18n'
+import { cancellable, checkCancelled, pause } from '../flows/cancellation'
 
 interface CheckRow {
   id: string
@@ -70,16 +71,17 @@ class MonitorService {
   private busy = new Set<string>()
 
   /** Reads the watched part of a page as text. */
-  async read(url: string, selector?: string | null): Promise<{ text: string; title: string }> {
+  async read(url: string, selector?: string | null, signal?: AbortSignal): Promise<{ text: string; title: string }> {
+    checkCancelled(signal)
     const tabId = browser.newTab(url, { activate: false })
     const wc = browser.tab(tabId)!
     let status = 0
     wc.on('did-navigate', (_e, _url, code) => (status = code))
     try {
       // the load starts asynchronously: wait for it to begin, then to finish
-      await new Promise((r) => setTimeout(r, 300))
-      await browser.waitForLoad(wc, 30_000)
-      await new Promise((r) => setTimeout(r, SETTLE_MS))
+      await pause(300, signal)
+      await cancellable(browser.waitForLoad(wc, 30_000), signal)
+      await pause(SETTLE_MS, signal)
       if (wc.getURL().startsWith('chrome-error:')) throw new Error(t('页面打不开'))
       if (status >= 400) throw new Error(t('页面返回错误 {{v0}}', { v0: status }))
       const found = selector ? await browser.evalIn<boolean>(wc, `!!document.querySelector(${JSON.stringify(selector)})`) : true
@@ -116,7 +118,7 @@ class MonitorService {
    * One check. `onTrigger` runs when the condition is met (the task service starts the agent there)
    * and may return the thread it started.
    */
-  async check(task: Task, onTrigger?: (summary: string) => Promise<string | null>): Promise<MonitorCheck> {
+  async check(task: Task, onTrigger?: (summary: string) => Promise<string | null>, signal?: AbortSignal): Promise<MonitorCheck> {
     const cfg = task.monitor
     if (!cfg) throw new Error(t('这个任务不是网页监控'))
     if (this.busy.has(task.id)) throw new Error(t('上一次检查还没有结束'))
@@ -124,8 +126,9 @@ class MonitorService {
     const base = blank(task.id)
     let result: MonitorCheck
     try {
-      result = await this.compare(task, onTrigger)
+      result = await this.compare(task, onTrigger, signal)
     } catch (err) {
+      checkCancelled(signal)
       log.warn(`[monitor] ${task.name}: ${(err as Error).message}`)
       result = this.insert({ ...base, error: (err as Error).message })
       // a few failures in a row (not every one after that): the page may have moved or gone
@@ -139,10 +142,11 @@ class MonitorService {
     return result
   }
 
-  private async compare(task: Task, onTrigger?: (summary: string) => Promise<string | null>): Promise<MonitorCheck> {
+  private async compare(task: Task, onTrigger?: (summary: string) => Promise<string | null>, signal?: AbortSignal): Promise<MonitorCheck> {
     const cfg = task.monitor!
     const base = blank(task.id)
-    const { text } = await this.read(cfg.url, cfg.selector)
+    const { text } = await this.read(cfg.url, cfg.selector, signal)
+    checkCancelled(signal)
     const hash = hashText(text)
     const prev = this.last(task.id)
     if (!prev) {
@@ -172,11 +176,13 @@ class MonitorService {
       const res = await trackedModel(task.modelId ?? null, 'monitor').invoke(
         judgeMessages({ url: cfg.url, focus: cfg.focus, condition: cfg.condition, prev: prevText, cur: text, added, removed }),
       )
+      checkCancelled(signal)
       const out = typeof res.content === 'string' ? res.content : (res.content as { text?: string }[]).map((b) => b.text ?? '').join('')
       const verdict = parseJudge(out)
       // without a verdict the new text doesn't become the baseline: the next check compares again
       if (!verdict) throw new Error(t('模型没有给出可用的判断'))
       const threadId = verdict.triggered ? ((await onTrigger?.(verdict.summary)) ?? null) : null
+      checkCancelled(signal)
       const check = this.insert({
         ...base,
         hash,

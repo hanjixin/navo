@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { readdir, lstat, open } from 'node:fs/promises'
+import type { ProjectFilePage, ProjectFileRef, ProjectFileSearchResult } from '@shared/files-query'
+import { files } from '../files/file-service'
 import { shell } from 'electron'
 import { type Stats, accessSync, constants, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, sep, win32 } from 'node:path'
@@ -45,6 +49,133 @@ function resolveEntry(root: string, path: string): { abs: string; path: string; 
 }
 
 class ProjectFilesService {
+  private searches = new Map<string, AbortController>()
+
+  async listPage(projectId: string, path = '', showHidden = false, cursor?: string, limit = 100): Promise<ProjectFilePage> {
+    const root = rootOf(projectId)
+    const entry = resolveEntry(root, path)
+    if (!entry.stat.isDirectory()) throw new Error(t('请选择目录'))
+    const candidates = (await readdir(entry.abs, { withFileTypes: true }))
+      .filter((child) => (showHidden || !child.name.startsWith('.')) && !child.isSymbolicLink() && (child.isDirectory() || child.isFile()))
+      .sort((a, b) => (a.isDirectory() === b.isDirectory() ? (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) : a.isDirectory() ? -1 : 1))
+    const revision = createHash('sha256')
+      .update(JSON.stringify([root, entry.path, showHidden, candidates.map((e) => [e.name, e.isDirectory()])]))
+      .digest('hex')
+    let offset = 0
+    if (cursor) {
+      const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString()) as { revision: string; offset: number }
+      if (decoded.revision !== revision || !Number.isSafeInteger(decoded.offset) || decoded.offset < 0) throw new Error(t('目录已变化，请刷新后重试'))
+      offset = decoded.offset
+    }
+    const count = Number.isFinite(limit) ? Math.max(1, Math.min(500, Math.floor(limit))) : 100
+    const entries = (
+      await Promise.all(
+        candidates.slice(offset, offset + count).map(async (child) => {
+          try {
+            const childPath = [entry.path, child.name].filter(Boolean).join('/')
+            const stat = await lstat(join(entry.abs, child.name))
+            if (!stat.isFile() && !stat.isDirectory()) return null
+            return {
+              name: child.name,
+              path: childPath,
+              kind: stat.isDirectory() ? ('directory' as const) : ('file' as const),
+              size: stat.size,
+              modifiedAt: stat.mtimeMs,
+            }
+          } catch {
+            return null
+          }
+        }),
+      )
+    ).filter((entry): entry is ProjectFileEntry => entry !== null)
+    if (rootOf(projectId) !== root) throw new Error(t('项目目录已变化，请重新选择文件'))
+    return {
+      root,
+      path: entry.path,
+      entries,
+      nextCursor: offset + count < candidates.length ? Buffer.from(JSON.stringify({ revision, offset: offset + count })).toString('base64url') : null,
+    }
+  }
+
+  cancelSearch(requestId: string): void {
+    this.searches.get(requestId)?.abort()
+  }
+
+  async search(projectId: string, query: string, requestId: string, showHidden = false): Promise<ProjectFileSearchResult> {
+    this.cancelSearch(requestId)
+    const root = rootOf(projectId)
+    const controller = new AbortController()
+    this.searches.set(requestId, controller)
+    const entries: ProjectFileEntry[] = []
+    const needle = query.trim().toLocaleLowerCase()
+    const pending = ['']
+    const started = Date.now()
+    let scanned = 0
+    let truncated = false
+    try {
+      while (needle && pending.length && !controller.signal.aborted) {
+        const path = pending.shift()!
+        let children
+        try {
+          children = await readdir(resolveEntry(root, path).abs, { withFileTypes: true })
+        } catch {
+          continue
+        }
+        for (const child of children) {
+          if (controller.signal.aborted) break
+          if (++scanned > 20_000 || Date.now() - started >= 3000 || entries.length >= 200) {
+            truncated = true
+            break
+          }
+          if (child.isSymbolicLink() || child.name === '.git' || child.name === 'node_modules' || (!showHidden && child.name.startsWith('.'))) continue
+          if (!child.isFile() && !child.isDirectory()) continue
+          const childPath = [path, child.name].filter(Boolean).join('/')
+          if (child.isDirectory()) pending.push(childPath)
+          if (!childPath.toLocaleLowerCase().includes(needle)) continue
+          try {
+            const stat = await lstat(join(root, childPath))
+            if (!stat.isFile() && !stat.isDirectory()) continue
+            entries.push({ name: child.name, path: childPath, kind: stat.isDirectory() ? 'directory' : 'file', size: stat.size, modifiedAt: stat.mtimeMs })
+          } catch {
+            /* Entry disappeared during search. */
+          }
+        }
+        if (truncated) break
+      }
+      return { root, entries, truncated, cancelled: controller.signal.aborted }
+    } finally {
+      if (this.searches.get(requestId) === controller) this.searches.delete(requestId)
+    }
+  }
+
+  async captureReferences(refs: ProjectFileRef[], expectedProjectId: string | null): Promise<{ fileIds: string[]; sources: Record<string, ProjectFileRef> }> {
+    const fileIds: string[] = []
+    const sources: Record<string, ProjectFileRef> = {}
+    for (const ref of refs) {
+      if (ref.projectId !== expectedProjectId || ref.root !== rootOf(ref.projectId)) throw new Error(t('项目目录已变化，请重新选择文件'))
+      const resolved = resolveEntry(ref.root, ref.path)
+      if (!resolved.stat.isFile()) throw new Error(t('请选择文件'))
+      if (resolved.stat.size > 300 * MB) throw new Error(t('文件太大，无法预览，请在文件管理器中打开'))
+      const handle = await open(resolved.abs, constants.O_RDONLY | constants.O_NOFOLLOW)
+      let data: Buffer
+      try {
+        const stat = await handle.stat()
+        if (!stat.isFile() || stat.size > 300 * MB) throw new Error(t('请选择文件'))
+        data = await handle.readFile()
+        if (data.length > 300 * MB) throw new Error(t('文件太大，无法预览，请在文件管理器中打开'))
+      } finally {
+        await handle.close()
+      }
+      // Resolve again after async I/O so a changed project root never sends an old location.
+      if (ref.root !== rootOf(ref.projectId)) throw new Error(t('项目目录已变化，请重新选择文件'))
+      resolveEntry(ref.root, ref.path)
+      const record = files.addData(resolved.path.split('/').at(-1)!, data)
+      fileIds.push(record.id)
+      sources[record.id] = ref
+    }
+    return { fileIds, sources }
+  }
+
   list(projectId: string, path = '', showHidden = false): ProjectFileListing {
     const root = rootOf(projectId)
     const entry = resolveEntry(root, path)

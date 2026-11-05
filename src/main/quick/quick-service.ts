@@ -1,3 +1,4 @@
+import type { DraftScope } from '@shared/reliability'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -173,14 +174,16 @@ class QuickService {
   }
 
   /** "Continue in Navo": the conversation opens in the main window. */
-  openInMain(threadId: string | null): void {
+  openInMain(threadId: string | null, source?: DraftScope): void {
     this.hide()
     const main = this.main()
     if (!main) return
     if (main.isMinimized()) main.restore()
     main.show()
     main.focus()
-    if (threadId) main.webContents.send('evt:quick.openThread', threadId)
+    main.webContents.send('evt:quick.openThread', threadId)
+    if (source?.surface === 'quick' && (source.threadId ?? null) === threadId)
+      main.webContents.send('evt:quick.transferDraft', { source, target: { surface: 'main', ...(threadId ? { threadId } : {}) } })
   }
 
   // ---------- menu bar
