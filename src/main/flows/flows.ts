@@ -1,5 +1,5 @@
 import type { FlowDraft, FlowRunResult, FlowStats, Macro, MacroVersion } from '@shared/types'
-import { agent } from '../agent/agent-service'
+import { agent, type RunResult } from '../agent/agent-service'
 import { sessions } from '../browser/agent-session'
 import { browser } from '../browser/browser-service'
 import { db, json } from '../core/db'
@@ -22,6 +22,14 @@ import {
 } from './flows-core'
 import { trace, type TraceStep } from './trace'
 import { t } from '@shared/i18n'
+import { checkCancelled } from './cancellation'
+
+export interface FlowExecution {
+  signal?: AbortSignal
+  executionId?: string
+  modelId?: string | null
+  onRepairThread?: (threadId: string) => void
+}
 
 /** a browser task with at least this many actions that sounds recurring gets the "keep as a flow" offer */
 const SUGGEST_MIN_ACTIONS = 3
@@ -156,13 +164,15 @@ class Flows {
    * Replays a flow in a background tab, without the model. When a step breaks and `repair` is on,
    * the agent takes over from where it stopped; what it does replaces the broken part of the flow.
    */
-  async run(macroId: string, params: Record<string, string>, repair: boolean): Promise<FlowRunResult> {
+  async run(macroId: string, params: Record<string, string>, repair: boolean, execution: FlowExecution = {}): Promise<FlowRunResult> {
+    checkCancelled(execution.signal)
     const m = recorder.get(macroId)
     const tabId = browser.newTab('about:blank', { activate: false })
     const wc = browser.tab(tabId)!
     let keepTab = false
     try {
-      const res = await recorder.run(macroId, params, wc, true)
+      const res = await recorder.run(macroId, params, wc, true, execution.signal)
+      if (execution.signal?.aborted || res.aborted) return { ...res, ok: false, aborted: true }
       // where it stopped helps whoever looks at it next (a person, or the agent repairing it)
       if (!res.ok && !wc.isDestroyed()) res.error = `${res.error ?? t('未知错误')}（当时页面：${wc.getTitle() || t('无标题')} ${wc.getURL()}）`
       if (res.ok || !repair) {
@@ -170,17 +180,21 @@ class Flows {
         return res
       }
       keepTab = true // the agent continues in it
-      return await this.repair(m, params, res, tabId)
+      return await this.repair(m, params, res, tabId, execution)
     } finally {
       if (!keepTab) browser.closeTab(tabId)
     }
   }
 
-  private async repair(m: Macro, params: Record<string, string>, failed: FlowRunResult, tabId: number): Promise<FlowRunResult> {
+  private async repair(m: Macro, params: Record<string, string>, failed: FlowRunResult, tabId: number, execution: FlowExecution): Promise<FlowRunResult> {
+    checkCancelled(execution.signal)
     const step = failed.failedStep ?? 0
     const values = Object.fromEntries(m.params.map((p) => [p.name, params[p.name] ?? p.default ?? '']))
     const fill = (s: string) => s.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, k: string) => values[k] ?? '')
-    const thread = agent.createThread(null, { title: t('修复流程：{{v0}}', { v0: m.name }) })
+    const thread = agent.createThread(execution.modelId, { title: t('修复流程：{{v0}}', { v0: m.name }) })
+    execution.onRepairThread?.(thread.id)
+    const stop = () => agent.stop(thread.id)
+    execution.signal?.addEventListener('abort', stop, { once: true })
     sessions.assign(thread.id, tabId)
     const prompt = [
       `固定流程「${m.name}」${m.description ? `（${m.description}）` : ''}回放到第 ${step + 1} 步时失败了：${fill(describeStep(m.steps[step]))}。错误：${failed.error ?? '未知'}。`,
@@ -195,9 +209,9 @@ class Flows {
     ]
       .filter(Boolean)
       .join('\n')
-    try {
-      const res = await agent.send_(thread.id, prompt, [], { headless: true })
+    const finishRepair = async (res: RunResult): Promise<FlowRunResult> => {
       const calls = (await agent.threadState(thread.id).catch(() => null))?.messages.filter((x) => x.role === 'assistant').length ?? 1
+      checkCancelled(execution.signal)
       if (res.error || res.aborted) {
         this.recordRun(m.id, false, step, res.error ?? t('修复未完成'), false, calls)
         return { ...failed, repairThreadId: thread.id }
@@ -214,8 +228,29 @@ class Flows {
       }
       this.recordRun(m.id, true, step, failed.error, true, calls)
       return { ok: true, extracted: failed.extracted, failedStep: step, repaired: true, repairThreadId: thread.id }
+    }
+    let awaitingApproval = false
+    try {
+      checkCancelled(execution.signal)
+      const res = await agent.send_(thread.id, prompt, [], { headless: true, executionId: execution.executionId })
+      if (execution.signal?.aborted || res.aborted) return { ...failed, aborted: true, repairThreadId: thread.id }
+      if (res.interrupted) {
+        awaitingApproval = true
+        const unsubscribe = agent.subscribeExecution((event) => {
+          if (event.threadId !== thread.id || !['success', 'error', 'cancelled'].includes(event.phase)) return
+          unsubscribe()
+          if (event.phase === 'success' && event.result) {
+            void finishRepair(event.result)
+              .catch((err: Error) => log.warn(`[flows] resumed repair: ${err.message}`))
+              .finally(() => browser.closeTab(tabId))
+          } else browser.closeTab(tabId)
+        })
+        return { ...failed, interrupted: true, repairThreadId: thread.id }
+      }
+      return await finishRepair(res)
     } finally {
-      browser.closeTab(tabId)
+      execution.signal?.removeEventListener('abort', stop)
+      if (!awaitingApproval) browser.closeTab(tabId)
     }
   }
 

@@ -8,6 +8,7 @@ import { errorMessage } from '@/lib/utils'
 export type ChatMessage = UIMessage & { streaming?: boolean }
 
 export interface ThreadView {
+  recoverableMessageIds?: string[]
   loaded: boolean
   loadError: string | null
   messages: ChatMessage[]
@@ -105,6 +106,7 @@ export const useChat = create<ChatState>((set, get) => {
           messages: v.running ? v.messages : st.messages,
           todos: st.todos,
           interrupt: st.interrupt,
+          recoverableMessageIds: st.recoverableMessageIds ?? [],
           running: st.running || v.running,
           runStartedAt: st.running ? (v.runStartedAt ?? Date.now()) : v.runStartedAt,
         }))
@@ -140,6 +142,7 @@ export const useChat = create<ChatState>((set, get) => {
         await call('chat.send', id, text, images, fileIds)
       } catch (e) {
         patch(id, () => ({ running: false, runStartedAt: null, error: errorMessage(e) }))
+        throw e
       }
     },
 

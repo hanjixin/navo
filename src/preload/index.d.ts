@@ -1,3 +1,4 @@
+import type { ChatDraft } from '../shared/reliability'
 import type { ApiArgs, ApiMethod, ApiResult, EventName, Events } from '../shared/ipc-contract'
 
 declare global {
@@ -7,6 +8,7 @@ declare global {
       on<E extends EventName>(event: E, cb: (payload: Events[E]) => void): () => void
       platform: string
       pathForFile: (file: File) => string
+      flushDraft: (draft: ChatDraft) => void
     }
   }
 }

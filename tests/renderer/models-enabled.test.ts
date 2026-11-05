@@ -60,7 +60,7 @@ describe('enabled model selection', () => {
 
   it('blocks send for a disabled conversation model without silently choosing another model', async () => {
     useModels.setState({ models: [model('off', false), model('on', true)], activeModels: [model('on', true)] })
-    await useChat.getState().sendTo('thread', 'hello')
+    await expect(useChat.getState().sendTo('thread', 'hello')).rejects.toThrow()
     expect(call).not.toHaveBeenCalled()
     expect(useChat.getState().views.thread.error).toContain('当前模型已停用')
     expect(useChat.getState().views.thread.running).toBe(false)
@@ -84,7 +84,7 @@ describe('enabled model selection', () => {
   it('blocks sends when all models are disabled and permits an explicitly enabled replacement', async () => {
     useModels.setState({ models: [model('off', false)], activeModels: [] })
     useChat.setState({ threads: [{ ...thread, modelId: null }] })
-    await useChat.getState().sendTo('thread', 'hello')
+    await expect(useChat.getState().sendTo('thread', 'hello')).rejects.toThrow()
     expect(call).not.toHaveBeenCalled()
     expect(useChat.getState().views.thread.error).toContain('没有已启用')
     useModels.setState({ activeModels: [model('on', true)] })

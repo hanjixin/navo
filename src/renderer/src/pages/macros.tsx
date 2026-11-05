@@ -300,7 +300,7 @@ function MacroEditor({ macro, onSaved, onDeleted }: { macro: Macro; onSaved: (m:
           v4: m.steps.map((s, i) => `${i + 1}. ${STEP_LABEL[s.type]} ${s.url ?? s.label ?? ''} ${s.value ? t('值={{v0}}', { v0: s.value }) : ''}`).join('\n'),
         },
       ),
-    )
+    ).catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
   }
 
   return (

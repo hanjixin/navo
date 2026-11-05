@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Tooltip } from '@/components/ui/tooltip'
 import { cn, errorMessage } from '@/lib/utils'
-import { useChat } from '@/stores/chat'
+import { useDrafts, draftKey } from '@/stores/drafts'
+import type { DraftScope } from '@shared/reliability'
 import { useFiles } from '@/stores/files'
 import { useModels } from '@/stores/models'
 import { useSettings } from '@/stores/settings'
@@ -16,6 +17,7 @@ import { t } from '@shared/i18n'
 
 export function Composer({
   onSend,
+  draftScope,
   onStop,
   running,
   modelId,
@@ -29,7 +31,8 @@ export function Composer({
   minHeight = 0,
   showModelManagementLink = true,
 }: {
-  onSend: (text: string, fileIds: string[]) => void
+  onSend: (text: string, fileIds: string[]) => Promise<void>
+  draftScope: DraftScope
   onStop: () => void
   running: boolean
   modelId: string | null
@@ -46,8 +49,12 @@ export function Composer({
   const [localText, setLocalText] = useState('')
   const text = value ?? localText
   const setText = onValueChange ?? setLocalText
-  const attached = useChat((s) => s.draftFiles)
-  const setAttached = useChat((s) => s.setDraftFiles)
+  const draft = useDrafts((s) => s.entries[draftKey(draftScope)])
+  const attached = draft?.data.fileIds ?? []
+  const projectFiles = draft?.data.projectFiles ?? []
+  const setAttached = (fileIds: string[]) => useDrafts.getState().patch(draftScope, { fileIds })
+  const [submitting, setSubmitting] = useState(false)
+  const submitLock = useRef(false)
   const { addFiles: upload, pick } = useFiles()
   const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -64,12 +71,20 @@ export function Composer({
     el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), 220)}px`
   }, [text, minHeight])
 
-  const submit = (override?: string) => {
-    const t = (override ?? text).trim()
-    if ((!t && !attached.length) || running || disabled || modelUnavailable || !modelsLoaded) return
-    onSend(t, attached)
-    setText('')
-    setAttached([])
+  const submit = async (override?: string) => {
+    const body = (override ?? text).trim()
+    if ((!body && !attached.length && !projectFiles.length) || running || disabled || modelUnavailable || !modelsLoaded || submitLock.current) return
+    if (override !== undefined) setText(override)
+    submitLock.current = true
+    setSubmitting(true)
+    try {
+      await onSend(body, attached)
+    } catch (e) {
+      toast.error(t('提交失败'), { description: errorMessage(e) })
+    } finally {
+      submitLock.current = false
+      setSubmitting(false)
+    }
   }
 
   // ---------- voice input
@@ -81,7 +96,7 @@ export function Composer({
   }, [hasSettings, loadSettings])
   const voice = useVoice((said) => {
     const next = text.trim() ? `${text.trimEnd()} ${said}` : said
-    if (autoSend && !running) submit(next)
+    if (autoSend && !running) void submit(next)
     else {
       setText(next)
       requestAnimationFrame(() => ref.current?.focus())
@@ -116,18 +131,18 @@ export function Composer({
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      submit()
+      void submit()
     }
   }
 
-  const attach = (ids: string[]) => setAttached([...useChat.getState().draftFiles, ...ids.filter((id) => !useChat.getState().draftFiles.includes(id))])
+  const attach = (ids: string[]) => useDrafts.getState().addFiles(draftScope, ids)
 
   /** Any file type: parsed in the background while the user keeps typing. */
   const addFiles = async (files: FileList | null) => {
     const list = Array.from(files ?? [])
     if (!list.length) return
     try {
-      attach((await upload(list)).map((r) => r.id))
+      await attach((await upload(list)).map((r) => r.id))
     } catch (e) {
       toast.error(t('添加文件失败'), { description: errorMessage(e) })
     }
@@ -159,6 +174,32 @@ export function Composer({
               {t('管理模型')}
             </Link>
           ) : null}
+        </div>
+      ) : null}
+      {draft?.error ? (
+        <p role="alert" className="px-3 pt-2 text-xs text-danger">
+          {t('草稿尚未保存：{{v0}}', { v0: draft.error })}
+        </p>
+      ) : null}
+      {projectFiles.length ? (
+        <div className="flex flex-wrap gap-2 px-3 pt-3">
+          {projectFiles.map((file) => (
+            <span
+              key={JSON.stringify(file)}
+              className="flex max-w-full items-center gap-2 rounded-md border border-border px-2 py-1 text-xs"
+              title={`${file.root}/${file.path}`}
+            >
+              <Paperclip className="size-3 shrink-0" />
+              <span className="truncate">{file.path}</span>
+              <span className="shrink-0 text-muted-foreground">{t('发送时读取')}</span>
+              <button
+                aria-label={t('移除 {{v0}}', { v0: file.path })}
+                onClick={() => useDrafts.getState().patch(draftScope, { projectFiles: projectFiles.filter((item) => item !== file) })}
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
         </div>
       ) : null}
       {attached.length ? (
@@ -283,8 +324,8 @@ export function Composer({
             <Button
               variant="primary"
               size="icon-sm"
-              onClick={() => submit()}
-              disabled={disabled || modelUnavailable || !modelsLoaded || (!text.trim() && !attached.length)}
+              onClick={() => void submit()}
+              disabled={disabled || submitting || modelUnavailable || !modelsLoaded || (!text.trim() && !attached.length && !projectFiles.length)}
               aria-label={t('发送')}
               className={cn('rounded-md')}
             >

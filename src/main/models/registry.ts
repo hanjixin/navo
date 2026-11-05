@@ -232,15 +232,25 @@ export const models = {
     if (selected) db().prepare('UPDATE models SET is_default=1 WHERE id=?').run(selected.id)
   },
   setEnabled(id: string, enabled: boolean): void {
+    this.setEnabledMany([id], enabled)
+  },
+  setEnabledMany(ids: string[], enabled: boolean): void {
     if (typeof enabled !== 'boolean') throw new Error(t('模型启用状态必须是布尔值'))
-    if (!this.get(id)) throw new Error(t('模型不存在，请重新选择'))
+    const unique = [...new Set(ids)]
     db().transaction(() => {
-      db()
-        .prepare('UPDATE models SET enabled=? WHERE id=?')
-        .run(enabled ? 1 : 0, id)
+      for (const id of unique) if (!this.get(id)) throw new Error(t('模型不存在，请重新选择'))
+      const update = db().prepare('UPDATE models SET enabled=? WHERE id=?')
+      for (const id of unique) update.run(enabled ? 1 : 0, id)
       this.ensureDefault()
     })()
     emit('models.changed')
+  },
+  affectedTasks(ids: string[]): { id: string; name: string }[] {
+    const selected = new Set(ids)
+    const defaultId = this.default()?.id
+    return (db().prepare('SELECT id, name, model_id FROM tasks').all() as { id: string; name: string; model_id: string | null }[])
+      .filter((task) => selected.has(task.model_id ?? defaultId ?? ''))
+      .map(({ id, name }) => ({ id, name }))
   },
   setPricing(id: string, pricing: ModelPricing | null): void {
     if (pricing && ![pricing.input, pricing.output, pricing.cachedInput ?? 0].every((n) => Number.isFinite(n) && n >= 0))

@@ -1,3 +1,4 @@
+import type { ArtifactsQuery, ArtifactsPage } from '@shared/files-query'
 import { BrowserWindow, dialog, shell } from 'electron'
 import { closeSync, copyFileSync, existsSync, fstatSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join, relative, sep } from 'node:path'
@@ -68,10 +69,10 @@ class OutputsService {
   private upsert(threadId: string, path: string, source: Row['source'], size: number, workspaceRoot: string | null = null): void {
     db()
       .prepare(
-        `INSERT INTO outputs(id, thread_id, path, source, size, at, workspace_root) VALUES(?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at, workspace_root = excluded.workspace_root`,
+        `INSERT INTO outputs(id, thread_id, path, source, size, at, workspace_root, name, kind) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at, workspace_root = excluded.workspace_root, name = excluded.name, kind = excluded.kind`,
       )
-      .run(newId(), threadId, path, source, size, Date.now(), workspaceRoot)
+      .run(newId(), threadId, path, source, size, Date.now(), workspaceRoot, basename(path), kindOf(path))
     emit('artifacts.changed')
     emit('projects.changed')
   }
@@ -82,7 +83,7 @@ class OutputsService {
     return r
   }
 
-  private toFile(r: Row): OutputFile {
+  private toFile(r: Row, readContent = true): OutputFile {
     const name = basename(r.path)
     let size = r.size
     let unavailableReason: OutputFile['unavailableReason']
@@ -92,6 +93,21 @@ class OutputsService {
       const abs = absOf(r)
       // Reject directories/special files before opening, then inspect the opened file too.
       if (!statSync(abs).isFile()) throw new Error('Not a regular file')
+      if (!readContent) {
+        size = statSync(abs).size
+        return {
+          id: r.id,
+          threadId: r.thread_id,
+          name,
+          path: r.path,
+          source: r.source,
+          kind: kindOf(name),
+          size,
+          at: r.at,
+          missing: false,
+          exports: exportTargets(name),
+        }
+      }
       fd = openSync(abs, 'r')
       const stat = fstatSync(fd)
       if (!stat.isFile()) throw new Error('Not a regular file')
@@ -145,6 +161,49 @@ class OutputsService {
       project_name: string | null
     })[]
     return rows.map((r) => ({ ...this.toFile(r), projectId: r.project_id, projectName: r.project_name, threadTitle: r.thread_title }))
+  }
+
+  query(query: ArtifactsQuery = {}): ArtifactsPage {
+    const where: string[] = []
+    const args: (string | number)[] = []
+    if (query.projectId === null) where.push('t.project_id IS NULL')
+    else if (query.projectId !== undefined) {
+      where.push('t.project_id=?')
+      args.push(query.projectId)
+    }
+    if (query.threadId) {
+      where.push('o.thread_id=?')
+      args.push(query.threadId)
+    }
+    if (query.kind) {
+      where.push('o.kind=?')
+      args.push(query.kind)
+    }
+    if (query.q?.trim()) {
+      where.push("instr(lower(o.name || ' ' || t.title || ' ' || coalesce(p.name,'')),lower(?))>0")
+      args.push(query.q.trim())
+    }
+    const scope = JSON.stringify([query.projectId === undefined, query.projectId, query.threadId, query.q?.trim() ?? '', query.kind])
+    if (query.cursor) {
+      const cursor = JSON.parse(Buffer.from(query.cursor, 'base64url').toString()) as { at: number; id: string; scope: string }
+      if (cursor.scope !== scope || !Number.isFinite(cursor.at) || typeof cursor.id !== 'string') throw new Error('Invalid artifact cursor')
+      where.push('(o.at < ? OR (o.at = ? AND o.id < ?))')
+      args.push(cursor.at, cursor.at, cursor.id)
+    }
+    const limit = Number.isFinite(query.limit) ? Math.max(1, Math.min(200, Math.floor(query.limit!))) : 50
+    const rows = db()
+      .prepare(
+        `SELECT o.*, t.title AS thread_title, t.project_id, p.name AS project_name
+      FROM outputs o JOIN threads t ON t.id=o.thread_id LEFT JOIN projects p ON p.id=t.project_id
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY o.at DESC,o.id DESC LIMIT ?`,
+      )
+      .all(...args, limit + 1) as (Row & { thread_title: string; project_id: string | null; project_name: string | null })[]
+    const page = rows.slice(0, limit)
+    const last = page.at(-1)
+    return {
+      items: page.map((row) => ({ ...this.toFile(row, false), projectId: row.project_id, projectName: row.project_name, threadTitle: row.thread_title })),
+      nextCursor: rows.length > limit && last ? Buffer.from(JSON.stringify({ at: last.at, id: last.id, scope })).toString('base64url') : null,
+    }
   }
 
   artifact(id: string): Artifact | null {

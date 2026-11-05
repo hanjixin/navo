@@ -12,6 +12,8 @@ import { ArtifactBrowser } from '@/components/artifacts/artifact-browser'
 import { useAsync } from '@/hooks/use-async'
 import { useProjects } from '@/stores/projects'
 import { useChat } from '@/stores/chat'
+import { useDraft } from '@/hooks/use-draft'
+import { mainDraftScope, submitDraft } from '@/stores/drafts'
 import { useModels } from '@/stores/models'
 import { call } from '@/lib/ipc'
 import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
@@ -29,8 +31,8 @@ export function ProjectDetailPage() {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [modelId, setModelId] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const draft = useDraft(mainDraftScope(projectId))
+  const modelId = draft.data?.modelId ?? null
   const { activeModels: models, load: loadModels } = useModels()
   const noModels = models !== undefined && models.length === 0
   useEffect(() => {
@@ -45,12 +47,11 @@ export function ProjectDetailPage() {
     )
       navigate('/projects', { replace: true })
   }, [detail.data, projectId, navigate])
-  const createThread = async (text?: string, fileIds?: string[]) => {
+  const createThread = async () => {
     if (creating || !projectId) return
     setCreating(true)
     try {
       const thread = await useChat.getState().newThread(modelId, projectId)
-      if (text !== undefined) void useChat.getState().sendTo(thread.id, text, undefined, fileIds)
       navigate(threadPath(thread))
     } catch (e) {
       toast.error(t('创建失败'), { description: errorMessage(e) })
@@ -181,15 +182,21 @@ export function ProjectDetailPage() {
                   </Tooltip>
                 </div>
                 <Composer
-                  onSend={(text, fileIds) => void createThread(text, fileIds)}
+                  draftScope={draft.scope}
+                  onSend={async () => {
+                    const receipt = await submitDraft(draft.scope, { projectId, modelId })
+                    await useChat.getState().loadThreads()
+                    useChat.getState().select(receipt.threadId)
+                    navigate(threadPath({ id: receipt.threadId, projectId: projectId! }))
+                  }}
                   onStop={() => {}}
                   running={false}
                   modelId={modelId}
-                  onModelChange={setModelId}
-                  disabled={creating || !models?.length}
+                  onModelChange={(modelId) => draft.patch({ modelId })}
+                  disabled={draft.loading || creating || !models?.length}
                   disabledReason={noModels ? t('没有已启用的模型，请前往模型页面启用') : t('加载中')}
-                  value={drafts[project.id] ?? ''}
-                  onValueChange={(text) => setDrafts((previous) => ({ ...previous, [project.id]: text }))}
+                  value={draft.data?.text ?? ''}
+                  onValueChange={(text) => draft.patch({ text })}
                   placeholder={t('随心输入，或描述你想完成的任务…')}
                   minHeight={76}
                   className="rounded-xl border-transparent shadow-none"

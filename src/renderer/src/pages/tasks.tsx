@@ -57,6 +57,8 @@ const STATUS: Record<
   TaskRunStatus,
   { label: string; variant: 'success' | 'danger' | 'neutral' | 'primary' | 'warning'; dot: 'success' | 'danger' | 'neutral' | 'running' | 'warning' }
 > = {
+  waiting_approval: { label: t('等待确认'), variant: 'warning', dot: 'warning' },
+  skipped: { label: t('已跳过'), variant: 'neutral', dot: 'neutral' },
   queued: { label: t('排队中'), variant: 'neutral', dot: 'neutral' },
   running: { label: t('运行中'), variant: 'primary', dot: 'running' },
   success: { label: t('成功'), variant: 'success', dot: 'success' },
@@ -224,6 +226,8 @@ export function TasksPage() {
   const [editing, setEditing] = useState<Task | 'new' | null>(null)
   const [history, setHistory] = useState<Task | null>(null)
   const monitors = useAsync(() => call('monitor.summary'))
+  const activeModels = useModels((s) => s.activeModels) ?? []
+  const [pending, setPending] = useState<Set<string>>(() => new Set())
   const loadModels = useModels((s) => s.load)
   const select = useChat((s) => s.select)
   const navigate = useNavigate()
@@ -245,11 +249,39 @@ export function TasksPage() {
   )
 
   const runNow = async (task: Task) => {
+    if (pending.has(task.id)) return
+    setPending((value) => new Set(value).add(task.id))
     try {
-      await call('tasks.run', task.id)
+      const result = await call('tasks.run', task.id)
+      if (result.status === 'skipped') {
+        toast.info(result.summary ?? t('已跳过'))
+        return
+      }
       toast.success(task.kind === 'monitor' ? t('正在检查：{{v0}}', { v0: task.name }) : t('已开始运行：{{v0}}', { v0: task.name }))
     } catch (e) {
       toast.error(t('运行失败'), { description: errorMessage(e) })
+    } finally {
+      setPending((value) => {
+        const next = new Set(value)
+        next.delete(task.id)
+        return next
+      })
+    }
+  }
+
+  const cancelRun = async (id: string) => {
+    if (pending.has(id)) return
+    setPending((value) => new Set(value).add(id))
+    try {
+      await call('tasks.cancel', id)
+    } catch (err) {
+      toast.error(errorMessage(err))
+    } finally {
+      setPending((value) => {
+        const next = new Set(value)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -321,6 +353,11 @@ export function TasksPage() {
                   {task.kind === 'monitor' && (monitors.data?.[task.id]?.failStreak ?? 0) >= 2 ? (
                     <Badge variant="danger">{t('连续失败 {{v0}} 次', { v0: monitors.data![task.id].failStreak })}</Badge>
                   ) : null}
+                  {task.kind !== 'flow' && task.modelId && !activeModels.some((model) => model.id === task.modelId) ? (
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(task)} title={t('修复模型配置')}>
+                      {t('模型不可用')}
+                    </Button>
+                  ) : null}
                   {task.lastStatus ? (
                     <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                       <StatusDot status={STATUS[task.lastStatus].dot} />
@@ -335,7 +372,7 @@ export function TasksPage() {
                       {t('记录')}
                     </Button>
                   ) : null}
-                  <Button variant="secondary" size="sm" onClick={() => void runNow(task)}>
+                  <Button variant="secondary" size="sm" disabled={pending.has(task.id)} onClick={() => void runNow(task)}>
                     {task.kind === 'monitor' ? <RefreshCw /> : <Play />}
                     {task.kind === 'monitor' ? t('检查') : t('运行')}
                   </Button>
@@ -392,8 +429,8 @@ export function TasksPage() {
                         {t('产出 {{v0}}', { v0: outputCounts.data[r.threadId] })}
                       </span>
                     ) : null}
-                    {r.status === 'running' ? (
-                      <Button variant="ghost" size="sm" onClick={() => void call('tasks.cancel', r.id)}>
+                    {r.status === 'running' || r.status === 'waiting_approval' ? (
+                      <Button variant="ghost" size="sm" disabled={pending.has(r.id)} onClick={() => void cancelRun(r.id)}>
                         <Square className="size-3 fill-current" />
                         {t('停止')}
                       </Button>
@@ -414,7 +451,7 @@ export function TasksPage() {
                     {r.threadId ? (
                       <Button variant="ghost" size="sm" onClick={() => openThread(r.threadId)}>
                         <MessageSquare />
-                        {t('查看会话')}
+                        {r.status === 'waiting_approval' ? t('等待确认') : t('查看会话')}
                       </Button>
                     ) : null}
                   </div>

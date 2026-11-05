@@ -1,3 +1,15 @@
+import type { DesktopStop } from './control-state'
+import type { ProjectFileReference } from './reliability'
+export type {
+  ChatDraft,
+  DraftScope,
+  DraftSaveInput,
+  ChatSubmitInput,
+  ChatSubmitReceipt,
+  ProjectFileReference,
+  ApprovalSummary,
+  ExecutionPhase,
+} from './reliability'
 export type ProviderType = 'anthropic' | 'openai' | 'openai-responses' | 'openai-compatible'
 
 export interface Provider {
@@ -209,6 +221,7 @@ export type ChatEvent =
   | { type: 'run_end'; threadId: string; runId: string; aborted?: boolean; traceUrl?: string }
 
 export interface ThreadState {
+  recoverableMessageIds?: string[]
   messages: UIMessage[]
   todos: Todo[]
   interrupt: PendingInterrupt | null
@@ -653,6 +666,8 @@ export interface Macro {
 }
 
 export interface MacroRunResult {
+  aborted?: boolean
+  interrupted?: boolean
   ok: boolean
   failedStep?: number
   error?: string
@@ -724,9 +739,10 @@ export interface MonitorSummary {
   lastSummary: string | null
 }
 
-export type TaskRunStatus = 'queued' | 'running' | 'success' | 'error' | 'cancelled'
+export type TaskRunStatus = 'queued' | 'running' | 'waiting_approval' | 'skipped' | 'success' | 'error' | 'cancelled'
 
 export interface TaskRun {
+  executionId?: string | null
   id: string
   taskId: string
   threadId: string
@@ -799,6 +815,9 @@ export interface ComputerUseStatus {
 }
 
 export interface DesktopStatus {
+  checkedAt: number | null
+  checking: boolean
+  lastStop: DesktopStop | null
   platform: 'darwin' | 'win32' | 'unsupported'
   supported: boolean
   accessibility: boolean
@@ -808,13 +827,15 @@ export interface DesktopStatus {
 }
 
 export interface DesktopConsentRequest {
+  executionId: string
+  createdAt: number
   id: string
   threadId: string
   app: string
   bundleId: string
 }
 
-export type DesktopConsentDecision = 'session' | 'once' | 'deny'
+export type DesktopConsentDecision = 'session' | 'once' | 'execution' | 'deny'
 
 /** A picture of the tab the agent works on in the user's browser. */
 export interface LiveFrame {
@@ -941,6 +962,7 @@ export interface FilesSettings {
 
 /** attachment summary stored with a user message */
 export interface MessageAttachment {
+  source?: ProjectFileReference
   id: string
   name: string
   kind: string | null

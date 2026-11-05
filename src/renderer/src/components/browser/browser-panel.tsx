@@ -17,7 +17,7 @@ const GUTTER = 6
 const COLLAPSE_SLACK = 120
 
 export function BrowserPanel({ header, embedded = false, resizing = false }: { header?: ReactNode; embedded?: boolean; resizing?: boolean } = {}) {
-  const { state, width, setWidth, setOpen, recordingSteps, lastRecorded, external } = useBrowser()
+  const { state, width, setWidth, setOpen, recordingSteps, lastRecorded, external, externalView, showBuiltin, setShowBuiltin } = useBrowser()
   const overlays = useOverlayStore((s) => s.count)
   const devMode = useSettings((s) => s.settings?.devMode)
   const windowWidth = useLayout((s) => s.windowWidth)
@@ -34,7 +34,7 @@ export function BrowserPanel({ header, embedded = false, resizing = false }: { h
   const navigate = useNavigate()
 
   const max = browserMax(windowWidth, collapsed)
-  const showExternal = !!external
+  const showExternal = !showBuiltin && !!externalView?.tabId
   const effective = Math.min(Math.max(width, BROWSER_MIN), max)
 
   useEffect(() => {
@@ -195,147 +195,201 @@ export function BrowserPanel({ header, embedded = false, resizing = false }: { h
 
       <div className="flex min-w-0 flex-1 flex-col bg-card">
         {header}
-        {/* tabs */}
-        <div className="flex h-9 shrink-0 items-end gap-px overflow-x-auto border-b border-border bg-sidebar px-1.5">
-          {state.tabs.map((tab) => (
-            <div
-              key={tab.id}
-              onClick={() => void call('browser.activate', tab.id)}
-              className={cn(
-                'interactive group flex h-7 max-w-44 min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-t-md border border-b-0 px-2 text-xs',
-                tab.active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:bg-sidebar-active/60',
-              )}
-            >
-              {tab.loading ? (
-                <Loader2 className="size-3 shrink-0 animate-spin" />
-              ) : tab.favicon ? (
-                <img src={tab.favicon} className="size-3 shrink-0" alt="" />
-              ) : (
-                <Globe className="size-3 shrink-0" />
-              )}
-              <span className="truncate">{tab.title}</span>
-              {tab.agent ? (
-                <Tooltip content={`${tab.agent.running ? t('Agent 正在使用') : t('由对话使用')}：${tab.agent.title}`}>
-                  <span className={cn('size-1.5 shrink-0 rounded-full', tab.agent.running ? 'animate-pulse bg-brand' : 'bg-subtle-foreground/60')} />
+        {showExternal ? (
+          <div className="shrink-0 border-b border-border px-3 py-2" data-testid="external-toolbar">
+            <div className="flex items-center gap-2 text-xs">
+              <Globe className="size-3.5" />
+              <span className="font-medium">{externalView?.browser ?? t('你的浏览器')}</span>
+              <span className="min-w-0 flex-1 truncate">{externalView?.title}</span>
+              <span className={externalView?.status === 'live' ? 'text-success' : 'text-muted-foreground'}>
+                {externalView?.status === 'live'
+                  ? t('实时画面')
+                  : externalView?.status === 'connecting'
+                    ? t('连接中')
+                    : externalView?.status === 'released'
+                      ? t('已释放')
+                      : externalView?.status === 'error'
+                        ? t('画面失败')
+                        : t('已断线')}
+              </span>
+            </div>
+            <input className="mt-2 w-full rounded bg-muted px-2 py-1 text-xs" readOnly aria-label={t('外部浏览器地址')} value={externalView?.url ?? ''} />
+            <div className="mt-2 flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={externalView?.status === 'released' || externalView?.status === 'disconnected'}
+                onClick={() => void call('computerUse.focusView').catch((error) => toast.error(t('操作失败'), { description: errorMessage(error) }))}
+              >
+                {t('前往该标签页')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={externalView?.status === 'released' || externalView?.status === 'disconnected'}
+                onClick={() => void call('computerUse.retryView').catch((error) => toast.error(t('操作失败'), { description: errorMessage(error) }))}
+              >
+                {t('重试画面')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowBuiltin(true)}>
+                {t('查看内置浏览器')}
+              </Button>
+            </div>
+            {externalView?.error ? <p className="mt-1 text-xs text-danger">{externalView.error}</p> : null}
+          </div>
+        ) : (
+          <>
+            {externalView?.tabId ? (
+              <Button size="sm" variant="ghost" onClick={() => setShowBuiltin(false)}>
+                {t('查看外部浏览器')}
+              </Button>
+            ) : null}
+            {/* tabs */}
+            <div className="flex h-9 shrink-0 items-end gap-px overflow-x-auto border-b border-border bg-sidebar px-1.5">
+              {state.tabs.map((tab) => (
+                <div
+                  key={tab.id}
+                  onClick={() => void call('browser.activate', tab.id)}
+                  className={cn(
+                    'interactive group flex h-7 max-w-44 min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-t-md border border-b-0 px-2 text-xs',
+                    tab.active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:bg-sidebar-active/60',
+                  )}
+                >
+                  {tab.loading ? (
+                    <Loader2 className="size-3 shrink-0 animate-spin" />
+                  ) : tab.favicon ? (
+                    <img src={tab.favicon} className="size-3 shrink-0" alt="" />
+                  ) : (
+                    <Globe className="size-3 shrink-0" />
+                  )}
+                  <span className="truncate">{tab.title}</span>
+                  {tab.agent ? (
+                    <Tooltip content={`${tab.agent.running ? t('Agent 正在使用') : t('由对话使用')}：${tab.agent.title}`}>
+                      <span className={cn('size-1.5 shrink-0 rounded-full', tab.agent.running ? 'animate-pulse bg-brand' : 'bg-subtle-foreground/60')} />
+                    </Tooltip>
+                  ) : null}
+                  <button
+                    className="interactive ml-auto shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void call('browser.closeTab', tab.id)
+                    }}
+                    aria-label={t('关闭标签页')}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+              <Button variant="ghost" size="icon-sm" className="mb-0.5 size-6" onClick={() => void call('browser.newTab')} aria-label={t('新建标签页')}>
+                <Plus />
+              </Button>
+            </div>
+
+            {/* toolbar */}
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+              <Button variant="ghost" size="icon-sm" disabled={!active?.canGoBack} onClick={() => void call('browser.back')} aria-label={t('后退')}>
+                <ArrowLeft />
+              </Button>
+              <Button variant="ghost" size="icon-sm" disabled={!active?.canGoForward} onClick={() => void call('browser.forward')} aria-label={t('前进')}>
+                <ArrowRight />
+              </Button>
+              <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.reload')} aria-label={t('刷新')}>
+                <RotateCw />
+              </Button>
+              <form
+                className="min-w-0 flex-1"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  setEditing(false)
+                  ;(document.activeElement as HTMLElement)?.blur()
+                  void call('browser.navigate', address).catch((err) => toast.error(t('无法打开页面'), { description: errorMessage(err) }))
+                }}
+              >
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  onFocus={(e) => {
+                    setEditing(true)
+                    e.target.select()
+                  }}
+                  onBlur={() => setEditing(false)}
+                  placeholder={t('输入网址或搜索')}
+                  className="interactive h-7 w-full rounded-md border border-transparent bg-muted px-2.5 text-xs text-foreground outline-none placeholder:text-subtle-foreground hover:border-border focus:border-primary/50 focus:bg-card focus:ring-2 focus:ring-ring"
+                />
+              </form>
+              <Tooltip content={t('在系统浏览器中打开')}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!active?.url.startsWith('http')}
+                  onClick={() => active && void call('app.openExternal', active.url)}
+                  aria-label={t('在系统浏览器中打开')}
+                >
+                  <ExternalLink />
+                </Button>
+              </Tooltip>
+              <Tooltip content={state.recording ? t('停止录制并保存为宏') : t('录制操作为宏')}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={toggleRecording}
+                  aria-label={t('录制')}
+                  className={cn(state.recording && 'text-danger hover:text-danger')}
+                >
+                  {state.recording ? <Square className="fill-current" /> : <Circle />}
+                </Button>
+              </Tooltip>
+              {devMode ? (
+                <Tooltip content={t('打开页面开发者工具')}>
+                  <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.openDevTools')} aria-label={t('开发者工具')}>
+                    <SquareTerminal />
+                  </Button>
                 </Tooltip>
               ) : null}
-              <button
-                className="interactive ml-auto shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void call('browser.closeTab', tab.id)
-                }}
-                aria-label={t('关闭标签页')}
-              >
-                <X className="size-3" />
-              </button>
             </div>
-          ))}
-          <Button variant="ghost" size="icon-sm" className="mb-0.5 size-6" onClick={() => void call('browser.newTab')} aria-label={t('新建标签页')}>
-            <Plus />
-          </Button>
-        </div>
 
-        {/* toolbar */}
-        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
-          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoBack} onClick={() => void call('browser.back')} aria-label={t('后退')}>
-            <ArrowLeft />
-          </Button>
-          <Button variant="ghost" size="icon-sm" disabled={!active?.canGoForward} onClick={() => void call('browser.forward')} aria-label={t('前进')}>
-            <ArrowRight />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.reload')} aria-label={t('刷新')}>
-            <RotateCw />
-          </Button>
-          <form
-            className="min-w-0 flex-1"
-            onSubmit={(e) => {
-              e.preventDefault()
-              setEditing(false)
-              ;(document.activeElement as HTMLElement)?.blur()
-              void call('browser.navigate', address).catch((err) => toast.error(t('无法打开页面'), { description: errorMessage(err) }))
-            }}
-          >
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              onFocus={(e) => {
-                setEditing(true)
-                e.target.select()
-              }}
-              onBlur={() => setEditing(false)}
-              placeholder={t('输入网址或搜索')}
-              className="interactive h-7 w-full rounded-md border border-transparent bg-muted px-2.5 text-xs text-foreground outline-none placeholder:text-subtle-foreground hover:border-border focus:border-primary/50 focus:bg-card focus:ring-2 focus:ring-ring"
-            />
-          </form>
-          <Tooltip content={t('在系统浏览器中打开')}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={!active?.url.startsWith('http')}
-              onClick={() => active && void call('app.openExternal', active.url)}
-              aria-label={t('在系统浏览器中打开')}
-            >
-              <ExternalLink />
-            </Button>
-          </Tooltip>
-          <Tooltip content={state.recording ? t('停止录制并保存为宏') : t('录制操作为宏')}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={toggleRecording}
-              aria-label={t('录制')}
-              className={cn(state.recording && 'text-danger hover:text-danger')}
-            >
-              {state.recording ? <Square className="fill-current" /> : <Circle />}
-            </Button>
-          </Tooltip>
-          {devMode ? (
-            <Tooltip content={t('打开页面开发者工具')}>
-              <Button variant="ghost" size="icon-sm" onClick={() => void call('browser.openDevTools')} aria-label={t('开发者工具')}>
-                <SquareTerminal />
-              </Button>
-            </Tooltip>
-          ) : null}
-        </div>
-
-        {/* status strip */}
-        {state.agentControlled || state.recording ? (
-          <div
-            className={cn(
-              'flex h-8 shrink-0 animate-fade-in items-center gap-2 border-b border-border px-3 text-xs',
-              state.recording ? 'bg-danger-soft text-danger' : 'bg-info-soft text-brand',
-            )}
-          >
-            {state.recording ? (
-              <>
-                <span className="size-1.5 animate-pulse rounded-full bg-danger" />
-                <span className="font-medium">{t('录制中 · {{v0}} 步', { v0: recordingSteps })}</span>
-                <span className="truncate text-muted-foreground">{lastRecorded}</span>
-              </>
-            ) : (
-              <>
-                <Loader2 className="size-3 animate-spin" />
-                <span className="font-medium">{t('Agent 正在操作')}</span>
-                <Button variant="link" size="sm" className="ml-auto h-auto text-xs" onClick={() => void call('browser.takeOver')}>
-                  <Hand className="size-3" />
-                  {t('接管')}
-                </Button>
-              </>
-            )}
-          </div>
-        ) : null}
-
+            {/* status strip */}
+            {state.agentControlled || state.recording ? (
+              <div
+                className={cn(
+                  'flex h-8 shrink-0 animate-fade-in items-center gap-2 border-b border-border px-3 text-xs',
+                  state.recording ? 'bg-danger-soft text-danger' : 'bg-info-soft text-brand',
+                )}
+              >
+                {state.recording ? (
+                  <>
+                    <span className="size-1.5 animate-pulse rounded-full bg-danger" />
+                    <span className="font-medium">{t('录制中 · {{v0}} 步', { v0: recordingSteps })}</span>
+                    <span className="truncate text-muted-foreground">{lastRecorded}</span>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="size-3 animate-spin" />
+                    <span className="font-medium">{t('Agent 正在操作')}</span>
+                    <Button variant="link" size="sm" className="ml-auto h-auto text-xs" onClick={() => void call('browser.takeOver')}>
+                      <Hand className="size-3" />
+                      {t('接管')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
         {/* native view placeholder */}
         <div ref={pageRef} className="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-[#0e1626]">
-          {external ? (
+          {showExternal ? (
             <div className="absolute inset-0 flex flex-col bg-muted" data-testid="external-view">
-              <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-card px-3 text-xs text-muted-foreground">
-                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" />
-                <span className="shrink-0 font-medium text-foreground">{t('在你的浏览器中')}</span>
-                <span className="truncate">{external.title || external.url}</span>
-              </div>
-              <img src={external.image} alt="" draggable={false} className="pointer-events-none min-h-0 flex-1 object-contain object-top select-none" />
+              {externalView?.status !== 'live' ? (
+                <div role="status" className="border-b border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+                  {t('画面已暂停，不会自动重放操作')}
+                </div>
+              ) : null}
+              {external?.image && external.tabId === externalView?.tabId ? (
+                <img src={external.image} alt="" draggable={false} className="pointer-events-none min-h-0 flex-1 object-contain object-top select-none" />
+              ) : (
+                <p className="p-4 text-xs text-muted-foreground">{t('等待浏览器画面')}</p>
+              )}
             </div>
           ) : hidden ? (
             snapshot ? (

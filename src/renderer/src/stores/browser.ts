@@ -1,3 +1,4 @@
+import type { ExternalViewState } from '@shared/external-view'
 import { create } from 'zustand'
 import type { BrowserState, LiveFrame } from '@shared/types'
 import { toast } from 'sonner'
@@ -15,6 +16,9 @@ interface BrowserStore {
   preview: { tabId: number; image: string } | null
   /** the agent's tab in the user's own browser (live picture), while it works there */
   external: LiveFrame | null
+  externalView: ExternalViewState | null
+  showBuiltin: boolean
+  setShowBuiltin: (value: boolean) => void
   setMini: (v: boolean) => void
   setOpen: (v: boolean) => void
   setWidth: (w: number) => void
@@ -43,6 +47,9 @@ export const useBrowser = create<BrowserStore>((set) => ({
   mini: false,
   preview: null,
   external: null,
+  externalView: null,
+  showBuiltin: false,
+  setShowBuiltin: (showBuiltin) => set({ showBuiltin }),
   setMini: (mini) => set({ mini }),
   setOpen: (open) => {
     try {
@@ -84,6 +91,10 @@ export function wireBrowserEvents(): void {
     else useBrowser.setState({ mini: true })
   })
   on('browser.preview', (preview) => useBrowser.setState({ preview }))
+  void call('computerUse.viewState')
+    .then((externalView) => useBrowser.setState({ externalView }))
+    .catch(() => {})
+  on('computerUse.viewChanged', (externalView) => useBrowser.setState({ externalView }))
   on('computerUse.frame', (external) => useBrowser.setState({ external }))
   on('macros.recording', ({ steps, last }) => useBrowser.setState({ recordingSteps: steps, lastRecorded: last }))
 }

@@ -1,5 +1,7 @@
 // Browse existing project files without creating conversations, imports or agent artifacts.
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { startMock } from './mock-llm.mjs'
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,9 +23,11 @@ writeFileSync(join(alternateRoot, 'README.md'), '# Alternate project\n\nDifferen
 writeFileSync(join(outside, 'secret.txt'), 'OUTSIDE WORKSPACE SENTINEL')
 symlinkSync(join(outside, 'secret.txt'), join(root, 'linked-file.txt'))
 symlinkSync(outside, join(root, 'linked-directory'), process.platform === 'win32' ? 'junction' : 'dir')
+const mock = startMock(39054)
 let app
 let win
 try {
+  if (!mock.server.listening) await once(mock.server, 'listening')
   app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: profile, AB_MEMORY_IDLE_MS: '600000' } })
   win = await mainWindow(app)
   await win.emulateMedia({ reducedMotion: 'reduce' })
@@ -166,10 +170,55 @@ try {
   assert.deepEqual(await api('artifacts.list'), initialArtifacts, 'browsing does not register outputs')
   assert.deepEqual(await api('files.list'), initialImports, 'browsing does not import files')
   assert.equal((await api('threads.list')).length, 0, 'existing files require no conversation')
+  // Pagination and search work against a real 501-file directory.
+  mkdirSync(join(root, 'many'))
+  for (let index = 0; index < 501; index++) writeFileSync(join(root, 'many', `entry-${String(index).padStart(3, '0')}.txt`), `entry ${index}`)
+  await route(`/projects/${project.id}`)
+  await tree.getByRole('button', { name: '刷新项目文件', exact: true }).click()
+  await tree.getByRole('button', { name: '展开文件夹 many', exact: true }).click()
+  await expect(tree.getByRole('button', { name: '查看文件 entry-000.txt', exact: true })).toBeVisible()
+  for (let index = 0; index < 5; index++) await tree.getByRole('button', { name: '加载更多', exact: true }).click()
+  await expect(tree.getByRole('button', { name: '查看文件 entry-500.txt', exact: true })).toBeVisible()
+  await tree.getByRole('textbox', { name: '搜索文件名或路径', exact: true }).fill('entry-500')
+  await expect(tree.getByRole('button', { name: 'many/entry-500.txt', exact: true })).toBeVisible()
+  await tree.getByRole('textbox', { name: '搜索文件名或路径', exact: true }).fill('')
+
+  // References are stored without importing bytes, then capture the latest file at send time.
+  const provider = await api('providers.save', { type: 'openai-compatible', name: 'File reference mock', baseURL: mock.url, apiKey: 'x' })
+  await api('models.save', { providerId: provider.id, model: 'mock-1', displayName: 'Mock', supportsTools: true, supportsVision: false, isDefault: true })
+  await tree.getByRole('button', { name: '查看文件 README.md', exact: true }).click()
+  await panel.getByRole('button', { name: '添加到对话', exact: true }).click()
+  const scope = { surface: 'main', projectId: project.id }
+  await expect.poll(async () => (await api('drafts.get', scope)).projectFiles.length).toBe(1)
+  assert.deepEqual(await api('files.list'), initialImports, 'adding a reference alone does not import content')
+  const evidence = join(process.cwd(), '.superpowers/sdd/2026-11-05-reliability')
+  mkdirSync(evidence, { recursive: true })
+  await showProject()
+  await tree.getByRole('textbox', { name: '搜索文件名或路径', exact: true }).fill('entry-500')
+  await expect(tree.getByRole('button', { name: 'many/entry-500.txt', exact: true })).toBeVisible()
+  await win.screenshot({ path: join(evidence, 'project-file-reference-search.png') })
+
+  writeFileSync(join(root, 'README.md'), '# Latest send snapshot\n\nUPDATED BEFORE SEND\n')
+  await win.locator('main textarea').fill('[plain] Read the referenced file')
+  await win.getByTestId('project-composer').getByRole('button', { name: '发送', exact: true }).click()
+  await expect.poll(async () => (await api('threads.list')).length, { timeout: 30000 }).toBe(1)
+  const sentThread = (await api('threads.list'))[0]
+  await expect
+    .poll(async () => (await api('threads.state', sentThread.id)).messages.some((message) => message.role === 'user' && message.attachments?.length), {
+      timeout: 30000,
+    })
+    .toBe(true)
+  const sentMessage = (await api('threads.state', sentThread.id)).messages.find((message) => message.role === 'user')
+  const attachment = sentMessage.attachments[0]
+  assert.equal(attachment.source.path, 'README.md')
+  assert.ok((await api('files.markdown', attachment.id)).includes('UPDATED BEFORE SEND'))
+  writeFileSync(join(root, 'README.md'), '# Replaced after send\n')
+  assert.ok((await api('files.markdown', attachment.id)).includes('UPDATED BEFORE SEND'), 'sent snapshot does not change with original file')
   console.log('PASS project files tree, preview, refresh, stale-content clearing, roots, shell stubs and traversal/symlink refusal')
 } catch (error) {
   console.error(`FAIL project-files (profile: ${profile})`, error)
   process.exitCode = 1
 } finally {
   await app?.close()
+  await new Promise((resolve) => mock.server.close(resolve))
 }

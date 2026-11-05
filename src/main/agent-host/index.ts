@@ -31,6 +31,7 @@ const rpc: Rpc = new Rpc(
   {
     'run.start': (req: RunRequest) => runner.run(req),
     'run.abort': ({ threadId }: { threadId: string }) => runner.abort(threadId),
+    'approvals.recover': () => runner.pendingApprovals(),
     'thread.state': ({ threadId }: { threadId: string }) => runner.state(threadId),
     'thread.forkPoint': ({ threadId, messageId }: { threadId: string; messageId: string }) => runner.forkPoint(threadId, messageId),
     'thread.delete': ({ threadId }: { threadId: string }) => runner.deleteThread(threadId),

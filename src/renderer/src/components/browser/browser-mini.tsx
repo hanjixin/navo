@@ -27,13 +27,14 @@ function readRect(): Rect {
  * Drag the header to move it; double-click (or the expand button) opens the panel.
  */
 export function BrowserMini() {
-  const { state, preview, external, setOpen, setMini } = useBrowser()
+  const { state, preview, external, externalView, showBuiltin, setOpen, setMini } = useBrowser()
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<Rect>(readRect)
   const drag = useRef<{ x: number; y: number; start: Rect; moved: boolean; resize: boolean } | null>(null)
   const tab = state.tabs.find((t) => t.active)
-  const frame = external?.image ?? (preview && preview.tabId === tab?.id ? preview.image : null)
-  const running = state.agentControlled || !!external
+  const showingExternal = !showBuiltin && !!externalView?.tabId
+  const frame = showingExternal ? external?.image : preview && preview.tabId === tab?.id ? preview.image : null
+  const running = showingExternal ? externalView?.status === 'live' : state.agentControlled
 
   useEffect(() => {
     void call('browser.setPreview', true)
@@ -117,7 +118,7 @@ export function BrowserMini() {
         )}
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {running ? t('Agent 正在操作 · ') : ''}
-          {external ? t('你的浏览器 · {{v0}}', { v0: external.title || external.url }) : tab?.title || tab?.url || t('浏览器')}
+          {showingExternal ? t('你的浏览器 · {{v0}}', { v0: externalView?.title || externalView?.url || '' }) : tab?.title || tab?.url || t('浏览器')}
         </span>
         <button
           className="interactive rounded-sm p-0.5 text-subtle-foreground hover:bg-accent hover:text-foreground"
@@ -142,7 +143,10 @@ export function BrowserMini() {
         ) : (
           <div className="flex size-full items-center justify-center text-xs text-muted-foreground">{t('还没有打开的页面')}</div>
         )}
-        {tab?.loading ? <div className="absolute inset-x-0 top-0 h-0.5 animate-progress bg-brand/70" /> : null}
+        {showingExternal && externalView?.status !== 'live' ? (
+          <div className="absolute inset-x-0 top-0 bg-card/90 p-2 text-xs text-muted-foreground">{t('画面已暂停，不会自动重放操作')}</div>
+        ) : null}
+        {!showingExternal && tab?.loading ? <div className="absolute inset-x-0 top-0 h-0.5 animate-progress bg-brand/70" /> : null}
         <span
           data-resize
           aria-hidden

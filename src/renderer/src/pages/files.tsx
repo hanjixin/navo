@@ -16,6 +16,7 @@ import { useAsync } from '@/hooks/use-async'
 import { call } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { useDrafts } from '@/stores/drafts'
 import { threadPath } from '@/lib/routes'
 import { describeFile, formatFileSize, useFiles } from '@/stores/files'
 import { useSettings } from '@/stores/settings'
@@ -158,7 +159,7 @@ export function FilesPage() {
   const startChatWith = async (f: FileRecord) => {
     const chat = useChat.getState()
     const thread = await chat.newThread()
-    chat.setDraftFiles([f.id])
+    await useDrafts.getState().addFiles({ surface: 'main', threadId: thread.id }, [f.id])
     navigate(threadPath(thread))
   }
 

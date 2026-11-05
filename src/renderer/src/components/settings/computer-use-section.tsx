@@ -81,6 +81,7 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
   const [error, setError] = useState('')
   const [refreshError, setRefreshError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [waitingUntil, setWaitingUntil] = useState(0)
   useEffect(() => {
     let alive = true
     void call('computerUse.status')
@@ -108,6 +109,7 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
         if (alive) {
           setStatus(s)
           setRefreshError('')
+          if (s.desktop.accessibility && s.desktop.screenRecording) setWaitingUntil(0)
         }
       } catch (err) {
         if (alive) setRefreshError(errorMessage(err))
@@ -116,12 +118,21 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
       }
     }
     void refresh()
-    const timer = setInterval(() => void refresh(), 2000)
+    const focus = () => void refresh()
+    window.addEventListener('focus', focus)
+    const timer =
+      waitingUntil > Date.now()
+        ? setInterval(() => {
+            if (Date.now() >= waitingUntil) setWaitingUntil(0)
+            else void refresh()
+          }, 2000)
+        : undefined
     return () => {
       alive = false
-      clearInterval(timer)
+      window.removeEventListener('focus', focus)
+      if (timer) clearInterval(timer)
     }
-  }, [cfg.desktop])
+  }, [cfg.desktop, waitingUntil])
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true)
     setError('')
@@ -180,10 +191,24 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
         </Row>
         {cfg.desktop && d?.supported ? (
           <>
+            <Row title={t('权限状态')} description={d.checking ? t('检查中…') : !d.checkedAt ? t('尚未检测') : t('已检测')}>
+              <Button
+                size="sm"
+                disabled={busy || d.checking}
+                onClick={() =>
+                  void run(async () => {
+                    setStatus(await call('computerUse.refreshDesktop'))
+                    setRefreshError('')
+                  })
+                }
+              >
+                {t('检查状态')}
+              </Button>
+            </Row>
             {windows ? (
               <Row title={t('Windows 桌面访问')} description={t('无需额外的系统权限开关。支持普通权限应用；锁屏、UAC 提示和管理员应用不可操作。')}>
                 <span className={cn('text-xs', d.accessibility && d.screenRecording ? 'text-success' : 'text-muted-foreground')}>
-                  {d.accessibility && d.screenRecording ? t('可用') : t('当前桌面不可用')}
+                  {d.checking ? t('检查中…') : !d.checkedAt ? t('尚未检测') : d.accessibility && d.screenRecording ? t('可用') : t('当前桌面不可用')}
                 </span>
               </Row>
             ) : (
@@ -192,7 +217,16 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
                   {d.accessibility ? (
                     <span className="text-xs text-success">{t('已授权')}</span>
                   ) : (
-                    <Button size="sm" disabled={busy} onClick={() => void run(() => call('computerUse.openPermission', 'accessibility'))}>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          await call('computerUse.openPermission', 'accessibility')
+                          setWaitingUntil(Date.now() + 30000)
+                        })
+                      }
+                    >
                       {t('前往授权')}
                     </Button>
                   )}
@@ -201,7 +235,16 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
                   {d.screenRecording ? (
                     <span className="text-xs text-success">{t('已授权')}</span>
                   ) : (
-                    <Button size="sm" disabled={busy} onClick={() => void run(() => call('computerUse.openPermission', 'screenRecording'))}>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          await call('computerUse.openPermission', 'screenRecording')
+                          setWaitingUntil(Date.now() + 30000)
+                        })
+                      }
+                    >
                       {t('前往授权')}
                     </Button>
                   )}
@@ -211,11 +254,15 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
             <Row
               title={t('桌面控制服务')}
               description={
-                d.helper === 'ok'
-                  ? t('运行正常')
-                  : d.helper === 'missing'
-                    ? t('缺少桌面控制组件，请重新安装 Navo。')
-                    : t('桌面控制服务异常，请尝试重新启动 Navo。')
+                d.checking
+                  ? t('检查中…')
+                  : !d.checkedAt
+                    ? t('尚未检测')
+                    : d.helper === 'ok'
+                      ? t('运行正常')
+                      : d.helper === 'missing'
+                        ? t('缺少桌面控制组件，请重新安装 Navo。')
+                        : t('桌面控制服务异常，请尝试重新启动 Navo。')
               }
             >
               <Button

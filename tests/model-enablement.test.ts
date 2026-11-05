@@ -167,3 +167,27 @@ it('rejects editing into another model in the same provider without modifying ei
   expect(independent.id).not.toBe(a.id)
   expect(models.list()).toHaveLength(3)
 })
+
+it('batch enablement is atomic and missing ids leave all models unchanged', () => {
+  const a = create('A'),
+    b = create('B')
+  expect(() => models.setEnabledMany([a.id, 'missing'], false)).toThrow()
+  expect(models.get(a.id)?.enabled).toBe(true)
+  models.setEnabledMany([a.id, b.id], false)
+  expect(models.default()).toBeNull()
+  models.setEnabledMany([a.id, b.id], true)
+  expect(models.list().filter((model) => model.isDefault)).toHaveLength(1)
+})
+it('lists explicit and default-model task dependencies without changing them', () => {
+  const a = create('A'),
+    b = create('B')
+  state.db.prepare('INSERT INTO tasks(id,name,prompt,model_id,created_at) VALUES(?,?,?,?,?)').run('explicit', 'Explicit', 'do', a.id, 1)
+  state.db.prepare('INSERT INTO tasks(id,name,prompt,model_id,created_at) VALUES(?,?,?,?,?)').run('default', 'Default', 'do', null, 1)
+  expect(
+    models
+      .affectedTasks([a.id])
+      .map((task) => task.id)
+      .sort(),
+  ).toEqual(['default', 'explicit'])
+  expect(models.affectedTasks([b.id])).toEqual([])
+})

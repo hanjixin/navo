@@ -33,6 +33,7 @@ import { ProjectDetailPage } from '@/pages/project-detail'
 import { ArtifactsPage } from '@/pages/artifacts'
 import { wireProjectEvents } from '@/stores/projects'
 import { wireArtifactEvents } from '@/stores/artifacts'
+import { wireDraftEvents } from '@/stores/drafts'
 
 /** this renderer is the quick window (global shortcut), not the main window */
 const isQuick = window.location.hash.startsWith('#/quick')
@@ -45,6 +46,7 @@ export function App() {
     void load()
     wireModelEvents()
     wireChatEvents()
+    wireDraftEvents()
     // the quick window only needs the conversation; the app's toasts belong to the main window
     if (isQuick) return
     wireBrowserEvents()

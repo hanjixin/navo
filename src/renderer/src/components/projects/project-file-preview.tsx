@@ -1,6 +1,7 @@
 import { ArrowLeft, Copy, ChevronLeft, ChevronRight, FileText, FolderOpen, RotateCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { mainDraftScope, useDrafts } from '@/stores/drafts'
+import { useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import type { OutputPreview, ProjectFileEntry } from '@shared/types'
 import { PreviewBody } from '@/components/outputs/outputs-dialog'
@@ -19,6 +20,7 @@ export function ProjectFilePreview({ projectId, path }: { projectId: string; pat
 }
 
 function FilePreview({ projectId, path }: { projectId: string; path: string }) {
+  const { threadId } = useParams()
   const [preview, setPreview] = useState<OutputPreview>()
   const [directoryRoot, setDirectoryRoot] = useState<string>()
   const [siblings, setSiblings] = useState<ProjectFileEntry[]>([])
@@ -92,6 +94,23 @@ function FilePreview({ projectId, path }: { projectId: string; path: string }) {
           <Button variant="ghost" size="sm" className="mr-auto" onClick={() => navigate(null)}>
             <ArrowLeft />
             {t('返回文件列表')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!directoryRoot || !!error}
+            onClick={() =>
+              directoryRoot &&
+              void useDrafts
+                .getState()
+                .addProjectFile(mainDraftScope(projectId, threadId), { projectId, root: directoryRoot, path, name: parts.at(-1) })
+                .then(
+                  () => toast.success(t('已添加到对话')),
+                  (error) => toast.error(t('操作失败'), { description: errorMessage(error) }),
+                )
+            }
+          >
+            {t('添加到对话')}
           </Button>
           <Button
             variant="ghost"

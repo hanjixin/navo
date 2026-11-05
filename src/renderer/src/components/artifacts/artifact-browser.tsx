@@ -1,3 +1,4 @@
+import type { OutputKind } from '@shared/types'
 import { FileBox, MessageSquare, PackageOpen, RotateCw, Search } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
@@ -16,14 +17,14 @@ const scrollPositions = new Map<string, number>()
 
 /** Shared list for a project, a conversation or the global artifact library. Preview lives in the app's right panel. */
 export function ArtifactBrowser({ projectId, threadId }: ArtifactScope) {
-  const scope = useMemo(() => ({ projectId, threadId }), [projectId, threadId])
-  const key = artifactScopeKey(scope)
-  const state = useArtifacts((s) => s.queries[key])
-  const { load, watch } = useArtifacts()
   const [params, setParams] = useSearchParams()
   const { pathname } = useLocation()
   const query = params.get('q') ?? ''
   const kind = params.get('kind') ?? 'all'
+  const scope = useMemo(() => ({ projectId, threadId, q: query, kind: kind === 'all' ? undefined : (kind as OutputKind) }), [projectId, threadId, query, kind])
+  const key = artifactScopeKey(scope)
+  const state = useArtifacts((s) => s.queries[key])
+  const { load, watch } = useArtifacts()
   const selected = params.get('artifact')
   const listRef = useRef<HTMLDivElement>(null)
   const scrollKey = `${pathname}:${key}:${query}:${kind}`
@@ -50,12 +51,7 @@ export function ArtifactBrowser({ projectId, threadId }: ArtifactScope) {
       { replace: true },
     )
   }
-  const items = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase()
-    return (state?.items ?? []).filter(
-      (a) => (kind === 'all' || a.kind === kind) && (!q || `${a.name} ${a.threadTitle} ${a.projectName ?? ''}`.toLocaleLowerCase().includes(q)),
-    )
-  }, [state?.items, kind, query])
+  const items = state?.items ?? []
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4" data-testid="artifact-browser">
@@ -145,6 +141,11 @@ export function ArtifactBrowser({ projectId, threadId }: ArtifactScope) {
               </Link>
             </div>
           ))}
+          {state?.nextCursor ? (
+            <Button className="m-3" loading={state.loading} onClick={() => void load(scope, true)}>
+              {t('加载更多')}
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

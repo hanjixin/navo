@@ -5,7 +5,7 @@ import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import type Database from 'better-sqlite3'
 import { CompositeBackend, StateBackend, createDeepAgent } from 'deepagents'
 import { ClearToolUsesEdit, contextEditingMiddleware, createMiddleware } from 'langchain'
-import type { ChatEvent, ThreadState, Todo, UIMessage } from '@shared/types'
+import type { PendingInterrupt, ChatEvent, ThreadState, Todo, UIMessage } from '@shared/types'
 import { reasoningOf, textOf, toPendingInterrupt, toTodos, toUIMessage } from '../agent/messages'
 import { TraceHandler } from '../dev/trace'
 import { buildChatModel } from '../models/factory'
@@ -283,6 +283,18 @@ export class Runner {
       traceUrl = await tracing?.finish().catch(() => undefined)
     }
     return { finalText, interrupted, error, aborted: controller.signal.aborted, traceUrl }
+  }
+
+  async pendingApprovals(): Promise<{ threadId: string; interrupt: PendingInterrupt }[]> {
+    const rows = this.deps.db.prepare('SELECT id FROM threads').all() as { id: string }[]
+    const pending: { threadId: string; interrupt: PendingInterrupt }[] = []
+    for (const { id } of rows) {
+      const tuple = await this.saver.getTuple({ configurable: { thread_id: id } })
+      const write = tuple?.pendingWrites?.find(([, channel]) => channel === '__interrupt__')
+      const interrupt = write ? toPendingInterrupt(write[2]) : null
+      if (interrupt) pending.push({ threadId: id, interrupt })
+    }
+    return pending
   }
 
   async state(threadId: string): Promise<Omit<ThreadState, 'running'>> {

@@ -4,7 +4,7 @@
 import { _electron as electron, chromium } from 'playwright'
 import { mainWindow } from './helpers.mjs'
 import { createServer } from 'node:http'
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -110,8 +110,17 @@ try {
   )
   // the browser panel shows the agent's tab live
   const live = await page.waitForSelector('[data-testid="external-view"] img', { timeout: 10000 }).catch(() => null)
+  if (!live) console.log('VIEW DEBUG', await api('computerUse.viewState'), await page.textContent('[data-testid="external-toolbar"]'))
   ok(((await live?.getAttribute('src')) ?? '').startsWith('data:image/jpeg'), "Navo's browser panel shows the user's tab live")
-  ok((await page.textContent('[data-testid="external-view"]'))?.includes('Form Test'), 'with the title of that tab')
+  ok((await page.textContent('[data-testid="external-toolbar"]'))?.includes('Form Test'), 'with the title of that tab')
+
+  ok((await page.locator('[aria-label="输入网址或搜索"]').count()) === 0, 'external toolbar has no editable built-in address')
+  ok((await page.locator('[aria-label="刷新"]').count()) === 0, 'external toolbar cannot reload the built-in browser')
+  const builtinBeforeViewSwitch = await api('browser.state')
+  await page.getByRole('button', { name: '查看内置浏览器', exact: true }).click()
+  await page.getByRole('button', { name: '查看外部浏览器', exact: true }).click()
+  ok(JSON.stringify((await api('browser.state')).tabs) === JSON.stringify(builtinBeforeViewSwitch.tabs), 'view selection does not mutate built-in tabs')
+  await page.getByRole('button', { name: '重试画面', exact: true }).click()
 
   // a tab the user opened is out of reach
   const userTab = await browser.newPage()
@@ -168,6 +177,12 @@ try {
     'the extension actually detaches Chrome debugger after disconnection',
   )
   ok(!controlledPage.isClosed(), 'the controlled Chromium tab remains open during bridge outage')
+  ok((await api('computerUse.viewState')).status === 'disconnected', 'view reports disconnection without requiring an agent action')
+  ok((await page.textContent('[data-testid="external-view"]'))?.includes('画面已暂停'), 'last frame is visibly paused')
+  const evidence = join(process.cwd(), '.superpowers/sdd/2026-11-05-reliability')
+  mkdirSync(evidence, { recursive: true })
+  await page.screenshot({ path: join(evidence, 'external-browser-disconnected.png') })
+
   await api('settings.set', { computerUse: { ...settingsBeforeDisconnect.computerUse, myBrowser: true } })
   ok(await waitFor(async () => (await api('computerUse.status')).browser.paired), 'the same extension reconnects without another pairing prompt')
   const reconnectedSnapshot = await tool('browser_snapshot', {})
@@ -181,13 +196,8 @@ try {
 
   const back = await tool('browser_switch', { target: 'builtin' })
   ok(back.includes('内置浏览器'), 'switched back to the built-in browser')
-  ok(
-    await page
-      .waitForSelector('[data-testid="external-view"]', { state: 'detached', timeout: 5000 })
-      .then(() => true)
-      .catch(() => false),
-    'the live picture goes away when the agent is back in the built-in browser',
-  )
+  ok((await api('computerUse.viewState')).status === 'released', 'view marks the old target released')
+  await page.getByRole('button', { name: '查看内置浏览器', exact: true }).click()
   const builtinNav = await tool('browser_navigate', { url: site })
   ok(/textbox "Name"/.test(builtinNav), 'built-in browser still works')
 

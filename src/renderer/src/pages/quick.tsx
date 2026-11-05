@@ -1,5 +1,5 @@
 import { Camera, ClipboardList, Maximize2, Plus, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Decision } from '@shared/types'
 import { Logo } from '@/components/brand/logo'
@@ -11,6 +11,8 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { call, on } from '@/lib/ipc'
 import { errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { useDraft } from '@/hooks/use-draft'
+import { useDrafts, submitDraft } from '@/stores/drafts'
 import { useModels } from '@/stores/models'
 import { t } from '@shared/i18n'
 
@@ -22,12 +24,21 @@ export function QuickPage() {
   const activeId = useChat((s) => s.activeId)
   const view = useChat((s) => (s.activeId ? s.views[s.activeId] : undefined))
   const thread = useChat((s) => s.threads?.find((t) => t.id === s.activeId))
-  const draftFiles = useChat((s) => s.draftFiles)
+  const draft = useDraft({ surface: 'quick', ...(activeId ? { threadId: activeId } : {}) })
   const loadModels = useModels((s) => s.load)
   const noModels = useModels((s) => s.activeModels?.length === 0)
-  const [draftModelId, setDraftModelId] = useState<string | null>(null)
+  const draftModelId = draft.data?.modelId ?? null
   const [clip, setClip] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
+
+  const newChat = useCallback(() => {
+    useChat.setState({ activeId: null })
+    void useDrafts
+      .getState()
+      .flush(draft.scope)
+      .catch(() => undefined)
+    setClip(null)
+  }, [draft.scope])
 
   useEffect(() => {
     document.documentElement.classList.add('quick')
@@ -36,7 +47,10 @@ export function QuickPage() {
     const offs = [
       on('quick.opened', ({ clipboard, fileIds }) => {
         setClip(clipboard)
-        if (fileIds.length) useChat.getState().setDraftFiles([...useChat.getState().draftFiles, ...fileIds])
+        if (fileIds.length) {
+          const threadId = useChat.getState().activeId
+          void useDrafts.getState().addFiles({ surface: 'quick', ...(threadId ? { threadId } : {}) }, fileIds)
+        }
         setTimeout(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus(), 30)
       }),
     ]
@@ -49,7 +63,7 @@ export function QuickPage() {
       offs.forEach((off) => off())
       window.removeEventListener('keydown', onKey)
     }
-  }, [loadModels])
+  }, [loadModels, newChat])
 
   // follow the answer as it streams
   const lastLength = view?.messages.at(-1)?.content.length
@@ -57,18 +71,12 @@ export function QuickPage() {
     bottom.current?.scrollIntoView({ block: 'end' })
   }, [view?.messages.length, lastLength, view?.interrupt])
 
-  const newChat = () => {
-    useChat.setState({ activeId: null })
-    useChat.getState().setDraftFiles([])
-    setClip(null)
-  }
-
   /** the copied text goes along as a text attachment (parsed like any file) */
   const attachClipboard = async () => {
     if (!clip) return
     try {
       const rec = await call('files.addData', t('剪贴板.txt'), new TextEncoder().encode(clip))
-      useChat.getState().setDraftFiles([...draftFiles, rec.id])
+      await useDrafts.getState().addFiles(draft.scope, [rec.id])
       setClip(null)
     } catch (e) {
       toast.error(t('无法添加剪贴板内容'), { description: errorMessage(e) })
@@ -78,7 +86,11 @@ export function QuickPage() {
   const decide = async (decisions: Decision[], alwaysAllow?: string[]) => {
     if (!activeId) return
     useChat.setState((s) => ({ views: { ...s.views, [activeId]: { ...s.views[activeId], interrupt: null, running: true } } }))
-    await call('chat.resume', activeId, decisions, alwaysAllow).catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
+    await call('chat.resume', activeId, decisions, alwaysAllow, view?.interrupt?.id).catch(async (e) => {
+      useChat.setState((s) => ({ views: { ...s.views, [activeId]: { ...s.views[activeId], running: false, interrupt: view?.interrupt ?? null } } }))
+      await useChat.getState().loadThread(activeId)
+      toast.error(t('提交失败'), { description: errorMessage(e) })
+    })
   }
 
   const hasMessages = !!view?.messages.length
@@ -100,7 +112,17 @@ export function QuickPage() {
             </Button>
           </Tooltip>
           <Tooltip content={t('在 Navo 中继续')}>
-            <Button variant="ghost" size="icon-sm" aria-label={t('在 Navo 中继续')} onClick={() => void call('quick.openInMain', activeId)}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('在 Navo 中继续')}
+              onClick={() =>
+                void (async () => {
+                  await useDrafts.getState().flush(draft.scope)
+                  await call('quick.openInMain', activeId, draft.scope)
+                })().catch((e) => toast.error(t('操作失败'), { description: errorMessage(e) }))
+              }
+            >
               <Maximize2 />
             </Button>
           </Tooltip>
@@ -137,24 +159,20 @@ export function QuickPage() {
         ) : null}
         {view?.interrupt ? <InterruptCard interrupt={view.interrupt} onDecide={decide} /> : null}
         <Composer
-          onSend={(text, fileIds) => {
-            void (async () => {
-              const id = activeId ?? (await useChat.getState().newThread(draftModelId)).id
-              await useChat.getState().sendTo(id, text, [], fileIds)
-            })().catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
+          draftScope={draft.scope}
+          value={draft.data?.text ?? ''}
+          onValueChange={(text) => draft.patch({ text })}
+          onSend={async () => {
+            const receipt = await submitDraft(draft.scope, { threadId: activeId ?? undefined, modelId: draftModelId ?? thread?.modelId })
+            await useChat.getState().loadThreads()
+            useChat.getState().select(receipt.threadId)
           }}
           onStop={() => activeId && void call('chat.stop', activeId)}
           running={!!view?.running}
-          modelId={thread ? thread.modelId : draftModelId}
-          onModelChange={(id) => {
-            if (activeId)
-              void call('threads.setModel', activeId, id)
-                .then(() => useChat.getState().loadThreads())
-                .catch((e) => toast.error(t('操作失败'), { description: errorMessage(e) }))
-            else setDraftModelId(id)
-          }}
+          modelId={draftModelId ?? thread?.modelId ?? null}
+          onModelChange={(id) => draft.patch({ modelId: id })}
           showModelManagementLink={false}
-          disabled={noModels || !!view?.interrupt}
+          disabled={draft.loading || noModels || !!view?.interrupt}
           disabledReason={noModels ? t('请先在 Navo 主窗口的模型页面启用模型') : t('请先处理上方的确认')}
         />
       </div>

@@ -1,5 +1,21 @@
-import { CheckCircle2, Coins, Cpu, Download, ExternalLink, KeyRound, MoreHorizontal, Pencil, Plus, Star, Trash2, Zap } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  Coins,
+  Cpu,
+  Download,
+  ExternalLink,
+  KeyRound,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+  Zap,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import type { ModelConfig, ModelInput, Provider, ProviderInput, ProviderType } from '@shared/types'
 import { CURRENCY_SYMBOL } from '@shared/pricing'
@@ -189,6 +205,7 @@ function ModelDialog({ provider, model, onClose, onSaved }: { provider: Provider
   const suggestions = presetFor(provider)?.models ?? []
   const [fetching, setFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [affected, setAffected] = useState<{ id: string; name: string }[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [visionTouched, setVisionTouched] = useState(!!model)
   const set = <K extends keyof ModelInput>(k: K, v: ModelInput[K]) =>
@@ -221,6 +238,13 @@ function ModelDialog({ provider, model, onClose, onSaved }: { provider: Provider
     if (!form.model.trim()) return setError(t('请填写模型 ID'))
     setSaving(true)
     try {
+      if (model?.enabled && form.enabled === false && affected === null) {
+        const tasks = await call('models.affectedTasks', [model.id])
+        if (tasks.length) {
+          setAffected(tasks)
+          return
+        }
+      }
       await call('models.save', {
         ...form,
         isDefault: form.enabled === false ? false : form.isDefault,
@@ -258,6 +282,17 @@ function ModelDialog({ provider, model, onClose, onSaved }: { provider: Provider
         }
       >
         <div className="grid gap-4">
+          {affected?.length && form.enabled === false ? (
+            <div role="alert" className="rounded border border-border p-3 text-sm">
+              <p>{t('停用模型会影响以下任务')}</p>
+              <p className="mt-1 text-muted-foreground">{t('任务仍保留原模型，请在任务设置中选择已启用模型。')}</p>
+              {affected.map((task) => (
+                <Link key={task.id} className="mt-2 block text-brand" to="/tasks" onClick={onClose}>
+                  {task.name} · {t('查看任务')}
+                </Link>
+              ))}
+            </div>
+          ) : null}
           <Field
             label={t('模型 ID')}
             error={error ?? undefined}
@@ -361,7 +396,21 @@ function ModelDialog({ provider, model, onClose, onSaved }: { provider: Provider
   )
 }
 
-function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; reload: () => void }) {
+function ModelRow({
+  m,
+  onEdit,
+  reload,
+  selected,
+  onSelect,
+  onToggle,
+}: {
+  m: ModelConfig
+  onEdit: () => void
+  reload: () => void
+  selected: boolean
+  onSelect: () => void
+  onToggle: (ids: string[], enabled: boolean) => Promise<void>
+}) {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null)
   const [pricing, setPricing] = useState(false)
@@ -369,7 +418,7 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
   const toggle = async (enabled: boolean) => {
     setUpdating(true)
     try {
-      await call('models.setEnabled', m.id, enabled)
+      await onToggle([m.id], enabled)
       reload()
     } catch (e) {
       toast.error(t('保存失败'), { description: errorMessage(e) })
@@ -393,6 +442,7 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
 
   return (
     <div className="group flex min-h-11 flex-wrap items-center gap-3 px-4 py-2" data-testid="model-row" data-model-id={m.model}>
+      <input type="checkbox" checked={selected} onChange={onSelect} aria-label={t('选择模型 {{v0}}', { v0: m.displayName })} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{m.displayName}</span>
@@ -475,6 +525,40 @@ function ModelRow({ m, onEdit, reload }: { m: ModelConfig; onEdit: () => void; r
 
 export function ModelsPage() {
   const { providers, models, error, load } = useModels()
+  const [query, setQuery] = useState(() => localStorage.getItem('models.search') ?? '')
+  const [filter, setFilter] = useState(() => localStorage.getItem('models.filter') ?? 'all')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [impact, setImpact] = useState<{ ids: string[]; tasks: { id: string; name: string }[] } | null>(null)
+  useEffect(() => {
+    localStorage.setItem('models.search', query)
+    localStorage.setItem('models.filter', filter)
+    setSelected(new Set())
+  }, [query, filter])
+  const applyEnabled = async (ids: string[], enabled: boolean) => {
+    setBusy(true)
+    try {
+      await call('models.setEnabledMany', ids, enabled)
+      setSelected(new Set())
+      setImpact(null)
+      await load()
+    } catch (error) {
+      toast.error(t('保存失败'), { description: errorMessage(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const toggleEnabled = async (ids: string[], enabled: boolean) => {
+    if (!enabled) {
+      const tasks = await call('models.affectedTasks', ids)
+      if (tasks.length) {
+        setImpact({ ids, tasks })
+        return
+      }
+    }
+    await applyEnabled(ids, enabled)
+  }
   const [providerDialog, setProviderDialog] = useState<Provider | 'new' | null>(null)
   const [modelDialog, setModelDialog] = useState<{ provider: Provider; model: ModelConfig | null } | null>(null)
   const [importing, setImporting] = useState<Set<string>>(new Set())
@@ -549,14 +633,61 @@ export function ModelsPage() {
         </Card>
       ) : (
         <div className="grid gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="min-w-48 flex-1"
+              aria-label={t('搜索模型或厂商')}
+              placeholder={t('搜索模型或厂商')}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <Select
+              className="w-36"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: t('全部模型') },
+                { value: 'enabled', label: t('已启用') },
+                { value: 'disabled', label: t('已停用') },
+              ]}
+            />
+            <Button disabled={!selected.size || busy} onClick={() => void toggleEnabled([...selected], true)}>
+              {t('启用所选')}
+            </Button>
+            <Button disabled={!selected.size || busy} onClick={() => void toggleEnabled([...selected], false)}>
+              {t('停用所选')}
+            </Button>
+          </div>
           {providers.map((p) => {
-            const list = models.filter((m) => m.providerId === p.id)
+            const all = models.filter((m) => m.providerId === p.id)
+            const list = all
+              .filter(
+                (m) =>
+                  (filter === 'all' || m.enabled === (filter === 'enabled')) &&
+                  `${p.name} ${m.displayName} ${m.model}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+              )
+              .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.displayName.localeCompare(b.displayName))
+            if (!list.length && (query || filter !== 'all')) return null
             return (
               <Card key={p.id} className="animate-fade-in" data-testid="provider-card" data-provider-id={p.id}>
                 <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-base font-semibold">{p.name}</span>
+                      <button
+                        className="flex items-center gap-1 text-base font-semibold"
+                        aria-expanded={!collapsed.has(p.id)}
+                        onClick={() =>
+                          setCollapsed((current) => {
+                            const next = new Set(current)
+                            if (next.has(p.id)) next.delete(p.id)
+                            else next.add(p.id)
+                            return next
+                          })
+                        }
+                      >
+                        {collapsed.has(p.id) ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                        {p.name}
+                      </button>
                       <Badge>{typeLabel(p.type)}</Badge>
                       {p.hasKey ? (
                         <Badge variant="success">
@@ -570,7 +701,7 @@ export function ModelsPage() {
                     <div className="truncate font-mono text-xs text-muted-foreground">{p.baseURL || TYPES.find((t) => t.value === p.type)?.baseURL}</div>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {t('已启用 {{v0}} / {{v1}}', { v0: list.filter((model) => model.enabled).length, v1: list.length })}
+                    {t('已启用 {{v0}} / {{v1}}', { v0: all.filter((model) => model.enabled).length, v1: all.length })}
                   </span>
                   <Button
                     variant="ghost"
@@ -610,10 +741,25 @@ export function ModelsPage() {
                     {importErrors[p.id]} {t('可重试拉取，或手动添加模型。')}
                   </div>
                 ) : null}
-                {list.length ? (
+                {collapsed.has(p.id) ? null : list.length ? (
                   <div className="divide-y divide-border">
                     {list.map((m) => (
-                      <ModelRow key={m.id} m={m} reload={load} onEdit={() => setModelDialog({ provider: p, model: m })} />
+                      <ModelRow
+                        key={m.id}
+                        m={m}
+                        reload={load}
+                        selected={selected.has(m.id)}
+                        onSelect={() =>
+                          setSelected((current) => {
+                            const next = new Set(current)
+                            if (next.has(m.id)) next.delete(m.id)
+                            else next.add(m.id)
+                            return next
+                          })
+                        }
+                        onToggle={toggleEnabled}
+                        onEdit={() => setModelDialog({ provider: p, model: m })}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -629,6 +775,30 @@ export function ModelsPage() {
           })}
         </div>
       )}
+      {impact ? (
+        <Dialog open onOpenChange={(open) => !open && setImpact(null)}>
+          <DialogContent
+            title={t('停用模型会影响以下任务')}
+            footer={
+              <>
+                <Button onClick={() => setImpact(null)}>{t('取消')}</Button>
+                <Button loading={busy} onClick={() => void applyEnabled(impact.ids, false)}>
+                  {t('停用所选')}
+                </Button>
+              </>
+            }
+          >
+            <p className="mb-3 text-sm text-muted-foreground">{t('任务仍保留原模型，请在任务设置中选择已启用模型。')}</p>
+            <div className="grid gap-2">
+              {impact.tasks.map((task) => (
+                <Link key={task.id} to="/tasks" className="text-brand" onClick={() => setImpact(null)}>
+                  {task.name} · {t('查看任务')}
+                </Link>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {providerDialog ? (
         <ProviderDialog
           provider={providerDialog}

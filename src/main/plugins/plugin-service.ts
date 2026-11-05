@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { basename, join, resolve, sep } from 'node:path'
 import { realpathSync } from 'node:fs'
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 import type { PluginInfo } from '@shared/types'
 import { db } from '../core/db'
 import { log } from '../core/logger'
@@ -13,11 +14,12 @@ import { EXAMPLE_PLUGINS } from './examples'
 import { matchPattern, validateManifest } from './manifest'
 import { t } from '@shared/i18n'
 
-function wrap(p: PluginInfo, source: string): string {
+function wrap(p: PluginInfo, source: string, generation: string): string {
   return `(() => {
     const root = (window.__agentPlugins = window.__agentPlugins || {});
     const agentPlugin = {
       id: ${JSON.stringify(p.id)},
+      generation: ${JSON.stringify(generation)},
       actions: {},
       register(name, fn) { this.actions[name] = fn; },
       log(...args) { try { console.debug('__navo_plugin__' + JSON.stringify({ id: ${JSON.stringify(p.id)}, args: args.map(String) })); } catch {} },
@@ -42,10 +44,60 @@ function wrap(p: PluginInfo, source: string): string {
  */
 const FIRST_PLUGIN_WORLD = 1001
 
-class PluginService {
+interface PluginSnapshot {
+  plugin: PluginInfo
+  source: string
+  generation: string
+}
+
+export class PluginService {
   private cache: PluginInfo[] | null = null
   private worlds = new Map<string, number>()
   private logging = new WeakSet<WebContents>()
+  private epochs = new Map<string, number>()
+  private documents = new WeakMap<WebContents, { epoch: number }>()
+
+  private document(wc: WebContents): { epoch: number } {
+    let state = this.documents.get(wc)
+    if (!state) {
+      state = { epoch: 0 }
+      this.documents.set(wc, state)
+      const current = state
+      const bump = () => {
+        current.epoch++
+      }
+      wc.on('did-navigate', bump)
+      wc.on('did-navigate-in-page', bump)
+      wc.on('destroyed', bump)
+    }
+    return state
+  }
+
+  /** Fresh manifests, scripts, and the persisted switch invalidate captured tools without a new run. */
+  private snapshot(id: string): PluginSnapshot {
+    const cached = this.get(id)
+    const manifest = validateManifest(JSON.parse(this.readFile(id, 'manifest.json')))
+    if (manifest.id !== id) throw new Error(t('插件配置已改变，请重新运行任务'))
+    const enabled = this.enabledMap().get(id) ?? true
+    if (!enabled || cached.error) throw new Error(t('插件已停用或不可用'))
+    const plugin = { ...manifest, dir: cached.dir, enabled }
+    const source = this.readFile(id, manifest.contentScript)
+    const generation = createHash('sha256')
+      .update(JSON.stringify([manifest, source, this.epochs.get(id) ?? 0]))
+      .digest('hex')
+    return { plugin, source, generation }
+  }
+
+  private assertAction(id: string, action: string | null, wc: WebContents, expected?: string, page?: { url: string; epoch: number }): PluginSnapshot {
+    if (wc.isDestroyed()) throw new Error(t('插件页面已关闭'))
+    const snapshot = this.snapshot(id)
+    const url = wc.getURL()
+    if (expected && snapshot.generation !== expected) throw new Error(t('插件配置已改变，请重新运行任务'))
+    if (page && (page.url !== url || page.epoch !== this.document(wc).epoch)) throw new Error(t('插件页面已改变，请重新运行任务'))
+    if (!snapshot.plugin.matches.some((pattern) => matchPattern(pattern, url))) throw new Error(t('当前页面不匹配插件 {{v0}}', { v0: snapshot.plugin.name }))
+    if (action && !snapshot.plugin.actions.some((item) => item.name === action)) throw new Error(t('插件动作已移除，请重新运行任务'))
+    return snapshot
+  }
 
   private world(id: string): number {
     let w = this.worlds.get(id)
@@ -121,6 +173,7 @@ class PluginService {
   }
 
   setEnabled(id: string, enabled: boolean): void {
+    this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1)
     db()
       .prepare('INSERT INTO plugin_state(id, enabled) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled')
       .run(id, enabled ? 1 : 0)
@@ -214,32 +267,52 @@ class PluginService {
     }) as never)
   }
 
+  private async injectOne(snapshot: PluginSnapshot, wc: WebContents, page: { url: string; epoch: number }): Promise<void> {
+    this.assertAction(snapshot.plugin.id, null, wc, snapshot.generation, page)
+    this.watchLogs(wc)
+    await wc.executeJavaScriptInIsolatedWorld(this.world(snapshot.plugin.id), [{ code: wrap(snapshot.plugin, snapshot.source, snapshot.generation) }])
+    this.assertAction(snapshot.plugin.id, null, wc, snapshot.generation, page)
+  }
+
   async inject(wc: WebContents): Promise<void> {
-    const matching = this.matching(wc.getURL())
-    if (matching.length) this.watchLogs(wc)
+    if (wc.isDestroyed()) return
+    const page = { url: wc.getURL(), epoch: this.document(wc).epoch }
+    const matching = this.matching(page.url)
     for (const p of matching) {
       try {
-        const src = readFileSync(join(p.dir, p.contentScript), 'utf8')
-        await wc.executeJavaScriptInIsolatedWorld(this.world(p.id), [{ code: wrap(p, src) }])
-      } catch (err) {
-        log.warn(`[plugin:${p.id}] inject failed: ${(err as Error).message}`)
+        await this.injectOne(this.assertAction(p.id, null, wc, undefined, page), wc, page)
+      } catch {
+        // Do not log arbitrary plugin source or decrypted credentials through an exception.
+        log.warn(`[plugin:${p.id}] injection skipped or failed`)
       }
     }
   }
 
-  async runAction(id: string, action: string, args: Record<string, unknown>, wc = browser.active()): Promise<unknown> {
-    const p = this.get(id)
-    if (!p.matches.some((m) => matchPattern(m, wc.getURL()))) throw new Error(t('当前页面不匹配插件 {{v0}}', { v0: p.name }))
+  async runAction(
+    id: string,
+    action: string,
+    args: Record<string, unknown>,
+    wc = browser.active(),
+    expectedGeneration?: string,
+    expectedPage?: { url: string; epoch: number },
+  ): Promise<unknown> {
+    const page = expectedPage ?? { url: wc.getURL(), epoch: this.document(wc).epoch }
+    const snapshot = this.assertAction(id, action, wc, expectedGeneration, page)
     const world = this.world(id)
     const inWorld = (code: string) => wc.executeJavaScriptInIsolatedWorld(world, [{ code }], true)
-    const ready = await inWorld(`!!(window.__agentPlugins && window.__agentPlugins[${JSON.stringify(id)}])`)
-    if (!ready) await this.inject(wc)
+    const ready = await inWorld(`window.__agentPlugins?.[${JSON.stringify(id)}]?.generation === ${JSON.stringify(snapshot.generation)}`)
+    this.assertAction(id, action, wc, snapshot.generation, page)
+    if (!ready) {
+      await this.injectOne(snapshot, wc, page)
+      this.assertAction(id, action, wc, snapshot.generation, page)
+    }
+    // This is the dispatch boundary: disabling prevents future dispatches, not an action already running in the page.
     return inWorld(
       `(async () => {
         const p = window.__agentPlugins && window.__agentPlugins[${JSON.stringify(id)}];
-        if (!p) throw new Error('插件未加载');
+        if (!p || p.generation !== ${JSON.stringify(snapshot.generation)}) throw new Error('插件已改变或未加载');
         const fn = p.actions[${JSON.stringify(action)}];
-        if (!fn) throw new Error('动作未注册: ${action}');
+        if (!fn) throw new Error('动作未注册');
         return await fn(${JSON.stringify(args)});
       })()`,
     )
@@ -252,13 +325,22 @@ class PluginService {
   /** Tools for plugins that match the given tab, rebuilt every agent run. */
   tools(getTab: () => WebContents = () => browser.active()): StructuredToolInterface[] {
     const url = getTab().getURL()
-    return this.matching(url).flatMap((p) =>
-      p.actions.map((a) =>
+    return this.matching(url).flatMap((p) => {
+      let snapshot: PluginSnapshot
+      try {
+        snapshot = this.snapshot(p.id)
+      } catch {
+        return []
+      }
+      return snapshot.plugin.actions.map((a) =>
         tool(
           async (args: Record<string, unknown>) => {
             const wc = getTab()
+            const page = { url: wc.getURL(), epoch: this.document(wc).epoch }
+            this.assertAction(p.id, a.name, wc, snapshot.generation, page)
             await browser.setControlled(wc, true)
-            const res = await this.runAction(p.id, a.name, args ?? {}, wc)
+            this.assertAction(p.id, a.name, wc, snapshot.generation, page)
+            const res = await this.runAction(p.id, a.name, args ?? {}, wc, snapshot.generation, page)
             return typeof res === 'string' ? res : JSON.stringify(res ?? null, null, 2)
           },
           {
@@ -267,8 +349,8 @@ class PluginService {
             schema: a.parameters as Record<string, unknown>,
           },
         ),
-      ),
-    ) as StructuredToolInterface[]
+      )
+    }) as StructuredToolInterface[]
   }
 
   /** Short description for the system prompt so the model knows plugins exist for other sites too. */

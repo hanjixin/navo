@@ -29,6 +29,9 @@ import { EmptyState, ErrorState, Skeleton } from '@/components/ui/states'
 import { call, on } from '@/lib/ipc'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { useDraft } from '@/hooks/use-draft'
+import { DesktopConsentInline } from '@/components/chat/desktop-consent'
+import { mainDraftScope, submitDraft } from '@/stores/drafts'
 import { useModels } from '@/stores/models'
 import { threadsOpen, useLayout } from '@/stores/layout'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -147,7 +150,8 @@ export function ChatPage() {
   const stick = useRef(true)
   const view = activeId ? views[activeId] : undefined
   const thread = threads?.find((item) => item.id === activeId)
-  const [draftModelId, setDraftModelId] = useState<string | null>(null)
+  const draft = useDraft(mainDraftScope(projectId, activeId ?? undefined))
+  const draftModelId = draft.data?.modelId ?? null
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -189,12 +193,7 @@ export function ChatPage() {
   const elapsedLabel = `${Math.floor(elapsed / 60000)}:${String(Math.floor(elapsed / 1000) % 60).padStart(2, '0')}`
 
   const onModelChange = async (modelId: string) => {
-    if (!activeId) {
-      setDraftModelId(modelId)
-      return
-    }
-    await call('threads.setModel', activeId, modelId)
-    void loadThreads()
+    draft.patch({ modelId })
   }
 
   const decide = async (decisions: Decision[], alwaysAllow?: string[]) => {
@@ -206,7 +205,7 @@ export function ChatPage() {
       },
     }))
     try {
-      await call('chat.resume', activeId, decisions, alwaysAllow)
+      await call('chat.resume', activeId, decisions, alwaysAllow, view?.interrupt?.id)
     } catch (e) {
       useChat.setState((s) => ({
         views: { ...s.views, [activeId]: { ...s.views[activeId], running: false, runStartedAt: null, error: errorMessage(e) } },
@@ -354,15 +353,40 @@ export function ChatPage() {
         </div>
 
         <div className="mx-auto grid w-full max-w-3xl gap-2 px-6 pb-5">
+          <DesktopConsentInline />
+          {!view?.running && view?.recoverableMessageIds?.length ? (
+            <div role="status" className="rounded-lg border border-border p-3 text-sm">
+              <p>{t('上次消息已保存，但执行中断。确认后可继续。')}</p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  void call('chat.retrySubmission', activeId!, view.recoverableMessageIds![0]).catch((e) =>
+                    toast.error(t('提交失败'), { description: errorMessage(e) }),
+                  )
+                }
+              >
+                {t('继续已保存的消息')}
+              </Button>
+            </div>
+          ) : null}
           {view?.interrupt ? <InterruptCard interrupt={view.interrupt} onDecide={decide} /> : null}
           {view?.todos.length ? <TodoPanel todos={view.todos} /> : null}
           <Composer
-            onSend={(item, fileIds) => void send(item, [], fileIds)}
+            draftScope={draft.scope}
+            value={draft.data?.text ?? ''}
+            onValueChange={(text) => draft.patch({ text })}
+            onSend={async () => {
+              const receipt = await submitDraft(draft.scope, { threadId: activeId ?? undefined, projectId, modelId: draftModelId ?? thread?.modelId })
+              await loadThreads()
+              select(receipt.threadId)
+              if (!activeId) navigate(threadPath({ id: receipt.threadId, projectId: projectId ?? null }))
+            }}
             onStop={() => activeId && void call('chat.stop', activeId)}
             running={!!view?.running}
-            modelId={thread ? thread.modelId : draftModelId}
+            modelId={draftModelId ?? thread?.modelId ?? null}
             onModelChange={onModelChange}
-            disabled={noModels || !!view?.interrupt || !!routeError || (!!activeId && !thread)}
+            disabled={draft.loading || noModels || !!view?.interrupt || !!routeError || (!!activeId && !thread)}
             disabledReason={routeError ?? (noModels ? t('没有已启用的模型，请前往模型页面启用') : t('请先处理上方的确认'))}
           />
         </div>

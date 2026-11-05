@@ -20,6 +20,7 @@ export interface TargetDeps {
   linked(): boolean
   /** the conversation's page in the built-in browser */
   builtin(threadId: string): PageDriver
+  selected?(driver: ExternalPageDriver): void
 }
 
 /**
@@ -49,18 +50,22 @@ export class Targets {
   }
 
   /** Reacquire the remembered authorized tab without changing the user's choice. */
-  beginRun(threadId: string): void {
+  async beginRun(threadId: string): Promise<void> {
     if (!this.using.has(threadId)) return
     const previous = this.mine.get(threadId)
     if (!previous) return
+    const version = this.versions.get(threadId) ?? 0
     try {
+      await this.deps.tabs.list()
+      if ((this.versions.get(threadId) ?? 0) !== version) return
       this.assertAvailable(threadId, previous.tabId)
       const driver = this.deps.tabs.driver(previous.tabId)
       driver.assertActive()
       this.mine.set(threadId, driver)
       this.blocked.delete(threadId)
+      this.deps.selected?.(driver)
     } catch (error) {
-      this.blocked.set(threadId, error instanceof Error ? error : new Error(String(error)))
+      if ((this.versions.get(threadId) ?? 0) === version) this.blocked.set(threadId, error instanceof Error ? error : new Error(String(error)))
     }
   }
 
@@ -83,6 +88,8 @@ export class Targets {
     const blocked = this.blocked.get(threadId)
     if (blocked) throw blocked
     if (!this.deps.linked()) throw new NeedExtension()
+    await this.deps.tabs.list()
+    if ((this.versions.get(threadId) ?? 0) !== version) throw new Error('标签页选择已取消，请重新选择')
     let d = this.mine.get(threadId)
     if (!d || d.gone) {
       const previous = d
@@ -105,6 +112,7 @@ export class Targets {
       this.mine.set(threadId, d)
     }
     this.using.add(threadId)
+    this.deps.selected?.(d)
     return d
   }
 
@@ -133,6 +141,7 @@ export class Targets {
     if (prev && prev !== d) void prev.detach()
     this.mine.set(threadId, d)
     this.using.add(threadId)
+    this.deps.selected?.(d)
     return d
   }
 

@@ -1,6 +1,6 @@
 import { Notification } from 'electron'
 import cron, { type ScheduledTask } from 'node-cron'
-import type { MonitorConfig, Task, TaskRun, TaskRunStatus } from '@shared/types'
+import type { MonitorCheck, MonitorConfig, Task, TaskRun, TaskRunStatus } from '@shared/types'
 import { db, json } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
@@ -10,6 +10,7 @@ import { flows } from '../flows/flows'
 import { monitor } from '../monitor/monitor-service'
 import { connectors } from '../connectors/connector-service'
 import { t } from '@shared/i18n'
+import { resolveModel } from '../models/registry'
 
 interface TaskRow {
   id: string
@@ -34,6 +35,7 @@ interface RunRow {
   finished_at: number | null
   summary: string | null
   error: string | null
+  execution_id: string | null
 }
 
 const toRun = (r: RunRow): TaskRun => ({
@@ -45,22 +47,21 @@ const toRun = (r: RunRow): TaskRun => ({
   finishedAt: r.finished_at,
   summary: r.summary,
   error: r.error,
+  executionId: r.execution_id,
 })
 
 class TaskService {
   private jobs = new Map<string, ScheduledTask>()
+  private controllers = new Map<string, AbortController>()
+  private recovering = new Set<string>()
+  private flowRepairsPending = new Set<string>()
+  private unsubscribe?: () => void
 
   list(): Task[] {
     const rows = db().prepare('SELECT * FROM tasks ORDER BY created_at DESC').all() as TaskRow[]
     return rows.map((r) => {
-      let last = db().prepare('SELECT status, started_at FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1').get(r.id) as
+      const last = db().prepare('SELECT status, started_at FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1').get(r.id) as
         { status: TaskRunStatus; started_at: number } | undefined
-      if (r.kind === 'monitor') {
-        // a monitor's history is its checks
-        const c = db().prepare('SELECT COALESCE(last_at, at) AS at, error FROM monitor_checks WHERE task_id = ? ORDER BY at DESC LIMIT 1').get(r.id) as
-          { at: number; error: string | null } | undefined
-        last = c ? { status: c.error ? 'error' : 'success', started_at: c.at } : undefined
-      }
       return {
         id: r.id,
         name: r.name,
@@ -121,6 +122,7 @@ class TaskService {
   }
 
   delete(id: string): void {
+    for (const run of this.runs(id)) if (['running', 'queued', 'waiting_approval'].includes(run.status)) this.cancel(run.id)
     this.jobs.get(id)?.stop()
     this.jobs.delete(id)
     db().prepare('DELETE FROM tasks WHERE id = ?').run(id)
@@ -147,121 +149,184 @@ class TaskService {
     emit('tasks.changed')
   }
 
-  run(taskId: string): TaskRun {
-    const task = this.get(taskId)
-    if (task.kind === 'flow') return this.runFlow(task)
-    if (task.kind === 'monitor') {
-      // a check isn't a run (they are recorded as checks); what it triggers is
-      void this.check(task).catch((err: Error) => log.warn(`[tasks] monitor check: ${err.message}`))
-      return { id: '', taskId, threadId: '', status: 'running', startedAt: Date.now() }
-    }
-    return this.runAgent(task, task.prompt, t('任务：{{v0}}', { v0: task.name }))
-  }
-
-  /** Checks a monitor now; when it triggers with an agent action, that runs as one of the task's runs. */
-  check(task: Task) {
-    return monitor.check(task, async (summary) => {
-      const cfg = task.monitor!
-      // also to a group bot / mailbox, when chosen
-      if (cfg.notifyConnector)
-        await connectors
-          .notify(cfg.notifyConnector, { title: t('监控提醒：{{v0}}', { v0: task.name }), text: `${summary}\n\n[打开网页](${cfg.url})` })
-          .catch((err: Error) => {
-            log.warn(`[tasks] monitor alert to ${cfg.notifyConnector} failed: ${err.message}`)
-            if (Notification.isSupported())
-              new Notification({ title: t('监控提醒没能发出：{{v0}}', { v0: task.name }), body: err.message.slice(0, 160) }).show()
-          })
-      if (cfg.action !== 'agent' || !cfg.prompt?.trim()) return null
-      const prompt = `${cfg.prompt.trim()}\n\n（这是网页监控「${task.name}」触发后的任务。触发原因：${summary}。网页：${cfg.url}）`
-      return this.runAgent(task, prompt, t('监控：{{v0}}', { v0: task.name })).threadId
-    })
-  }
-
-  private runAgent(task: Task, prompt: string, title: string): TaskRun {
-    const taskId = task.id
-    const thread = agent.createThread(task.modelId, { title })
-    const run: RunRow = {
-      id: newId(),
-      task_id: taskId,
-      thread_id: thread.id,
-      status: 'running',
-      started_at: Date.now(),
-      finished_at: null,
-      summary: null,
-      error: null,
-    }
-    db().prepare('INSERT INTO task_runs(id, task_id, thread_id, status, started_at) VALUES(@id, @task_id, @thread_id, @status, @started_at)').run(run)
-    emit('tasks.changed')
-
-    void agent.send_(thread.id, prompt).then(
-      (res) => {
-        const status: TaskRunStatus = res.aborted ? 'cancelled' : res.error ? 'error' : 'success'
-        this.updateRun(run.id, {
-          status,
-          finished_at: Date.now(),
-          summary: res.interrupted ? t('等待人工确认，请打开会话处理') : res.finalText.slice(0, 500),
-          error: res.error ?? null,
-        })
-        if (Notification.isSupported()) {
-          new Notification({
-            title:
-              status === 'success'
-                ? t('任务完成：{{v0}}', { v0: task.name })
-                : status === 'cancelled'
-                  ? t('任务已取消：{{v0}}', { v0: task.name })
-                  : t('任务失败：{{v0}}', { v0: task.name }),
-            body: (res.error ?? res.finalText).slice(0, 120),
-          }).show()
-        }
-      },
-      (err: Error) => this.updateRun(run.id, { status: 'error', finished_at: Date.now(), error: err.message }),
-    )
-    return toRun(run)
-  }
-
-  /** A fixed flow: replayed without the model; if a step broke, the agent finished it (and fixed the flow). */
-  private runFlow(task: Task): TaskRun {
+  private begin(task: Task): RunRow {
+    const busy =
+      this.recovering.has(task.id) ||
+      !!db().prepare("SELECT id FROM task_runs WHERE task_id = ? AND status IN ('running', 'queued', 'waiting_approval') LIMIT 1").get(task.id)
     const run: RunRow = {
       id: newId(),
       task_id: task.id,
       thread_id: '',
-      status: 'running',
+      execution_id: newId(),
+      status: busy ? 'skipped' : 'running',
       started_at: Date.now(),
-      finished_at: null,
-      summary: null,
+      finished_at: busy ? Date.now() : null,
+      summary: busy ? t('上一次运行尚未结束，本次已跳过') : null,
       error: null,
     }
-    db().prepare('INSERT INTO task_runs(id, task_id, thread_id, status, started_at) VALUES(@id, @task_id, @thread_id, @status, @started_at)').run(run)
+    db()
+      .prepare(
+        'INSERT INTO task_runs(id, task_id, thread_id, execution_id, status, started_at, finished_at, summary) VALUES(@id, @task_id, @thread_id, @execution_id, @status, @started_at, @finished_at, @summary)',
+      )
+      .run(run)
+    if (!busy) this.controllers.set(run.id, new AbortController())
     emit('tasks.changed')
-    void flows.run(task.macroId!, task.params ?? {}, true).then(
-      (res) => {
-        const extracted = Object.entries(res.extracted)
-          .map(([k, v]) => `${k}：${v.slice(0, 200)}`)
-          .join('\n')
-        const summary = res.ok
-          ? `${res.repaired ? t('回放中途页面有变化，已由 Agent 完成并更新流程') : t('按固定流程回放完成，未调用模型')}${extracted ? `\n${extracted}` : ''}`
-          : null
-        this.updateRun(run.id, {
-          status: res.ok ? 'success' : 'error',
-          finished_at: Date.now(),
-          summary,
-          error: res.ok ? null : t('第 {{v0}} 步失败：{{v1}}', { v0: (res.failedStep ?? 0) + 1, v1: res.error ?? '' }),
-          thread_id: res.repairThreadId ?? '',
-        })
-        if (Notification.isSupported())
-          new Notification({
-            title: res.ok ? t('任务完成：{{v0}}', { v0: task.name }) : t('任务失败：{{v0}}', { v0: task.name }),
-            body: (summary ?? res.error ?? '').slice(0, 120),
-          }).show()
-      },
-      (err: Error) => this.updateRun(run.id, { status: 'error', finished_at: Date.now(), error: err.message }),
-    )
+    return run
+  }
+
+  private active(id: string): boolean {
+    return !!db().prepare("SELECT id FROM task_runs WHERE id = ? AND status IN ('running', 'queued', 'waiting_approval')").get(id)
+  }
+
+  private finish(run: RunRow, status: TaskRunStatus, summary: string | null, error: string | null = null): void {
+    if (!this.active(run.id)) return
+    if (status === 'cancelled') {
+      summary ||= t('已取消')
+      error = null
+    }
+    this.updateRun(run.id, { status, summary, error, finished_at: status === 'waiting_approval' ? null : Date.now() })
+    if (status === 'waiting_approval') return
+    this.controllers.delete(run.id)
+    const task = db().prepare('SELECT name, kind FROM tasks WHERE id = ?').get(run.task_id) as { name: string; kind: Task['kind'] } | undefined
+    // Routine monitor checks stay in history; only triggered work sends task completion notifications.
+    if (task?.kind === 'monitor' && !run.thread_id) return
+    if (task && Notification.isSupported())
+      new Notification({
+        title:
+          status === 'success'
+            ? t('任务完成：{{v0}}', { v0: task.name })
+            : status === 'cancelled'
+              ? t('任务已取消：{{v0}}', { v0: task.name })
+              : t('任务失败：{{v0}}', { v0: task.name }),
+        body: (error ?? summary ?? '').slice(0, 120),
+      }).show()
+  }
+
+  run(taskId: string): TaskRun {
+    const task = this.get(taskId)
+    const run = this.begin(task)
+    if (run.status === 'skipped') return toRun(run)
+    if (task.kind === 'flow') this.runFlow(task, run)
+    else if (task.kind === 'monitor') void this.checkRun(task, run).catch((err: Error) => this.finish(run, 'error', null, err.message))
+    else this.runAgent(task, task.prompt, t('任务：{{v0}}', { v0: task.name }), run)
     return toRun(run)
   }
 
+  async check(task: Task): Promise<MonitorCheck> {
+    const run = this.begin(task)
+    if (run.status === 'skipped')
+      return {
+        id: run.id,
+        taskId: task.id,
+        at: run.started_at,
+        first: false,
+        changed: false,
+        triggered: false,
+        summary: run.summary,
+        error: null,
+        added: [],
+        removed: [],
+        threadId: null,
+        repeats: 0,
+        lastAt: run.started_at,
+      }
+    return this.checkRun(task, run)
+  }
+
+  private async checkRun(task: Task, run: RunRow): Promise<MonitorCheck> {
+    let handedOff = false
+    try {
+      resolveModel(task.modelId)
+      const result = await monitor.check(
+        task,
+        async (summary) => {
+          if (!this.active(run.id)) return null
+          const cfg = task.monitor!
+          if (cfg.notifyConnector)
+            await connectors
+              .notify(cfg.notifyConnector, { title: t('监控提醒：{{v0}}', { v0: task.name }), text: `${summary}\n\n[打开网页](${cfg.url})` })
+              .catch((err: Error) => log.warn(`[tasks] monitor alert failed: ${err.message}`))
+          if (!this.active(run.id) || cfg.action !== 'agent' || !cfg.prompt?.trim()) return null
+          handedOff = true
+          this.runAgent(
+            task,
+            `${cfg.prompt.trim()}\n\n（这是网页监控「${task.name}」触发后的任务。触发原因：${summary}。网页：${cfg.url}）`,
+            t('监控：{{v0}}', { v0: task.name }),
+            run,
+          )
+          return run.thread_id || null
+        },
+        this.controllers.get(run.id)?.signal,
+      )
+      if (!handedOff) this.finish(run, result.error ? 'error' : 'success', result.summary ?? null, result.error ?? null)
+      return result
+    } catch (err) {
+      this.finish(run, this.controllers.get(run.id)?.signal.aborted ? 'cancelled' : 'error', null, (err as Error).message)
+      throw err
+    }
+  }
+
+  private runAgent(task: Task, prompt: string, title: string, run: RunRow): void {
+    try {
+      const thread = agent.createThread(task.modelId, { title })
+      run.thread_id = thread.id
+      this.updateRun(run.id, { thread_id: thread.id })
+      void agent.send_(thread.id, prompt, [], { executionId: run.execution_id! }).then(
+        (res) => {
+          this.finish(
+            run,
+            res.aborted ? 'cancelled' : res.error ? 'error' : res.interrupted ? 'waiting_approval' : 'success',
+            res.interrupted ? t('等待人工确认，请打开会话处理') : res.finalText.slice(0, 500),
+            res.error ?? null,
+          )
+        },
+        (err: Error) => this.finish(run, 'error', null, err.message),
+      )
+    } catch (err) {
+      this.finish(run, 'error', null, (err as Error).message)
+    }
+  }
+
+  private runFlow(task: Task, run: RunRow): void {
+    const controller = this.controllers.get(run.id)!
+    this.flowRepairsPending.add(run.id)
+    void flows
+      .run(task.macroId!, task.params ?? {}, true, {
+        signal: controller.signal,
+        executionId: run.execution_id!,
+        modelId: task.modelId,
+        onRepairThread: (threadId) => {
+          run.thread_id = threadId
+          this.updateRun(run.id, { thread_id: threadId })
+        },
+      })
+      .then(
+        (res) => {
+          const summary = res.interrupted
+            ? t('等待人工确认，请打开会话处理')
+            : res.ok
+              ? `${res.repaired ? t('回放中途页面有变化，已由 Agent 完成并更新流程') : t('按固定流程回放完成，未调用模型')}\n${Object.entries(res.extracted)
+                  .map(([k, v]) => `${k}：${v.slice(0, 200)}`)
+                  .join('\n')}`
+              : null
+          this.finish(
+            run,
+            controller.signal.aborted || res.aborted ? 'cancelled' : res.interrupted ? 'waiting_approval' : res.ok ? 'success' : 'error',
+            summary,
+            res.ok || res.interrupted ? null : (res.error ?? null),
+          )
+        },
+        (err: Error) => this.finish(run, controller.signal.aborted ? 'cancelled' : 'error', null, err.message),
+      )
+      .finally(() => this.flowRepairsPending.delete(run.id))
+  }
+
   cancel(runId: string): void {
-    const r = db().prepare('SELECT thread_id FROM task_runs WHERE id = ?').get(runId) as { thread_id: string } | undefined
-    if (r) agent.stop(r.thread_id)
+    const run = db().prepare('SELECT * FROM task_runs WHERE id = ?').get(runId) as RunRow | undefined
+    if (!run || !this.active(runId)) return
+    this.controllers.get(runId)?.abort()
+    this.finish(run, 'cancelled', t('已取消'))
+    if (run.thread_id) agent.stop(run.thread_id)
   }
 
   private schedule(task: Task): void {
@@ -276,12 +341,54 @@ class TaskService {
   }
 
   init(): void {
-    // runs left in 'running' by a previous session can't be resumed
-    db().prepare("UPDATE task_runs SET status = 'cancelled', finished_at = ? WHERE status IN ('running', 'queued')").run(Date.now())
+    this.unsubscribe?.()
+    this.unsubscribe = agent.subscribeExecution((event) => {
+      const row = db()
+        .prepare("SELECT * FROM task_runs WHERE execution_id = ? AND thread_id = ? AND status IN ('running', 'queued', 'waiting_approval') LIMIT 1")
+        .get(event.executionId, event.threadId) as RunRow | undefined
+      if (!row) return
+      if (this.flowRepairsPending.has(row.id) && event.phase !== 'waiting_approval') return
+      if (event.phase === 'running') this.updateRun(row.id, { status: 'running', finished_at: null })
+      else
+        this.finish(
+          row,
+          event.phase,
+          event.phase === 'waiting_approval' ? t('等待人工确认，请打开会话处理') : (event.result?.finalText.slice(0, 500) ?? null),
+          event.result?.error ?? null,
+        )
+    })
+    const rows = db().prepare("SELECT * FROM task_runs WHERE status IN ('running', 'queued', 'waiting_approval')").all() as RunRow[]
+    for (const row of rows) {
+      this.recovering.add(row.task_id)
+      void (row.thread_id ? agent.threadState(row.thread_id) : Promise.resolve(null))
+        .then(
+          (state) => {
+            if (!this.active(row.id)) return
+            if (state?.interrupt)
+              this.updateRun(row.id, {
+                status: 'waiting_approval',
+                finished_at: null,
+                execution_id: agent.executionId(row.thread_id),
+                summary: t('等待人工确认，请打开会话处理'),
+              })
+            else this.interruptRecovered(row)
+          },
+          () => this.interruptRecovered(row),
+        )
+        .finally(() => this.recovering.delete(row.task_id))
+    }
     for (const found of this.list()) this.schedule(found)
   }
 
+  private interruptRecovered(row: RunRow): void {
+    if (!this.active(row.id)) return
+    this.finish(row, 'cancelled', t('应用重启，任务已中断，请手动重新运行'))
+    if (row.thread_id) agent.stop(row.thread_id)
+  }
+
   stopAll(): void {
+    this.unsubscribe?.()
+    for (const controller of this.controllers.values()) controller.abort()
     for (const j of this.jobs.values()) j.stop()
   }
 }
