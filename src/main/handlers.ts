@@ -5,6 +5,7 @@ import { paths } from './core/paths'
 import { getSettings, setSettings, testLangfuse, getIntegrationStatus } from './core/settings'
 import { models, providers, testModel } from './models/registry'
 import { agent } from './agent/agent-service'
+import { runtimeRegistry } from './agent-runtime/registry'
 import { drafts } from './chat/drafts'
 import { collectTools, describeTools } from './agent/tool-registry'
 import { activeTabCtx } from './browser/tools'
@@ -55,6 +56,9 @@ function background(p: Promise<unknown>): void {
 
 export function registerHandlers(): void {
   handleAll({
+    'runtimes.list': () => runtimeRegistry.list(),
+    'runtimes.save': (profile) => runtimeRegistry.save(profile),
+    'runtimes.probe': (id) => runtimeRegistry.probe(id),
     'settings.integrationStatus': () => getIntegrationStatus(),
     'drafts.get': (scope) => drafts.get(scope),
     'drafts.save': (input) => drafts.save(input),
@@ -88,7 +92,7 @@ export function registerHandlers(): void {
     'models.test': (id) => testModel(id),
 
     'threads.list': () => agent.listThreads(),
-    'threads.create': (modelId, projectId) => agent.createThread(modelId, { projectId }),
+    'threads.create': (modelId, projectId, runtimeId) => agent.createThread(modelId, { projectId, runtimeId }),
     'threads.setProject': (id, projectId) => agent.setThreadProject(id, projectId),
     'projectFiles.list': (id, path, showHidden) => projectFiles.list(id, path, showHidden),
     'projectFiles.listPage': (id, path, showHidden, cursor, limit) => projectFiles.listPage(id, path, showHidden, cursor, limit),

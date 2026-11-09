@@ -11,8 +11,17 @@ export function mainDraftScope(projectId?: string, threadId?: string): DraftScop
   return threadId ? { surface: 'main', threadId } : projectId ? { surface: 'main', projectId } : { surface: 'main' }
 }
 type Entry = { data: ChatDraft; revision: number; savedRevision: number; loading: boolean; error: string | null }
-type Content = Pick<ChatDraft, 'text' | 'fileIds' | 'projectFiles' | 'modelId'>
-const empty = (scope: DraftScope): ChatDraft => ({ scope, text: '', fileIds: [], projectFiles: [], modelId: null, version: 0, updatedAt: 0 })
+type Content = Pick<ChatDraft, 'text' | 'fileIds' | 'projectFiles' | 'modelId' | 'runtimeId'>
+const empty = (scope: DraftScope): ChatDraft => ({
+  scope,
+  text: '',
+  fileIds: [],
+  projectFiles: [],
+  modelId: null,
+  runtimeId: 'builtin',
+  version: 0,
+  updatedAt: 0,
+})
 const editorId = crypto.randomUUID()
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const loads = new Map<string, Promise<void>>()
@@ -208,7 +217,7 @@ export const useDrafts = create<DraftState>((set, get) => ({
   },
 }))
 
-export async function submitDraft(scope: DraftScope, context: { threadId?: string; projectId?: string; modelId?: string | null } = {}) {
+export async function submitDraft(scope: DraftScope, context: { threadId?: string; projectId?: string; modelId?: string | null; runtimeId?: string } = {}) {
   const key = draftKey(scope)
   let request = requests.get(key)
   let current = useDrafts.getState().entries[key]
@@ -229,6 +238,7 @@ export async function submitDraft(scope: DraftScope, context: { threadId?: strin
         fileIds: [...data.fileIds],
         projectFiles: data.projectFiles.map((file) => ({ ...file })),
         modelId: context.modelId === undefined ? data.modelId : context.modelId,
+        runtimeId: context.runtimeId ?? data.runtimeId ?? 'builtin',
         draft: { scope: { ...scope }, version: data.version },
       },
     }

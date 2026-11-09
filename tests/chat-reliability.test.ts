@@ -48,6 +48,19 @@ const scope = { surface: 'main' as const, threadId: 't' }
 const input = { scope, text: 'Draft', fileIds: ['f'], projectFiles: [], modelId: 'm', expectedVersion: 0 }
 
 describe('durable isolated drafts', () => {
+  it('persists runtime selection through edits, moves and clear, with builtin for legacy drafts', () => {
+    expect(drafts.get(scope).runtimeId).toBe('builtin')
+    const saved = drafts.save({ ...input, runtimeId: 'codex' })
+    const edited = drafts.save({ ...input, text: 'Edited', expectedVersion: saved.version })
+    expect(edited.runtimeId).toBe('codex')
+    const target = { surface: 'quick' as const, threadId: 't' }
+    const moved = drafts.move(scope, target, edited.version)
+    expect(moved.draft.runtimeId).toBe('codex')
+    expect(drafts.get(scope).runtimeId).toBe('codex')
+    drafts.clear(target, moved.draft.version)
+    expect(drafts.get(target).runtimeId).toBe('codex')
+    expect(() => drafts.save({ ...input, runtimeId: 'unknown', expectedVersion: drafts.get(scope).version })).toThrow('Invalid agent runtime')
+  })
   it('isolates surfaces and ownership, persists content and refuses stale writes', () => {
     const saved = drafts.save(input)
     expect(saved.version).toBe(1)

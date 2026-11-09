@@ -2,14 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import type Database from 'better-sqlite3'
-import type { ThreadState } from '../src/shared/types'
-import type { Rpc } from '../src/main/agent-host/rpc'
+import type { AgentRuntimeKind } from '../src/shared/agent-runtime'
+import type { ChatEvent, ThreadState } from '../src/shared/types'
+import type { runtimeRegistry } from '../src/main/agent-runtime/registry'
+import type { AgentRuntime } from '../src/main/agent-runtime/types'
 import type { RunRequest, RunResult } from '../src/main/agent-host/protocol'
 
 const state = vi.hoisted(() => ({
   database: null as unknown as Database.Database,
   waitFiles: null as null | Promise<unknown[]>,
   enabled: true,
+  runtimeKind: 'builtin' as AgentRuntimeKind,
+  recoveryFails: false,
+  runtimeFails: false,
   checkpoint: { messages: [], todos: [], interrupt: null } as Omit<ThreadState, 'running'>,
   result: { finalText: '', interrupted: false } as RunResult,
   runs: [] as RunRequest[],
@@ -93,23 +98,49 @@ beforeEach(() => {
   }) as unknown as Database.Database
   state.waitFiles = null
   state.enabled = true
+  state.runtimeKind = 'builtin'
+  state.recoveryFails = false
+  state.runtimeFails = false
   state.checkpoint = { messages: [], todos: [], interrupt: null }
   state.result = { finalText: '', interrupted: false }
   state.runs = []
   state.approvals = []
-  agent = new AgentService()
-  const rpc = {
-    call: vi.fn(async (method: string, req: RunRequest) => {
-      if (method === 'approvals.recover') return state.approvals
-      if (method === 'thread.state') return state.checkpoint
-      if (method === 'run.start') {
-        state.runs.push(req)
-        return state.result
-      }
-      return undefined
-    }),
+  const runtime: AgentRuntime = {
+    get capabilities() {
+      const builtin = state.runtimeKind === 'builtin'
+      return { navoTools: builtin, nativeTools: true, approvals: builtin, images: builtin, resume: true, fork: builtin, tokenStreaming: true }
+    },
+    pendingApprovals: async () => {
+      if (state.recoveryFails) throw new Error('builtin unavailable')
+      return state.approvals
+    },
+    state: async () => state.checkpoint,
+    run: async (request) => {
+      state.runs.push(request)
+      return state.result
+    },
+    abort: vi.fn(),
+    forkPoint: async () => null,
+    deleteThread: async () => undefined,
+    refresh: vi.fn(),
+    shutdown: vi.fn(),
   }
-  vi.spyOn(agent as unknown as { host(): Rpc }, 'host').mockReturnValue(rpc as unknown as Rpc)
+  const profile = () => ({ id: state.runtimeKind, kind: state.runtimeKind, name: 'Test runtime', enabled: true, command: '', args: [] })
+  const registry = {
+    get: () => {
+      if (state.runtimeFails) throw new Error('Runtime unavailable')
+      return runtime
+    },
+    profile,
+    capture: profile,
+    bind: (id: string) =>
+      state.database.prepare('UPDATE threads SET runtime_id=?, runtime_config=? WHERE id=?').run(profile().id, JSON.stringify(profile()), id),
+    info: () => ({ profile: profile(), capabilities: runtime.capabilities }),
+    pendingApprovals: () => runtime.pendingApprovals(),
+    refresh: vi.fn(),
+    shutdown: vi.fn(),
+  }
+  agent = new AgentService(registry as unknown as typeof runtimeRegistry)
 })
 afterEach(async () => {
   await drain()
@@ -118,12 +149,71 @@ afterEach(async () => {
 })
 
 describe('submission acceptance and run coordination', () => {
+  it('ends UI waiting when a durable submission is cancelled before its deferred run starts', async () => {
+    const events: ChatEvent[] = []
+    agent.subscribe((event) => events.push(event))
+    const receipt = await agent.submit({ requestId: 'cancel-before-start', text: 'Hello' })
+    agent.stop(receipt.threadId)
+    await drain()
+    expect(events.some((event) => event.type === 'run_start')).toBe(false)
+    expect(events.find((event) => event.type === 'run_end')).toMatchObject({ threadId: receipt.threadId, aborted: true })
+    expect(agent.isRunning(receipt.threadId)).toBe(false)
+    expect(state.runs).toHaveLength(0)
+  })
+  it('ends UI waiting when runtime resolution fails after durable acceptance', async () => {
+    const events: ChatEvent[] = []
+    agent.subscribe((event) => events.push(event))
+    const receipt = await agent.submit({ requestId: 'missing-runtime', text: 'Hello' })
+    state.runtimeFails = true
+    await drain()
+    expect(events.some((event) => event.type === 'run_start')).toBe(false)
+    expect(events.find((event) => event.type === 'error')).toMatchObject({ error: 'Runtime unavailable' })
+    expect(events.find((event) => event.type === 'run_end')).toMatchObject({ threadId: receipt.threadId })
+    expect(agent.isRunning(receipt.threadId)).toBe(false)
+    expect(submissions.recoverable(receipt.threadId)).toEqual([receipt.messageId])
+  })
+  it('keeps external submissions usable when builtin checkpoint recovery fails', async () => {
+    state.recoveryFails = true
+    state.runtimeKind = 'claude'
+    state.enabled = false
+    const receipt = await agent.submit({ requestId: 'unavailable-builtin', text: 'Continue externally', runtimeId: 'claude' })
+    await drain()
+    expect(state.runs).toHaveLength(1)
+    expect((await agent.threadState(receipt.threadId)).messages).toHaveLength(1)
+  })
+  it('runs external engines without a Navo model or Navo tools and persists runtime ownership', async () => {
+    state.enabled = false
+    state.runtimeKind = 'claude'
+    const receipt = await agent.submit({ requestId: 'external', text: 'Hello', runtimeId: 'claude' })
+    expect(agent.getThread(receipt.threadId)?.runtimeId).toBe('claude')
+    await drain()
+    expect(state.runs).toHaveLength(1)
+    expect(state.runs[0].model.apiKey).toBeUndefined()
+    expect(state.runs[0].tools).toEqual([])
+    expect(state.runs[0].interruptOn).toEqual([])
+    expect(state.runs[0].mounts).toEqual([])
+    expect(state.runs[0].browserSubagent).toBe(false)
+    expect(state.runs[0].systemPrompt).toContain('not available in this runtime')
+    await expect(agent.submit({ requestId: 'switch', threadId: receipt.threadId, text: 'Hello', runtimeId: 'codex' })).rejects.toThrow('cannot change')
+  })
+  it('rejects unsupported images before acceptance and retains the draft', async () => {
+    state.runtimeKind = 'claude'
+    const scope = { surface: 'main' as const }
+    const draft = drafts.save({ scope, text: 'Keep', fileIds: [], projectFiles: [], modelId: null, expectedVersion: 0 })
+    await expect(
+      agent.submit({ requestId: 'image', text: 'Keep', images: ['data:image/png;base64,test'], draft: { scope, version: draft.version } }),
+    ).rejects.toThrow('image input')
+    expect(agent.listThreads()).toHaveLength(0)
+    expect(state.runs).toHaveLength(0)
+    expect(drafts.get(scope).text).toBe('Keep')
+  })
   it('acknowledges one durable message before starting, and retries the receipt without duplicate execution', async () => {
     const input = { requestId: 'same', text: 'Hello' }
     const [a, b] = await Promise.all([agent.submit(input), agent.submit(input)])
     expect(a).toEqual(b)
     expect(state.runs).toHaveLength(0)
     expect(agent.listThreads()).toHaveLength(1)
+    expect(agent.getThread(a.threadId)?.runtimeId).toBe('builtin')
     expect((await agent.threadState(a.threadId)).messages).toHaveLength(1)
     await drain()
     expect(state.runs).toHaveLength(1)

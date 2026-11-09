@@ -10,6 +10,7 @@ export type { ProjectFileRef as ProjectFileReference } from './files-query'
 import type { ProjectFileRef as ProjectFileReference } from './files-query'
 
 export interface ChatDraft {
+  runtimeId?: string
   editorId?: string
   editRevision?: number
   scope: DraftScope
@@ -22,6 +23,7 @@ export interface ChatDraft {
 }
 
 export interface DraftSaveInput {
+  runtimeId?: string
   editorId?: string
   editRevision?: number
   scope: DraftScope
@@ -33,6 +35,7 @@ export interface DraftSaveInput {
 }
 
 export interface ChatSubmitInput {
+  runtimeId?: string
   requestId: string
   threadId?: string
   projectId?: string | null

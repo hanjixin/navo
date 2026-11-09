@@ -152,6 +152,8 @@ export function ChatPage() {
   const thread = threads?.find((item) => item.id === activeId)
   const draft = useDraft(mainDraftScope(projectId, activeId ?? undefined))
   const draftModelId = draft.data?.modelId ?? null
+  const runtimeId = thread?.runtimeId ?? (activeId ? 'builtin' : (draft.data?.runtimeId ?? 'builtin'))
+  const external = runtimeId !== 'builtin' && runtimeId !== 'pi'
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -188,7 +190,7 @@ export function ChatPage() {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [view?.messages, view?.todos, view?.interrupt])
 
-  const noModels = models !== undefined && models.length === 0
+  const noModels = !external && models !== undefined && models.length === 0
   const elapsed = view?.runStartedAt ? Math.max(0, now - view.runStartedAt) : 0
   const elapsedLabel = `${Math.floor(elapsed / 60000)}:${String(Math.floor(elapsed / 1000) % 60).padStart(2, '0')}`
 
@@ -216,19 +218,18 @@ export function ChatPage() {
 
   const send = async (text: string, images?: string[], fileIds?: string[]) => {
     try {
-      const target = thread ?? (await newThread(draftModelId, projectId ?? null))
+      const target = thread ?? (await newThread(draftModelId, projectId ?? null, runtimeId))
       if (!thread) navigate(threadPath(target))
       await sendTo(target.id, text, images, fileIds)
     } catch (e) {
       toast.error(t('提交失败'), { description: errorMessage(e) })
     }
   }
-  const createThread = async () => {
-    try {
-      navigate(threadPath(await newThread(draftModelId, projectId ?? null)))
-    } catch (e) {
-      toast.error(t('创建失败'), { description: errorMessage(e) })
-    }
+  const createThread = () => {
+    select(null)
+    const project = thread?.projectId ?? projectId
+    navigate(project ? projectPath(project) : '/chat')
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
   }
   const missingThread = !!activeId && threads !== undefined && !thread
   const missingProject = !!projectId && projects !== undefined && !projects.some((project) => project.id === projectId)
@@ -267,8 +268,10 @@ export function ChatPage() {
             </span>
           ) : null}
           {thread ? <OutputsButton key={`outputs-${thread.id}`} threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
-          {thread && !view?.running ? <SaveFlowButton key={`flow-${thread.id}`} threadId={thread.id} messages={view?.messages.length ?? 0} /> : null}
-          {thread ? <ThreadMemoryToggle key={`memory-${thread.id}`} threadId={thread.id} /> : null}
+          {thread && !external && !view?.running ? (
+            <SaveFlowButton key={`flow-${thread.id}`} threadId={thread.id} messages={view?.messages.length ?? 0} />
+          ) : null}
+          {thread && !external ? <ThreadMemoryToggle key={`memory-${thread.id}`} threadId={thread.id} /> : null}
           {view?.traceUrl && !view.running ? (
             <Tooltip content={t('在 Langfuse 中查看本次运行')}>
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => void call('app.openExternal', view.traceUrl!)}>
@@ -327,9 +330,13 @@ export function ChatPage() {
                   <MessageSquare className="size-4 stroke-[1.75] text-muted-foreground" />
                 </div>
                 <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">{t('今天想让我完成什么？')}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{t('我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {external
+                    ? t('外部运行时使用本机配置，暂不支持 Navo 工具、审批和图片输入。')
+                    : t('我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。')}
+                </p>
                 <div className="mt-6 grid grid-cols-1 gap-2 @xl:grid-cols-2">
-                  {SUGGESTIONS.map((s) => (
+                  {(external ? [] : SUGGESTIONS).map((s) => (
                     <button
                       key={s.text}
                       onClick={() => void send(s.text)}
@@ -345,7 +352,11 @@ export function ChatPage() {
               <MessageList
                 messages={view.messages}
                 running={view.running}
-                actions={{ onRegenerate: (id) => void regenerate(id, undefined, activeId!), onEdit: (id, text) => void regenerate(id, text, activeId!) }}
+                actions={
+                  runtimeId !== 'builtin'
+                    ? undefined
+                    : { onRegenerate: (id) => void regenerate(id, undefined, activeId!), onEdit: (id, text) => void regenerate(id, text, activeId!) }
+                }
               />
             ) : null}
             {view?.error ? <ErrorState error={view.error} compact className="mt-4" /> : null}
@@ -374,10 +385,16 @@ export function ChatPage() {
           {view?.todos.length ? <TodoPanel todos={view.todos} /> : null}
           <Composer
             draftScope={draft.scope}
+            runtimeId={runtimeId}
             value={draft.data?.text ?? ''}
             onValueChange={(text) => draft.patch({ text })}
             onSend={async () => {
-              const receipt = await submitDraft(draft.scope, { threadId: activeId ?? undefined, projectId, modelId: draftModelId ?? thread?.modelId })
+              const receipt = await submitDraft(draft.scope, {
+                threadId: activeId ?? undefined,
+                projectId,
+                modelId: draftModelId ?? thread?.modelId,
+                runtimeId,
+              })
               await loadThreads()
               select(receipt.threadId)
               if (!activeId) navigate(threadPath({ id: receipt.threadId, projectId: projectId ?? null }))
@@ -386,7 +403,7 @@ export function ChatPage() {
             running={!!view?.running}
             modelId={draftModelId ?? thread?.modelId ?? null}
             onModelChange={onModelChange}
-            disabled={draft.loading || noModels || !!view?.interrupt || !!routeError || (!!activeId && !thread)}
+            disabled={draft.loading || !!view?.interrupt || !!routeError || (!!activeId && !thread)}
             disabledReason={routeError ?? (noModels ? t('没有已启用的模型，请前往模型页面启用') : t('请先处理上方的确认'))}
           />
         </div>

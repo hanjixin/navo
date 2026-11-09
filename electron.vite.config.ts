@@ -29,6 +29,7 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           'agent-host': resolve('src/main/agent-host/index.ts'),
+          'pi-host': resolve('src/main/pi-host/index.ts'),
           'parser-host': resolve('src/main/files/parser-host.ts'),
         },
       },

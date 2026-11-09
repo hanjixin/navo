@@ -26,7 +26,8 @@ export function QuickPage() {
   const thread = useChat((s) => s.threads?.find((t) => t.id === s.activeId))
   const draft = useDraft({ surface: 'quick', ...(activeId ? { threadId: activeId } : {}) })
   const loadModels = useModels((s) => s.load)
-  const noModels = useModels((s) => s.activeModels?.length === 0)
+  const runtimeId = thread?.runtimeId ?? (activeId ? 'builtin' : (draft.data?.runtimeId ?? 'builtin'))
+  const noModels = useModels((s) => s.activeModels?.length === 0) && (runtimeId === 'builtin' || runtimeId === 'pi')
   const draftModelId = draft.data?.modelId ?? null
   const [clip, setClip] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
@@ -102,7 +103,13 @@ export function QuickPage() {
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{thread?.title && hasMessages ? thread.title : t('Navo 快问')}</span>
         <div className="no-drag flex items-center gap-0.5">
           <Tooltip content={t('截图提问')}>
-            <Button variant="ghost" size="icon-sm" aria-label={t('截图提问')} onClick={() => void call('quick.screenshot')}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('截图提问')}
+              disabled={runtimeId !== 'builtin' && runtimeId !== 'pi'}
+              onClick={() => void call('quick.screenshot')}
+            >
               <Camera />
             </Button>
           </Tooltip>
@@ -160,10 +167,11 @@ export function QuickPage() {
         {view?.interrupt ? <InterruptCard interrupt={view.interrupt} onDecide={decide} /> : null}
         <Composer
           draftScope={draft.scope}
+          runtimeId={runtimeId}
           value={draft.data?.text ?? ''}
           onValueChange={(text) => draft.patch({ text })}
           onSend={async () => {
-            const receipt = await submitDraft(draft.scope, { threadId: activeId ?? undefined, modelId: draftModelId ?? thread?.modelId })
+            const receipt = await submitDraft(draft.scope, { threadId: activeId ?? undefined, modelId: draftModelId ?? thread?.modelId, runtimeId })
             await useChat.getState().loadThreads()
             useChat.getState().select(receipt.threadId)
           }}
@@ -172,7 +180,7 @@ export function QuickPage() {
           modelId={draftModelId ?? thread?.modelId ?? null}
           onModelChange={(id) => draft.patch({ modelId: id })}
           showModelManagementLink={false}
-          disabled={draft.loading || noModels || !!view?.interrupt}
+          disabled={draft.loading || !!view?.interrupt || (!!activeId && !thread)}
           disabledReason={noModels ? t('请先在 Navo 主窗口的模型页面启用模型') : t('请先处理上方的确认')}
         />
       </div>

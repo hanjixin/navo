@@ -158,6 +158,8 @@ export interface Artifact extends OutputFile {
 }
 
 export interface Thread {
+  /** Missing only on older clients; persisted conversations default to builtin. */
+  runtimeId?: string
   id: string
   title: string
   modelId: string | null

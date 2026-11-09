@@ -2,22 +2,10 @@ import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatOpenAI } from '@langchain/openai'
 import type { Callbacks } from '@langchain/core/callbacks/manager'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import type { ModelConfig, ProviderType } from '@shared/types'
 
-/** Everything needed to build a chat model, with the API key already decrypted. Safe to send to the agent process. */
-export interface ResolvedModel {
-  /** the stored model's id (for usage records); absent for unsaved configs being tested */
-  id?: string
-  providerType: ProviderType
-  model: string
-  apiKey?: string
-  baseURL?: string | null
-  headers?: Record<string, string> | null
-  temperature?: number | null
-  maxTokens?: number | null
-  reasoningEffort?: ModelConfig['reasoningEffort']
-  supportsVision: boolean
-}
+import type { RuntimeModel } from '../agent-runtime/contracts'
+
+export type ResolvedModel = RuntimeModel
 
 export function buildChatModel(r: ResolvedModel, callbacks?: Callbacks): BaseChatModel {
   const common = {

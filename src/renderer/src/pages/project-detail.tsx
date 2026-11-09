@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal } from 'lucide-react'
-import { toast } from 'sonner'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { ErrorState, ListSkeleton } from '@/components/ui/states'
@@ -17,7 +16,7 @@ import { mainDraftScope, submitDraft } from '@/stores/drafts'
 import { useModels } from '@/stores/models'
 import { call } from '@/lib/ipc'
 import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
-import { cn, errorMessage } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 export function ProjectDetailPage() {
@@ -30,11 +29,11 @@ export function ProjectDetailPage() {
   const project = detail.data && detail.data.projectId === projectId ? detail.data.project : undefined
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [creating, setCreating] = useState(false)
   const draft = useDraft(mainDraftScope(projectId))
   const modelId = draft.data?.modelId ?? null
+  const runtimeId = draft.data?.runtimeId ?? 'builtin'
   const { activeModels: models, load: loadModels } = useModels()
-  const noModels = models !== undefined && models.length === 0
+  const noModels = (runtimeId === 'builtin' || runtimeId === 'pi') && models !== undefined && models.length === 0
   useEffect(() => {
     void loadModels()
   }, [loadModels])
@@ -47,17 +46,11 @@ export function ProjectDetailPage() {
     )
       navigate('/projects', { replace: true })
   }, [detail.data, projectId, navigate])
-  const createThread = async () => {
-    if (creating || !projectId) return
-    setCreating(true)
-    try {
-      const thread = await useChat.getState().newThread(modelId, projectId)
-      navigate(threadPath(thread))
-    } catch (e) {
-      toast.error(t('创建失败'), { description: errorMessage(e) })
-    } finally {
-      setCreating(false)
-    }
+  const createThread = () => {
+    const next = currentSearchParams()
+    next.delete('tab')
+    setParams(next)
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
   }
   if (detail.error && !project)
     return (
@@ -86,7 +79,7 @@ export function ProjectDetailPage() {
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium" title={project.name}>
           {project.name}
         </h1>
-        <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" loading={creating} onClick={() => void createThread()}>
+        <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => void createThread()}>
           <Plus />
           {t('新建对话')}
         </Button>
@@ -183,8 +176,9 @@ export function ProjectDetailPage() {
                 </div>
                 <Composer
                   draftScope={draft.scope}
+                  runtimeId={runtimeId}
                   onSend={async () => {
-                    const receipt = await submitDraft(draft.scope, { projectId, modelId })
+                    const receipt = await submitDraft(draft.scope, { projectId, modelId, runtimeId })
                     await useChat.getState().loadThreads()
                     useChat.getState().select(receipt.threadId)
                     navigate(threadPath({ id: receipt.threadId, projectId: projectId! }))
@@ -193,7 +187,7 @@ export function ProjectDetailPage() {
                   running={false}
                   modelId={modelId}
                   onModelChange={(modelId) => draft.patch({ modelId })}
-                  disabled={draft.loading || creating || !models?.length}
+                  disabled={draft.loading}
                   disabledReason={noModels ? t('没有已启用的模型，请前往模型页面启用') : t('加载中')}
                   value={draft.data?.text ?? ''}
                   onValueChange={(text) => draft.patch({ text })}

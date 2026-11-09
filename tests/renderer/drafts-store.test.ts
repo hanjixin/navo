@@ -113,3 +113,35 @@ describe('persistent renderer drafts', () => {
     expect(useDrafts.getState().entries[draftKey(s)].data.text).toBe('old text')
   })
 })
+
+describe('runtime draft isolation', () => {
+  it('persists selected runtime and submits it without a Navo model', async () => {
+    const s: DraftScope = { surface: 'main', projectId: 'runtime-project' }
+    await useDrafts.getState().load(s)
+    useDrafts.getState().patch(s, { text: 'external question', runtimeId: 'pi', modelId: null })
+    await useDrafts.getState().flush(s)
+    expect(stored(s).runtimeId).toBe('pi')
+    call.mockImplementation((method, input) => (method === 'chat.submit' ? Promise.resolve({ threadId: 'external' }) : Promise.resolve(backend(method, input))))
+    await submitDraft(s)
+    expect(call.mock.calls.find(([method]) => method === 'chat.submit')?.[1]).toMatchObject({ runtimeId: 'pi', modelId: null })
+  })
+  it('keeps a newly selected runtime when an earlier submission receipt arrives', async () => {
+    const s: DraftScope = { surface: 'main', projectId: 'late-runtime-project' }
+    await useDrafts.getState().load(s)
+    useDrafts.getState().patch(s, { text: 'first', runtimeId: 'pi' })
+    let done!: (receipt: unknown) => void
+    call.mockImplementation((method, input) =>
+      method === 'chat.submit'
+        ? new Promise((resolve) => {
+            done = resolve
+          })
+        : Promise.resolve(backend(method, input)),
+    )
+    const pending = submitDraft(s)
+    await vi.waitFor(() => expect(done).toBeTypeOf('function'))
+    useDrafts.getState().patch(s, { text: 'next', runtimeId: 'codex' })
+    done({ threadId: 'external' })
+    await pending
+    expect(useDrafts.getState().entries[draftKey(s)].data).toMatchObject({ runtimeId: 'codex', text: 'next' })
+  })
+})

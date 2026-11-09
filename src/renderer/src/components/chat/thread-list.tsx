@@ -17,7 +17,7 @@ import { useProjects } from '@/stores/projects'
 import { t } from '@shared/i18n'
 
 export function ThreadList({ projectId, compact = false }: { projectId?: string | null; compact?: boolean }) {
-  const { threads, threadsError, select, newThread, loadThreads, views } = useChat()
+  const { threads, threadsError, select, loadThreads, views } = useChat()
   const { threadId: activeId } = useParams<{ threadId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
@@ -64,11 +64,11 @@ export function ThreadList({ projectId, compact = false }: { projectId?: string 
           <Button
             variant="secondary"
             size="icon-sm"
-            onClick={() =>
-              void newThread(undefined, projectId ?? null)
-                .then((thread) => navigate(threadPath(thread)))
-                .catch((e) => toast.error(t('创建失败'), { description: errorMessage(e) }))
-            }
+            onClick={() => {
+              select(null)
+              navigate(projectId ? projectPath(projectId) : '/chat')
+              requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+            }}
             aria-label={t('新建对话')}
           >
             <Plus />

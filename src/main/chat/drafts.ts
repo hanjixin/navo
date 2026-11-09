@@ -16,8 +16,8 @@ export class DraftStore {
     const row = this.database().prepare('SELECT data, version, updated_at FROM chat_drafts WHERE scope = ?').get(draftKey(scope)) as
       { data: string; version: number; updated_at: number } | undefined
     return row
-      ? { ...JSON.parse(row.data), scope, version: row.version, updatedAt: row.updated_at }
-      : { scope, text: '', fileIds: [], projectFiles: [], modelId: null, version: 0, updatedAt: 0 }
+      ? { runtimeId: 'builtin', ...JSON.parse(row.data), scope, version: row.version, updatedAt: row.updated_at }
+      : { scope, runtimeId: 'builtin', text: '', fileIds: [], projectFiles: [], modelId: null, version: 0, updatedAt: 0 }
   }
 
   save(input: DraftSaveInput): ChatDraft {
@@ -29,7 +29,9 @@ export class DraftStore {
       if (current.version !== input.expectedVersion && !(sameEditor && incomingRevision > (current.editRevision ?? 0)))
         throw new Error('Draft changed; reload before saving')
       if (typeof input.text !== 'string' || !Array.isArray(input.fileIds) || !Array.isArray(input.projectFiles)) throw new Error('Invalid draft')
+      if (input.runtimeId !== undefined && !['builtin', 'pi', 'claude', 'dsh', 'codex'].includes(input.runtimeId)) throw new Error('Invalid agent runtime')
       const next: ChatDraft = {
+        runtimeId: input.runtimeId ?? current.runtimeId ?? 'builtin',
         scope: input.scope,
         editorId: input.editorId,
         editRevision: input.editRevision,
@@ -55,7 +57,7 @@ export class DraftStore {
     return this.database().transaction(() => {
       const current = this.get(scope)
       if (current.version !== version) return false
-      this.save({ scope, text: '', fileIds: [], projectFiles: [], modelId: current.modelId, expectedVersion: version })
+      this.save({ scope, text: '', fileIds: [], projectFiles: [], modelId: current.modelId, runtimeId: current.runtimeId, expectedVersion: version })
       return true
     })()
   }
