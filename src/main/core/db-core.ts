@@ -177,6 +177,10 @@ const MIGRATIONS: string[] = [
   CREATE INDEX outputs_at_id ON outputs(at DESC, id DESC);
   CREATE INDEX outputs_thread_at_id ON outputs(thread_id, at DESC, id DESC);
   `,
+  `
+  ALTER TABLE threads ADD COLUMN runtime_id TEXT NOT NULL DEFAULT 'builtin';
+  ALTER TABLE threads ADD COLUMN runtime_config TEXT;
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

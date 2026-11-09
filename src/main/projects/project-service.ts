@@ -46,7 +46,7 @@ class ProjectService {
     const project = toSummary(row)
     const threads = db()
       .prepare(
-        'SELECT id, title, model_id AS modelId, project_id AS projectId, created_at AS createdAt, updated_at AS updatedAt FROM threads WHERE project_id=? AND hidden=0 ORDER BY updated_at DESC',
+        'SELECT id, title, model_id AS modelId, runtime_id AS runtimeId, project_id AS projectId, created_at AS createdAt, updated_at AS updatedAt FROM threads WHERE project_id=? AND hidden=0 ORDER BY updated_at DESC',
       )
       .all(id) as Thread[]
     return { ...project, threads }

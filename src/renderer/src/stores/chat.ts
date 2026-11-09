@@ -47,7 +47,7 @@ interface ChatState {
   setProjectFilter: (projectId: string | null | undefined) => void
   select: (id: string | null) => void
   loadThread: (id: string) => Promise<void>
-  newThread: (modelId?: string | null, projectId?: string | null) => Promise<Thread>
+  newThread: (modelId?: string | null, projectId?: string | null, runtimeId?: string) => Promise<Thread>
   send: (text: string, images?: string[], fileIds?: string[]) => Promise<void>
   sendTo: (threadId: string, text: string, images?: string[], fileIds?: string[]) => Promise<void>
   /** files attached in the composer but not sent yet */
@@ -115,9 +115,9 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
-    newThread: async (modelId, projectId) => {
-      if (modelId) await assertModelAvailable(modelId)
-      const t = await call('threads.create', modelId ?? null, projectId ?? null)
+    newThread: async (modelId, projectId, runtimeId = 'builtin') => {
+      if (modelId && (runtimeId === 'builtin' || runtimeId === 'pi')) await assertModelAvailable(modelId)
+      const t = await call('threads.create', runtimeId === 'builtin' || runtimeId === 'pi' ? (modelId ?? null) : null, projectId ?? null, runtimeId)
       set((s) => ({
         threads: [t, ...(s.threads ?? []).filter((thread) => thread.id !== t.id)],
         views: { ...s.views, [t.id]: { ...emptyView(), loaded: true } },
@@ -138,7 +138,8 @@ export const useChat = create<ChatState>((set, get) => {
     sendTo: async (id, text, images, fileIds) => {
       patch(id, () => ({ running: true, error: null, interrupt: null, runStartedAt: Date.now(), lastActivityAt: Date.now() }))
       try {
-        await assertModelAvailable(get().threads?.find((thread) => thread.id === id)?.modelId)
+        const thread = get().threads?.find((thread) => thread.id === id)
+        if (!thread?.runtimeId || thread.runtimeId === 'builtin' || thread.runtimeId === 'pi') await assertModelAvailable(thread?.modelId)
         await call('chat.send', id, text, images, fileIds)
       } catch (e) {
         patch(id, () => ({ running: false, runStartedAt: null, error: errorMessage(e) }))
@@ -149,6 +150,8 @@ export const useChat = create<ChatState>((set, get) => {
     regenerate: async (messageId, text, threadId) => {
       const id = threadId ?? get().activeId
       if (!id) return
+      const runtimeId = get().threads?.find((thread) => thread.id === id)?.runtimeId ?? 'builtin'
+      if (runtimeId !== 'builtin') return
       const v = get().views[id]
       const idx = v?.messages.findIndex((m) => m.id === messageId) ?? -1
       if (idx < 0) return

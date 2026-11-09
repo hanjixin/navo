@@ -1,3 +1,4 @@
+import type { AgentRuntimeInfo, AgentRuntimeProfile, AgentRuntimeStatus } from './agent-runtime'
 import type { ProjectFilePage, ProjectFileSearchResult, ArtifactsQuery, ArtifactsPage } from './files-query'
 import type { DesktopGrant, UnifiedApproval } from './control-state'
 import type { ExternalViewState } from './external-view'
@@ -73,6 +74,9 @@ import type {
 
 /** Request/response methods: renderer -> main via ipcRenderer.invoke */
 export interface Api {
+  'runtimes.list': () => AgentRuntimeInfo[]
+  'runtimes.save': (profile: AgentRuntimeProfile) => AgentRuntimeInfo
+  'runtimes.probe': (id: string) => AgentRuntimeStatus
   'settings.integrationStatus': () => TracingIntegrationStatus
   'drafts.get': (scope: DraftScope) => ChatDraft
   'drafts.save': (input: DraftSaveInput) => ChatDraft
@@ -97,7 +101,7 @@ export interface Api {
 
   // chat
   'threads.list': () => Thread[]
-  'threads.create': (modelId?: string | null, projectId?: string | null) => Thread
+  'threads.create': (modelId?: string | null, projectId?: string | null, runtimeId?: string) => Thread
   'threads.setProject': (id: string, projectId: string | null) => void
   'projectFiles.list': (projectId: string, path?: string, showHidden?: boolean) => ProjectFileListing
   'projectFiles.listPage': (projectId: string, path?: string, showHidden?: boolean, cursor?: string, limit?: number) => ProjectFilePage
@@ -354,6 +358,7 @@ export interface Api {
 
 /** Push events: main -> renderer */
 export interface Events {
+  'runtimes.changed': void
   'integrations.changed': void
   'drafts.changed': DraftScope
   'approvals.changed': void

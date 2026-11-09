@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { ChatSubmitInput, ChatSubmitReceipt, ExecutionPhase, ApprovalSummary } from '@shared/reliability'
 import type { UIMessage, PendingInterrupt } from '@shared/types'
-import type { RunRequest } from '../agent-host/protocol'
+import type { RunRequest } from '../agent-runtime/contracts'
 import { db } from '../core/db'
 
 export function submissionPayload(input: ChatSubmitInput): string {

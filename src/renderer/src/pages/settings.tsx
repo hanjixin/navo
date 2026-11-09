@@ -5,6 +5,7 @@ import type { QuickStatus, Settings } from '@shared/types'
 import { Page, PageHeader } from '@/components/layout/page'
 import { ShortcutInput } from '@/components/settings/shortcut-input'
 import { ComputerUseSection } from '@/components/settings/computer-use-section'
+import { RuntimeSection } from '@/components/settings/runtime-section'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Textarea } from '@/components/ui/input'
@@ -407,6 +408,8 @@ export function SettingsPage() {
       <QuickSection settings={settings} patch={patch} />
       <VoiceSection settings={settings} patch={patch} />
       <ComputerUseSection settings={settings} patch={patch} />
+
+      <RuntimeSection />
 
       <h2 className="mb-2 text-sm font-semibold">Agent</h2>
       <Card className="mb-8 divide-y divide-border">

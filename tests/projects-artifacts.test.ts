@@ -17,7 +17,7 @@ describe('projects and artifacts contracts', () => {
     for (const method of ['projects.list', 'projects.save', 'projects.delete', 'threads.setProject']) {
       expect(ipcSource).toContain(`'${method}'`)
     }
-    expect(ipcSource).toMatch(/'threads\.create':\s*\(modelId\?: string \| null, projectId\?: string \| null\)/)
+    expect(ipcSource).toMatch(/'threads\.create':\s*\(modelId\?: string \| null, projectId\?: string \| null, runtimeId\?: string\)/)
   })
 
   it('exposes the artifact shape and complete artifact API', () => {

@@ -11,6 +11,7 @@ import { useDrafts, draftKey } from '@/stores/drafts'
 import type { DraftScope } from '@shared/reliability'
 import { useFiles } from '@/stores/files'
 import { useModels } from '@/stores/models'
+import { useRuntimes, wireRuntimeEvents } from '@/stores/runtimes'
 import { useSettings } from '@/stores/settings'
 import { useVoice } from '@/hooks/use-voice'
 import { t } from '@shared/i18n'
@@ -21,6 +22,7 @@ export function Composer({
   onStop,
   running,
   modelId,
+  runtimeId: fixedRuntimeId,
   onModelChange,
   disabled,
   disabledReason,
@@ -36,6 +38,7 @@ export function Composer({
   onStop: () => void
   running: boolean
   modelId: string | null
+  runtimeId?: string
   onModelChange: (id: string) => void
   disabled?: boolean
   disabledReason?: string
@@ -50,6 +53,17 @@ export function Composer({
   const text = value ?? localText
   const setText = onValueChange ?? setLocalText
   const draft = useDrafts((s) => s.entries[draftKey(draftScope)])
+  const runtimes = useRuntimes((s) => s.runtimes)
+  const runtimesError = useRuntimes((s) => s.error)
+  const loadRuntimes = useRuntimes((s) => s.load)
+  const runtimeId = fixedRuntimeId ?? draft?.data.runtimeId ?? 'builtin'
+  const external = runtimeId !== 'builtin' && runtimeId !== 'pi'
+  const runtime = runtimes?.find((item) => item.profile.id === runtimeId)
+  const runtimeUnavailable = runtimeId !== 'builtin' && (!runtime?.profile.enabled || !runtimes)
+  useEffect(() => {
+    wireRuntimeEvents()
+    void loadRuntimes()
+  }, [loadRuntimes])
   const attached = draft?.data.fileIds ?? []
   const projectFiles = draft?.data.projectFiles ?? []
   const setAttached = (fileIds: string[]) => useDrafts.getState().patch(draftScope, { fileIds })
@@ -61,7 +75,7 @@ export function Composer({
   const models = useModels((s) => s.activeModels) ?? []
   const modelsLoaded = useModels((s) => s.activeModels !== undefined)
   const current = modelId ? models.find((m) => m.id === modelId) : (models.find((m) => m.isDefault) ?? models[0])
-  const modelUnavailable = modelsLoaded && !current
+  const modelUnavailable = !external && modelsLoaded && !current
   const modelReason = models.length ? t('当前模型已停用或不可用，请切换模型') : t('没有已启用的模型，请前往模型页面启用')
 
   useEffect(() => {
@@ -73,7 +87,16 @@ export function Composer({
 
   const submit = async (override?: string) => {
     const body = (override ?? text).trim()
-    if ((!body && !attached.length && !projectFiles.length) || running || disabled || modelUnavailable || !modelsLoaded || submitLock.current) return
+    if (
+      (!body && !attached.length && !projectFiles.length) ||
+      running ||
+      disabled ||
+      modelUnavailable ||
+      (!external && !modelsLoaded) ||
+      runtimeUnavailable ||
+      submitLock.current
+    )
+      return
     if (override !== undefined) setText(override)
     submitLock.current = true
     setSubmitting(true)
@@ -166,6 +189,18 @@ export function Composer({
         void addFiles(e.dataTransfer.files)
       }}
     >
+      {external ? (
+        <div className="px-3.5 pt-3 text-xs text-muted-foreground" role="status">
+          <p>{t('外部运行时使用本机配置，暂不支持 Navo 工具、审批和图片输入。')}</p>
+          {runtime?.capabilities.nativeTools ? <p>{t('此运行时可执行自己的本机工具。')}</p> : null}
+          {runtimeUnavailable ? <p className="text-danger">{t('运行时未启用或不可用，请在设置中检查。')}</p> : null}
+        </div>
+      ) : null}
+      {runtimesError ? (
+        <p role="alert" className="px-3.5 pt-2 text-xs text-danger">
+          {t('运行时列表加载失败：{{error}}', { error: runtimesError })}
+        </p>
+      ) : null}
       {modelUnavailable ? (
         <div className="flex flex-wrap items-center gap-2 px-3.5 pt-3 text-xs text-muted-foreground" role="status">
           <span>{modelReason}</span>
@@ -281,7 +316,33 @@ export function Composer({
                 <Paperclip />
               </Button>
             </Tooltip>
-            {models.length ? (
+            <div className="max-w-44 min-w-0" data-testid="composer-runtime">
+              {draftScope.threadId ? (
+                <span
+                  className="inline-block max-w-full truncate rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
+                  title={t('会话创建后不可切换运行时')}
+                >
+                  {runtime?.profile.name ?? (runtimeId === 'builtin' ? 'Navo' : runtimeId)}
+                </span>
+              ) : (
+                <Select
+                  value={runtimeId}
+                  onChange={(runtimeId) => useDrafts.getState().patch(draftScope, { runtimeId })}
+                  disabled={running || submitting || disabled}
+                  placeholder={t('选择运行时')}
+                  className="h-7 border-transparent bg-transparent text-xs text-muted-foreground hover:bg-accent"
+                  options={(runtimes ?? [])
+                    .filter((item) => item.profile.enabled || item.profile.id === runtimeId)
+                    .map((item) => ({ value: item.profile.id, label: item.profile.name }))}
+                />
+              )}
+            </div>
+            {external ? (
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {draftScope.threadId ? t('使用创建时的运行时配置') : (runtime?.profile.model ?? t('使用运行时默认模型'))}
+              </span>
+            ) : null}
+            {!external && models.length ? (
               <div className="max-w-52 min-w-0 flex-1">
                 <Select
                   value={current?.id ?? ''}
@@ -325,7 +386,14 @@ export function Composer({
               variant="primary"
               size="icon-sm"
               onClick={() => void submit()}
-              disabled={disabled || submitting || modelUnavailable || !modelsLoaded || (!text.trim() && !attached.length && !projectFiles.length)}
+              disabled={
+                disabled ||
+                submitting ||
+                modelUnavailable ||
+                (!external && !modelsLoaded) ||
+                runtimeUnavailable ||
+                (!text.trim() && !attached.length && !projectFiles.length)
+              }
               aria-label={t('发送')}
               className={cn('rounded-md')}
             >
