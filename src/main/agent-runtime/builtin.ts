@@ -10,7 +10,17 @@ import type { AgentRuntime, RuntimeCallbacks } from './types'
 
 /** Keeps the existing DeepAgents worker behind the common runtime boundary. */
 export class BuiltinRuntimeAdapter implements AgentRuntime {
-  readonly capabilities = { navoTools: true, nativeTools: true, approvals: true, images: true, resume: true, fork: true, tokenStreaming: true }
+  readonly capabilities = {
+    navoTools: true,
+    nativeTools: true,
+    approvals: true,
+    images: true,
+    resume: true,
+    fork: true,
+    tokenStreaming: true,
+    requiresNavoModel: true,
+    browserSubagent: true,
+  }
   private child: UtilityProcess | null = null
   private rpc: Rpc | null = null
   private runs = new Map<string, Promise<RunResult>>()

@@ -20,6 +20,8 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { toast } from 'sonner'
 import type { Decision } from '@shared/types'
 import { Composer } from '@/components/chat/composer'
+import { runtimeConversationDescription } from '@/components/chat/runtime-description'
+import { useRuntimes } from '@/stores/runtimes'
 import { InterruptCard } from '@/components/chat/interrupt-card'
 import { MessageList } from '@/components/chat/message-list'
 import { TodoPanel } from '@/components/chat/todo-panel'
@@ -154,6 +156,7 @@ export function ChatPage() {
   const draftModelId = draft.data?.modelId ?? null
   const runtimeId = thread?.runtimeId ?? (activeId ? 'builtin' : (draft.data?.runtimeId ?? 'builtin'))
   const external = runtimeId !== 'builtin' && runtimeId !== 'pi'
+  const runtime = useRuntimes((state) => state.runtimes?.find((item) => item.profile.id === runtimeId))
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -331,12 +334,10 @@ export function ChatPage() {
                 </div>
                 <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">{t('今天想让我完成什么？')}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {external
-                    ? t('外部运行时使用本机配置，暂不支持 Navo 工具、审批和图片输入。')
-                    : t('我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。')}
+                  {external ? runtimeConversationDescription(runtime?.capabilities) : t('我可以操作右侧的浏览器、调用连接器与 MCP 工具，并记住你的偏好。')}
                 </p>
                 <div className="mt-6 grid grid-cols-1 gap-2 @xl:grid-cols-2">
-                  {(external ? [] : SUGGESTIONS).map((s) => (
+                  {(external && !runtime?.capabilities.navoTools ? [] : SUGGESTIONS).map((s) => (
                     <button
                       key={s.text}
                       onClick={() => void send(s.text)}

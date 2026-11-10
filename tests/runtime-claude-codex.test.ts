@@ -48,6 +48,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.method === 'initialize') return send({ id: message.id, result: {} })
   if (message.method === 'initialized') return
+  if (message.method === 'config/read') return send({ id: message.id, result: { config: { mcp_servers: {} } } })
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     if (message.params.sandbox !== 'read-only' || message.params.approvalPolicy !== 'never') die('unsafe thread permissions')
     if (scenario === 'resume' && (message.method !== 'thread/resume' || message.params.threadId !== 'saved-thread')) die('missing native thread resume')
@@ -117,7 +118,7 @@ describe.each(['claude', 'codex'] as const)('%s runtime adapter', (kind) => {
     expect(context.saveSession).toHaveBeenCalledWith(kind === 'claude' ? { sessionId: 'claude-session' } : { threadId: 'codex-thread' })
     expect(context.usage).toHaveBeenCalledTimes(1)
     expect(context.usage).toHaveBeenCalledWith(expect.objectContaining({ usage: { input: kind === 'claude' ? 13 : 10, output: 5, cached: 3 } }))
-    expect(driver.capabilities.approvals).toBe(false)
+    expect(driver.capabilities.approvals).toBe(true)
   })
   it('resumes the stored native session without silently starting over', async () => {
     const { context, driver } = setup(kind, 'resume')

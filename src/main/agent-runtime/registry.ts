@@ -27,7 +27,8 @@ const builtinCapabilities = {
   fork: true,
   tokenStreaming: true,
   requiresNavoModel: true,
-  workspaceTools: true,
+  workspaceTools: false,
+  browserSubagent: true,
 }
 const validators = { claude: validateClaudeArgs, dsh: validateDshArgs, codex: validateCodexArgs }
 
@@ -86,7 +87,7 @@ export class RuntimeRegistry {
         ...(base.kind === 'builtin'
           ? builtinCapabilities
           : base.kind === 'pi'
-            ? { ...builtinCapabilities, nativeTools: false, fork: false, requiresNavoModel: true, workspaceTools: true }
+            ? { ...builtinCapabilities, nativeTools: false, fork: false, requiresNavoModel: true, workspaceTools: true, browserSubagent: false }
             : this.drivers.get(base.kind)!.capabilities),
       },
     }
@@ -140,12 +141,17 @@ export class RuntimeRegistry {
   }
 
   async pendingApprovals(callbacks: RuntimeCallbacks): ReturnType<AgentRuntime['pendingApprovals']> {
+    // Reading persisted external history invalidates stale requests from disconnected MCP channels.
+    const external: Awaited<ReturnType<AgentRuntime['pendingApprovals']>> = []
+    const rows = db().prepare("SELECT id FROM threads WHERE runtime_id NOT IN ('builtin','pi')").all() as { id: string }[]
+    for (const row of rows) external.push(...(await this.get(row.id, callbacks).pendingApprovals()))
     const pi = await (this.pi ??= new PiRuntimeAdapter(callbacks)).pendingApprovals()
-    if (!db().prepare("SELECT 1 FROM threads WHERE runtime_id = 'builtin' LIMIT 1").get()) return pi
+    if (!db().prepare("SELECT 1 FROM threads WHERE runtime_id = 'builtin' LIMIT 1").get()) return [...pi, ...external]
     const runtime = (this.builtin ??= new BuiltinRuntimeAdapter(callbacks))
     const pending = await runtime.pendingApprovals()
     return [
       ...pi,
+      ...external,
       ...pending.filter((item) => {
         const row = db().prepare('SELECT runtime_id FROM threads WHERE id = ?').get(item.threadId) as { runtime_id: string } | undefined
         return row?.runtime_id === 'builtin'

@@ -172,6 +172,15 @@ export interface ToolCall {
   id: string
   name: string
   args: Record<string, unknown>
+  /** Adapter-normalized presentation. Renderers never interpret vendor protocol items. */
+  activity?: {
+    kind: 'command' | 'file_change' | 'search' | 'tool'
+    status?: 'pending' | 'running' | 'success' | 'error' | 'cancelled'
+    command?: string
+    cwd?: string
+    paths?: string[]
+    label?: string
+  }
 }
 
 export interface UIMessage {
@@ -183,6 +192,8 @@ export interface UIMessage {
   toolCallId?: string
   toolName?: string
   status?: 'success' | 'error'
+  /** A protocol or execution diagnostic; never an executable tool request. */
+  runtimeWarning?: 'unexecuted_tool_markup' | 'runtime_disconnected' | 'tool_outcome_unknown'
   /** subagent namespace, empty for main agent */
   ns?: string
   /** Model reasoning / thinking text (Anthropic thinking, OpenAI reasoning summaries, DeepSeek) */
@@ -219,6 +230,7 @@ export type ChatEvent =
   | { type: 'message'; threadId: string; message: UIMessage }
   | { type: 'todos'; threadId: string; todos: Todo[] }
   | { type: 'interrupt'; threadId: string; interrupt: PendingInterrupt }
+  | { type: 'interrupt_cleared'; threadId: string; interruptId: string }
   | { type: 'error'; threadId: string; error: string }
   | { type: 'run_end'; threadId: string; runId: string; aborted?: boolean; traceUrl?: string }
 

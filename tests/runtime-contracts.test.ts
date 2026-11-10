@@ -55,8 +55,8 @@ describe('agent runtime contracts', () => {
     const registry = new RuntimeRegistry()
     expect(registry.info('builtin').capabilities).toMatchObject({ navoTools: true, approvals: true, fork: true })
     expect(registry.info('pi').capabilities).toMatchObject({ navoTools: true, approvals: true, nativeTools: false, fork: false })
-    expect(registry.info('claude').capabilities).toMatchObject({ navoTools: false, nativeTools: false, approvals: false })
-    expect(registry.info('codex').capabilities).toMatchObject({ navoTools: false, nativeTools: true, approvals: false })
+    expect(registry.info('claude').capabilities).toMatchObject({ navoTools: true, nativeTools: false, approvals: true, requiresNavoModel: false })
+    expect(registry.info('codex').capabilities).toMatchObject({ navoTools: true, nativeTools: true, approvals: true, requiresNavoModel: false })
     runtimeState.database.close()
   })
 

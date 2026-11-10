@@ -1,6 +1,6 @@
-import { Bot, Brain, Check, ChevronRight, Copy, Pencil, RotateCcw } from 'lucide-react'
+import { Bot, Brain, Check, ChevronRight, Copy, ListChecks, Pencil, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import type { UIMessage } from '@shared/types'
+import type { ToolCall, UIMessage } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -10,24 +10,9 @@ import { MemoryRefs } from './memory-refs'
 import { AttachmentChip } from '@/components/files/attachment-chip'
 import { Markdown } from './markdown'
 import { ToolCard } from './tool-card'
+import { groupMessages, toolGroupPreview, type MessageBlock } from './message-groups'
+import { RuntimeWarning } from './runtime-warning'
 import { t } from '@shared/i18n'
-
-type Block = { kind: 'user'; msg: ChatMessage } | { kind: 'assistant'; msg: ChatMessage } | { kind: 'sub'; ns: string; msgs: ChatMessage[] }
-
-function group(messages: ChatMessage[]): Block[] {
-  const blocks: Block[] = []
-  for (const m of messages) {
-    if (m.role === 'tool' && !m.ns) continue // rendered inside the calling ToolCard
-    if (m.ns) {
-      const last = blocks.at(-1)
-      if (last?.kind === 'sub' && last.ns === m.ns) last.msgs.push(m)
-      else blocks.push({ kind: 'sub', ns: m.ns, msgs: [m] })
-      continue
-    }
-    blocks.push(m.role === 'user' ? { kind: 'user', msg: m } : { kind: 'assistant', msg: m })
-  }
-  return blocks
-}
 
 export interface MessageActions {
   onRegenerate: (userMessageId: string) => void
@@ -103,6 +88,7 @@ function AssistantBlock({
           {msg.streaming ? <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-caret bg-foreground/70" /> : null}
         </div>
       ) : null}
+      {msg.runtimeWarning ? <RuntimeWarning warning={msg.runtimeWarning} /> : null}
       {msg.toolCalls?.length ? (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
           {msg.toolCalls.map((c) => (
@@ -121,6 +107,52 @@ function AssistantBlock({
             </Tooltip>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ToolGroup({ calls, results, running }: { calls: ToolCall[]; results: Map<string, UIMessage>; running: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const preview = toolGroupPreview(calls, results, running, expanded)
+  const collapsed = toolGroupPreview(calls, results, running, false)
+  return (
+    <div className="min-w-0 rounded-md border border-border/60 bg-muted/20 py-1.5" data-testid="tool-activity-group">
+      <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 px-3 text-[11px] text-muted-foreground">
+        <ListChecks aria-hidden="true" className="size-3.5" />
+        <span>{t('执行记录')}</span>
+        <span>{t('{{v0}} 次工具调用', { v0: calls.length })}</span>
+        {preview.pendingCount ? <span className="text-warning">{t('{{v0}} 项等待确认', { v0: preview.pendingCount })}</span> : null}
+        {preview.runningCount ? <span>{t('{{v0}} 项执行中', { v0: preview.runningCount })}</span> : null}
+        {preview.failedCount ? <span className="text-danger">{t('{{v0}} 项失败', { v0: preview.failedCount })}</span> : null}
+        {preview.cancelledCount ? <span>{t('{{v0}} 项已取消', { v0: preview.cancelledCount })}</span> : null}
+      </div>
+      {!expanded && preview.hiddenCount ? (
+        <button
+          type="button"
+          aria-expanded={false}
+          onClick={() => setExpanded(true)}
+          className="interactive my-1 flex min-h-6 items-center gap-1 px-3 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight aria-hidden="true" className="size-3" />
+          {t('展开前 {{v0}} 项已完成操作', { v0: preview.hiddenCount })}
+        </button>
+      ) : null}
+      <div className="grid min-w-0 gap-0.5 px-1">
+        {preview.visible.map((call) => (
+          <ToolCard key={call.id} call={call} result={results.get(call.id)} pending={running} compact />
+        ))}
+      </div>
+      {expanded && collapsed.hiddenCount ? (
+        <button
+          type="button"
+          aria-expanded={true}
+          onClick={() => setExpanded(false)}
+          className="interactive mt-1 flex min-h-6 items-center gap-1 px-3 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight aria-hidden="true" className="size-3 rotate-90" />
+          {t('收起较早的已完成操作')}
+        </button>
       ) : null}
     </div>
   )
@@ -239,12 +271,12 @@ function SubagentBlock({ msgs, running }: { msgs: ChatMessage[]; running: boolea
 
 export function MessageList({ messages, running, actions }: { messages: ChatMessage[]; running: boolean; actions?: MessageActions }) {
   const results = useMemo(() => new Map(messages.filter((m) => m.role === 'tool' && m.toolCallId && !m.ns).map((m) => [m.toolCallId!, m])), [messages])
-  const blocks = useMemo(() => group(messages), [messages])
+  const blocks = useMemo(() => groupMessages(messages), [messages])
   const last = messages.at(-1)
   const thinking = running && (!last || last.role === 'user' || (last.role === 'tool' && !last.ns))
   // regenerate belongs to the final answer and re-runs from the user message that led to it
   const lastAssistantIdx = blocks.map((b) => b.kind).lastIndexOf('assistant')
-  const lastUser = [...blocks].reverse().find((b): b is Extract<Block, { kind: 'user' }> => b.kind === 'user')
+  const lastUser = [...blocks].reverse().find((b): b is Extract<MessageBlock<ChatMessage>, { kind: 'user' }> => b.kind === 'user')
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
@@ -259,6 +291,8 @@ export function MessageList({ messages, running, actions }: { messages: ChatMess
             running={running}
             onRegenerate={actions && i === lastAssistantIdx && lastUser ? () => actions.onRegenerate(lastUser.msg.id) : undefined}
           />
+        ) : b.kind === 'tools' ? (
+          <ToolGroup key={b.id} calls={b.calls} results={results} running={running} />
         ) : (
           <SubagentBlock key={`sub-${i}`} msgs={b.msgs} running={running} />
         ),

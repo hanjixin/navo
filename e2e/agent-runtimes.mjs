@@ -22,6 +22,7 @@ if (args.includes('--version')) { log({ probe: true }); console.log('Navo fixtur
 if (value('--tools') !== '' || value('--permission-mode') !== 'dontAsk') { process.exit(4) }
 require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line)
+  if (input.type === 'control_request' && input.request.subtype === 'initialize') { send({ type: 'control_response', response: { subtype: 'success', request_id: input.request_id, response: {} } }); return }
   if (input.type !== 'user') return
   const text = input.message.content
   const model = value('--model')

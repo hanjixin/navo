@@ -24,6 +24,8 @@ export interface AgentRuntimeCapabilities {
   requiresNavoModel?: boolean
   /** Include Navo workspace file tools when Navo tools are enabled. */
   workspaceTools?: boolean
+  /** The engine implements the browser-operator delegation tool. */
+  browserSubagent?: boolean
 }
 
 export interface AgentRuntimeInfo {

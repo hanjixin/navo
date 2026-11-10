@@ -12,6 +12,7 @@ import type { DraftScope } from '@shared/reliability'
 import { useFiles } from '@/stores/files'
 import { useModels } from '@/stores/models'
 import { useRuntimes, wireRuntimeEvents } from '@/stores/runtimes'
+import { runtimeConversationDescription } from './runtime-description'
 import { useSettings } from '@/stores/settings'
 import { useVoice } from '@/hooks/use-voice'
 import { t } from '@shared/i18n'
@@ -191,8 +192,9 @@ export function Composer({
     >
       {external ? (
         <div className="px-3.5 pt-3 text-xs text-muted-foreground" role="status">
-          <p>{t('外部运行时使用本机配置，暂不支持 Navo 工具、审批和图片输入。')}</p>
-          {runtime?.capabilities.nativeTools ? <p>{t('此运行时可执行自己的本机工具。')}</p> : null}
+          <p>{runtimeConversationDescription(runtime?.capabilities)}</p>
+          {runtime?.capabilities.navoTools && !runtime.capabilities.images ? <p>{t('暂不支持直接图片输入。')}</p> : null}
+          {runtime?.capabilities.nativeTools && !runtime.capabilities.navoTools ? <p>{t('此运行时可执行自己的本机工具。')}</p> : null}
           {runtimeUnavailable ? <p className="text-danger">{t('运行时未启用或不可用，请在设置中检查。')}</p> : null}
         </div>
       ) : null}

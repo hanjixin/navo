@@ -7,7 +7,17 @@ import { BuiltinRuntimeAdapter } from './builtin'
 
 /** Pi Core executes in an isolated worker; history and approvals never start the worker. */
 export class PiRuntimeAdapter implements AgentRuntime {
-  readonly capabilities = { navoTools: true, nativeTools: false, approvals: true, images: true, resume: true, fork: false, tokenStreaming: true }
+  readonly capabilities = {
+    navoTools: true,
+    nativeTools: false,
+    approvals: true,
+    images: true,
+    resume: true,
+    fork: false,
+    tokenStreaming: true,
+    requiresNavoModel: true,
+    workspaceTools: true,
+  }
   private readonly worker: BuiltinRuntimeAdapter
   constructor(callbacks: RuntimeCallbacks) {
     this.worker = new BuiltinRuntimeAdapter(callbacks, 'out/main/pi-host.js')

@@ -197,7 +197,8 @@ export const useChat = create<ChatState>((set, get) => {
             const msg = e.message
             let i = v.messages.findIndex((m) => m.id === msg.id && m.role === msg.role)
             // provider message ids can differ between stream chunks and the final message
-            if (i < 0 && msg.role === 'assistant') i = v.messages.findIndex((m) => m.streaming && m.role === 'assistant' && (m.ns ?? '') === (msg.ns ?? ''))
+            if (i < 0 && msg.role === 'assistant' && !msg.toolCalls?.length && (msg.content.trim() || msg.reasoning?.trim()))
+              i = v.messages.findIndex((m) => m.streaming && m.role === 'assistant' && (m.ns ?? '') === (msg.ns ?? ''))
             const next = [...v.messages]
             if (i >= 0) next[i] = { ...msg, streaming: false }
             else next.push(msg)
@@ -209,6 +210,9 @@ export const useChat = create<ChatState>((set, get) => {
           break
         case 'interrupt':
           patch(id, () => ({ interrupt: e.interrupt, lastActivityAt: Date.now() }))
+          break
+        case 'interrupt_cleared':
+          patch(id, (view) => (view.interrupt?.id === e.interruptId ? { interrupt: null, lastActivityAt: Date.now() } : {}))
           break
         case 'error':
           patch(id, () => ({ error: e.error, lastActivityAt: Date.now() }))

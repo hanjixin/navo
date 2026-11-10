@@ -111,6 +111,18 @@ export class AgentService {
         acceptWorkspaceWrite(event, this.runs, (threadId, path) => outputs.recordWorkspaceWrite(threadId, path, this.runs.get(threadId)!.workspaceRoot))
       },
       usage: (event) => usage.record({ modelId: event.modelId, model: event.model, purpose: 'chat', threadId: event.threadId, usage: event.usage }),
+      unavailable: ({ threadId, executionId, runId, error }) => {
+        const execution = submissions.execution(threadId)
+        if (!this.getThread(threadId) || execution?.id !== executionId || execution.phase !== 'waiting_approval') return
+        const interruptId = submissions.approvals().find((item) => item.threadId === threadId)?.interrupt.id
+        const result = { finalText: '', interrupted: false, error }
+        this.publishExecution({ threadId, executionId, phase: 'error', result })
+        computerUse.endExecution(threadId, executionId)
+        kv.set(`thread.workspace.${threadId}`, null)
+        this.send({ type: 'error', threadId, error })
+        if (interruptId) this.send({ type: 'interrupt_cleared', threadId, interruptId })
+        this.send({ type: 'run_end', threadId, runId })
+      },
     }
   }
 
@@ -123,7 +135,7 @@ export class AgentService {
     // Pi can run against a Navo-configured provider. Keep the resolved model on the
     // request so the adapter can translate it without exposing credentials to the CLI.
     const capabilities = this.registry.info(profile.id).capabilities
-    if (capabilities.requiresNavoModel === true || capabilities.navoTools) {
+    if (capabilities.requiresNavoModel ?? capabilities.navoTools) {
       if (capabilities.requiresNavoModel === true && !modelId) throw new Error('Choose an enabled Navo model for this conversation')
       return resolveModel(modelId)
     }
@@ -251,7 +263,7 @@ export class AgentService {
   createThread(modelId?: string | null, opts: { title?: string; hidden?: boolean; projectId?: string | null; runtimeId?: string } = {}): Thread {
     const profile = this.registry.capture(opts.runtimeId)
     const capabilities = this.registry.info(profile.id).capabilities
-    if (capabilities.requiresNavoModel === true || capabilities.navoTools) modelId = resolveModel(modelId).id ?? modelId
+    if (capabilities.requiresNavoModel ?? capabilities.navoTools) modelId = resolveModel(modelId).id ?? modelId
     if (opts.projectId != null && !projects.exists(opts.projectId)) throw new Error(t('项目不存在'))
     const id = newId()
     const now = Date.now()
@@ -289,7 +301,7 @@ export class AgentService {
   setThreadModel(id: string, modelId: string): void {
     const profile = this.registry.profile(id)
     const capabilities = this.registry.info(profile.id).capabilities
-    if (!(capabilities.requiresNavoModel === true || capabilities.navoTools)) throw new Error('Configure the model in the agent runtime profile')
+    if (!(capabilities.requiresNavoModel ?? capabilities.navoTools)) throw new Error('Configure the model in the agent runtime profile')
     resolveModel(modelId)
     db().prepare('UPDATE threads SET model_id = ? WHERE id = ?').run(modelId, id)
     emit('threads.changed')
@@ -347,12 +359,15 @@ export class AgentService {
     const lock = this.locks.get(threadId)
     if (lock) lock.cancelled = true
     const execution = submissions.execution(threadId)
+    const interruptId = submissions.approvals().find((item) => item.threadId === threadId)?.interrupt.id
     if (execution && (execution.phase === 'running' || execution.phase === 'waiting_approval')) {
       this.publishExecution({ threadId, executionId: execution.id, phase: 'cancelled', result: { finalText: '', interrupted: false, aborted: true } })
       computerUse.endExecution(threadId, execution.id)
     }
     computerUse.stopRun(threadId)
-    const runtime = this.runs.get(threadId)?.runtime
+    if (interruptId) this.send({ type: 'interrupt_cleared', threadId, interruptId })
+    const runtime =
+      this.runs.get(threadId)?.runtime ?? (execution?.phase === 'waiting_approval' && this.getThread(threadId) ? this.runtime(threadId) : undefined)
     if (runtime) void Promise.resolve(runtime.abort(threadId)).catch(() => undefined)
   }
 
@@ -650,7 +665,7 @@ export class AgentService {
         fromCheckpointId,
         model: resolved,
         systemPrompt: runtime.capabilities.navoTools
-          ? systemPrompt(page, mem ? mem.prompt : null, project ?? undefined, workspaceRoot)
+          ? systemPrompt(page, mem ? mem.prompt : null, project ?? undefined, workspaceRoot, runtime.capabilities.browserSubagent === true)
           : [
               `You are working in the local directory: ${workspaceRoot}.`,
               'Navo browser, desktop, plugin, memory, and approval tools are not available in this runtime. Use only tools provided by your agent runtime.',
@@ -665,7 +680,7 @@ export class AgentService {
           opts.headless || !runtime.capabilities.approvals
             ? []
             : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter((t) => !allowed.has(t)),
-        browserSubagent: runtime.capabilities.navoTools && settings.browserSubagent,
+        browserSubagent: runtime.capabilities.browserSubagent === true && settings.browserSubagent,
         mounts: runtime.capabilities.navoTools ? skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
         paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
         devMode: settings.devMode,
@@ -675,6 +690,7 @@ export class AgentService {
       this.assertActive(lock)
       result = await runtime.run(req)
     } catch (err) {
+      if (input.kind === 'resume') await Promise.resolve(runtime.abort(threadId)).catch(() => undefined)
       const error = err instanceof Error ? err.message : String(err)
       log.error(`[agent] run failed: ${error}`)
       this.send({ type: 'error', threadId, error })
@@ -691,6 +707,7 @@ export class AgentService {
     // Mark accepted user messages that reached a checkpoint before allowing later branches.
     const checkpoint = await runtime.state(threadId).catch(() => null)
     if (lock.cancelled) result = { ...result, interrupted: false, aborted: true }
+    if (result.interrupted && !checkpoint?.interrupt) result = { ...result, interrupted: false, error: 'Runtime disconnected before approval could be resumed' }
     const phase: ExecutionPhase = result.aborted ? 'cancelled' : result.error ? 'error' : result.interrupted ? 'waiting_approval' : 'success'
     if (checkpoint && this.getThread(threadId)) {
       submissions.merge(threadId, checkpoint.messages)
@@ -708,6 +725,7 @@ export class AgentService {
     // learn from the finished exchange in the background (the agent's own memory_* calls take precedence)
     if (
       runtime.capabilities.navoTools &&
+      (runtime.capabilities.requiresNavoModel ?? true) &&
       input.kind === 'message' &&
       !opts.headless &&
       !result.error &&
@@ -782,7 +800,14 @@ export class AgentService {
     const entry = run.tools.get(req.name)
     if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: req.name }))
     const out = await entry.tool.invoke(req.args)
+    if (this.runs.get(req.threadId) !== run || this.locks.get(req.threadId)?.cancelled) throw new Error(t('运行已结束'))
     const toolFailed = !!out && typeof out === 'object' && ((out as { status?: string }).status === 'error' || (out as { isError?: boolean }).isError === true)
+    if (toolFailed)
+      throw new Error(
+        typeof (out as { content?: unknown }).content === 'string'
+          ? String((out as { content: string }).content)
+          : JSON.stringify((out as { content?: unknown }).content ?? out),
+      )
     if ((req.name === 'write_file' || req.name === 'edit_file') && !toolFailed && !(out as { error?: unknown })?.error) {
       const filePath = String(req.args.file_path ?? '')
       outputs.recordWorkspaceWrite(req.threadId, filePath.startsWith('/workspace/') ? filePath.slice('/workspace'.length) : filePath, run.workspaceRoot)

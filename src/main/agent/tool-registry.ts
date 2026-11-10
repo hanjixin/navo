@@ -175,6 +175,7 @@ export function systemPrompt(
   mem: string | null = null,
   project?: { name: string; description: string },
   workspaceRoot?: string,
+  browserSubagent = true,
 ): string {
   const s = getSettings()
   const pluginList = plugins.describe()
@@ -193,7 +194,7 @@ ${project ? `\n## 当前项目\n项目名称：${project.name}\n${project.descri
 - 涉及付款、删除数据、发送消息、提交重要表单等不可逆操作前，先向用户确认。
 - 遇到登录、验证码时，请用户在右侧浏览器中手动完成后再继续。
 - 如果同一方法连续失败两次，换一种思路，不要重复相同的调用。
-- 多步骤网页任务可委派给 browser-operator 子代理，以节省上下文。
+${browserSubagent ? '- 多步骤网页任务可委派给 browser-operator 子代理，以节省上下文。' : ''}
 ${
   s.computerUse.myBrowser || s.computerUse.desktop
     ? `

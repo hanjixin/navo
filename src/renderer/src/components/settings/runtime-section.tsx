@@ -128,9 +128,9 @@ function RuntimeEditor({ info, reload }: { info: AgentRuntimeInfo; reload: () =>
           <>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {draft.kind === 'claude'
-                ? t('Claude 使用本机 CLI 登录，仅支持文本对话；原生工具、MCP 和 Hooks 已关闭。')
+                ? t('Claude 使用本机 CLI 模型与登录，通过本次运行专属的 MCP 桥接入 Navo 工具和审批；不加载其他本机 MCP、原生工具或 Hooks。')
                 : draft.kind === 'codex'
-                  ? t('Codex 使用本机 CLI 登录，原生工具仅在只读沙箱内运行；MCP、浏览器和桌面集成已关闭。')
+                  ? t('Codex 使用本机 CLI 模型与登录；Navo 工具按 Navo 的审批规则执行，原生命令仍受只读沙箱限制。其他本机 MCP、浏览器和桌面集成不加载。')
                   : t('外部运行时使用自己的模型与认证配置；第一版不接入 Navo 浏览器、桌面、插件或人工审批。')}
             </p>
             <label className="flex items-center justify-between text-sm">

@@ -7,6 +7,8 @@ export interface RuntimeCallbacks {
   callTool(request: ToolCallRequest): Promise<unknown>
   workspaceWrite(event: WorkspaceWrite): void | Promise<void>
   usage(event: UsageEvent): void
+  /** A suspended engine exited; invalidate its live approval without replaying it. */
+  unavailable?(event: { threadId: string; executionId: string; runId: string; error: string }): void
 }
 
 /** The application owns durable submissions and execution IDs; adapters own engine sessions. */
@@ -24,6 +26,21 @@ export interface AgentRuntime {
 
 export type RuntimeSessionReference = Record<string, string>
 
+export type RuntimeToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+export interface RuntimeToolResult {
+  content: RuntimeToolContent[]
+  isError?: boolean
+}
+export interface RuntimeToolInvocation {
+  id: string
+  name: string
+  args: Record<string, unknown>
+}
+export interface RuntimeToolDispatcher {
+  call(input: RuntimeToolInvocation): Promise<RuntimeToolResult>
+  cancel?(id: string): void
+}
+
 /** CLI protocols are translated here; no renderer or task code parses vendor messages. */
 export interface ExternalRuntimeContext {
   profile: AgentRuntimeProfile
@@ -34,6 +51,8 @@ export interface ExternalRuntimeContext {
   emit(event: ChatEvent): void
   usage(event: UsageEvent): void
   saveSession(session: RuntimeSessionReference): void
+  /** Only structured requests on the current engine connection may use this bridge. */
+  tools?: RuntimeToolDispatcher
 }
 
 export interface ExternalRuntimeDriver {
