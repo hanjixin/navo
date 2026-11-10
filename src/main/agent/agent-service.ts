@@ -130,13 +130,13 @@ export class AgentService {
     return this.registry.get(threadId, this.callbacks)
   }
 
-  private model(profile: AgentRuntimeProfile, modelId: string | null): ResolvedModel {
+  private model(profile: AgentRuntimeProfile, modelId: string | null, allowDefault = profile.kind === 'builtin'): ResolvedModel {
     if (!profile.enabled) throw new Error('Agent runtime is disabled')
     // Pi can run against a Navo-configured provider. Keep the resolved model on the
     // request so the adapter can translate it without exposing credentials to the CLI.
     const capabilities = this.registry.info(profile.id).capabilities
     if (capabilities.requiresNavoModel ?? capabilities.navoTools) {
-      if (capabilities.requiresNavoModel === true && !modelId) throw new Error('Choose an enabled Navo model for this conversation')
+      if (capabilities.requiresNavoModel === true && !modelId && !allowDefault) throw new Error('Choose an enabled Navo model for this conversation')
       return resolveModel(modelId)
     }
     return { providerType: 'openai-compatible', model: profile.model ?? profile.kind, supportsVision: this.registry.info(profile.id).capabilities.images }
@@ -404,9 +404,12 @@ export class AgentService {
       const existing = input.threadId ? this.getThread(threadId) : null
       if (input.threadId && !existing) throw new Error(t('会话不存在'))
       if (submissions.execution(threadId)?.phase === 'waiting_approval') throw new Error('Resolve the pending approval before sending')
-      const modelId = input.modelId ?? existing?.modelId ?? null
+      const requestedModelId = input.modelId ?? existing?.modelId ?? null
       const profile = existing ? this.registry.profile(threadId) : this.registry.capture(input.runtimeId)
-      const model = this.model(profile, modelId)
+      // New drafts show the default model before an explicit selection. Capture that
+      // model at acceptance; legacy Pi conversations must still select a model.
+      const model = this.model(profile, requestedModelId, !existing || profile.kind === 'builtin')
+      const modelId = model.id ?? requestedModelId
       if (existing && input.runtimeId && input.runtimeId !== profile.id) throw new Error('A conversation cannot change its agent runtime')
       if (profile.kind !== 'builtin' && !model.supportsVision && input.images?.length) throw new Error('This agent runtime does not support image input')
       const projectId = existing ? existing.projectId : (input.projectId ?? null)
@@ -438,7 +441,7 @@ export class AgentService {
             .prepare('INSERT INTO threads(id,title,model_id,created_at,updated_at,hidden,project_id) VALUES(?,?,?,?,?,0,?)')
             .run(threadId, input.text.trim().replace(/\s+/g, ' ').slice(0, 40) || '新对话', modelId, now, now, projectId)
         else {
-          if (input.modelId) db().prepare('UPDATE threads SET model_id=? WHERE id=?').run(modelId, threadId)
+          if (modelId !== existing.modelId) db().prepare('UPDATE threads SET model_id=? WHERE id=?').run(modelId, threadId)
           if (existing.title === '新对话' && (input.text.trim() || fileIds.length)) {
             const title = (input.text.trim() || `文件：${files.get(fileIds[0]).name}`).replace(/\s+/g, ' ').slice(0, 40)
             db().prepare('UPDATE threads SET title=?,updated_at=? WHERE id=?').run(title, now, threadId)
@@ -646,8 +649,12 @@ export class AgentService {
       kv.set(`thread.workspace.${threadId}`, workspaceRoot)
       runState.workspaceRoot = workspaceRoot
       const resolved = opts.model ?? this.model(profile, thread.modelId)
+      const fileConfig = {
+        paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
+        mounts: runtime.capabilities.navoTools ? skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
+      }
       const entries = runtime.capabilities.navoTools
-        ? collectTools(ctx, resolved.supportsVision, workspaceRoot, runtime.capabilities.workspaceTools === true)
+        ? collectTools(ctx, resolved.supportsVision, workspaceRoot, runtime.capabilities.workspaceTools ? fileConfig : undefined)
         : []
       runState.tools = new Map(entries.map((e) => [e.tool.name, e]))
       const allowed = new Set(this.allowList(threadId))
@@ -681,8 +688,7 @@ export class AgentService {
             ? []
             : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter((t) => !allowed.has(t)),
         browserSubagent: runtime.capabilities.browserSubagent === true && settings.browserSubagent,
-        mounts: runtime.capabilities.navoTools ? skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
-        paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
+        ...fileConfig,
         devMode: settings.devMode,
         langfuse: langfuseConfig(),
         meta: { threadTitle: thread.title, modelLabel: resolved.model, appVersion: app.getVersion() },

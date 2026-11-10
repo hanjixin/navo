@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatEvent, PendingInterrupt, Thread, Todo, UIMessage } from '@shared/types'
+import type { ChatEvent, Decision, PendingInterrupt, Thread, Todo, UIMessage } from '@shared/types'
 import { call, on } from '@/lib/ipc'
 import { useModels } from '@/stores/models'
 import { t } from '@shared/i18n'
@@ -36,6 +36,33 @@ const emptyView = (): ThreadView => ({
   lastActivityAt: null,
 })
 
+// History is the ordered base; live messages replace matching entries and append
+// new ones. A stream observed after opening a window may contain only a suffix,
+// so never replace a complete persisted message with a shorter streaming fragment.
+function mergeMessages(history: UIMessage[], live: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [...history]
+  const indices = new Map(result.map((message, index) => [JSON.stringify([message.role, message.id]), index]))
+  for (const message of live) {
+    const key = JSON.stringify([message.role, message.id])
+    const index = indices.get(key)
+    if (index === undefined) {
+      indices.set(key, result.length)
+      result.push(message)
+    } else {
+      const saved = result[index]
+      result[index] = message.streaming
+        ? {
+            ...saved,
+            ...message,
+            content: saved.content.length > message.content.length ? saved.content : message.content,
+            reasoning: (saved.reasoning?.length ?? 0) > (message.reasoning?.length ?? 0) ? saved.reasoning : message.reasoning,
+          }
+        : message
+    }
+  }
+  return result
+}
+
 interface ChatState {
   threads: Thread[] | undefined
   threadsError: string | null
@@ -47,6 +74,8 @@ interface ChatState {
   setProjectFilter: (projectId: string | null | undefined) => void
   select: (id: string | null) => void
   loadThread: (id: string) => Promise<void>
+  resume: (id: string, decisions: Decision[], alwaysAllow?: string[]) => Promise<void>
+  retrySubmission: (id: string, messageId: string) => Promise<void>
   newThread: (modelId?: string | null, projectId?: string | null, runtimeId?: string) => Promise<Thread>
   send: (text: string, images?: string[], fileIds?: string[]) => Promise<void>
   sendTo: (threadId: string, text: string, images?: string[], fileIds?: string[]) => Promise<void>
@@ -60,6 +89,15 @@ interface ChatState {
 
 export const useChat = create<ChatState>((set, get) => {
   let threadRequest = 0
+  const stateRequests = new Map<string, number>()
+  type VersionedField = 'messages' | 'running' | 'todos' | 'interrupt' | 'recoverableMessageIds'
+  const eventVersions = new Map<string, Partial<Record<VersionedField, number>>>()
+  const versionOf = (id: string, field: VersionedField) => eventVersions.get(id)?.[field] ?? 0
+  const changed = (id: string, ...fields: VersionedField[]) => {
+    const next = { ...eventVersions.get(id) }
+    for (const field of fields) next[field] = (next[field] ?? 0) + 1
+    eventVersions.set(id, next)
+  }
   const patch = (id: string, fn: (v: ThreadView) => Partial<ThreadView>) =>
     set((s) => {
       const v = s.views[id] ?? emptyView()
@@ -98,20 +136,61 @@ export const useChat = create<ChatState>((set, get) => {
     setProjectFilter: (projectFilterId) => set({ projectFilterId }),
 
     loadThread: async (id) => {
+      const request = (stateRequests.get(id) ?? 0) + 1
+      stateRequests.set(id, request)
+      const versions = { ...eventVersions.get(id) }
       patch(id, () => ({ loadError: null }))
       try {
         const st = await call('threads.state', id)
-        patch(id, (v) => ({
-          loaded: true,
-          messages: v.running ? v.messages : st.messages,
-          todos: st.todos,
-          interrupt: st.interrupt,
-          recoverableMessageIds: st.recoverableMessageIds ?? [],
-          running: st.running || v.running,
-          runStartedAt: st.running ? (v.runStartedAt ?? Date.now()) : v.runStartedAt,
-        }))
+        if (stateRequests.get(id) !== request) return
+        patch(id, (v) => {
+          const received = (field: VersionedField) => (versions[field] ?? 0) !== versionOf(id, field)
+          return {
+            loaded: true,
+            messages: received('messages') || v.running ? mergeMessages(st.messages, v.messages) : st.messages,
+            // Only an event for a field supersedes that part of the snapshot.
+            // A window joining mid-run may receive tokens without run_start.
+            ...(received('todos') ? {} : { todos: st.todos }),
+            ...(received('interrupt') ? {} : { interrupt: st.interrupt }),
+            ...(received('recoverableMessageIds') ? {} : { recoverableMessageIds: st.recoverableMessageIds ?? [] }),
+            ...(received('running') ? {} : { running: st.running, runStartedAt: st.running ? (v.runStartedAt ?? Date.now()) : null }),
+          }
+        })
       } catch (e) {
-        patch(id, () => ({ loadError: errorMessage(e) }))
+        if (stateRequests.get(id) === request) patch(id, () => ({ loadError: errorMessage(e) }))
+      }
+    },
+
+    resume: async (id, decisions, alwaysAllow) => {
+      const interruptId = get().views[id]?.interrupt?.id
+      changed(id, 'running', 'interrupt')
+      const runningVersion = versionOf(id, 'running')
+      patch(id, () => ({ interrupt: null, running: true, error: null, runStartedAt: Date.now(), lastActivityAt: Date.now() }))
+      try {
+        await call('chat.resume', id, decisions, alwaysAllow, interruptId)
+      } catch (e) {
+        patch(id, () => ({
+          ...(runningVersion === versionOf(id, 'running') ? { running: false, runStartedAt: null } : {}),
+          error: errorMessage(e),
+        }))
+        await get().loadThread(id)
+        throw e
+      }
+    },
+
+    retrySubmission: async (id, messageId) => {
+      const runningVersion = versionOf(id, 'running')
+      try {
+        await call('chat.retrySubmission', id, messageId)
+        // The receipt acknowledges acceptance, not completion. run_end refreshes
+        // the authoritative list, including messages that failed before checkpointing.
+        if (get().views[id]?.running || runningVersion === versionOf(id, 'running')) {
+          changed(id, 'recoverableMessageIds')
+          patch(id, (v) => ({ recoverableMessageIds: v.recoverableMessageIds?.filter((pending) => pending !== messageId) }))
+        }
+      } catch (e) {
+        await get().loadThread(id)
+        throw e
       }
     },
 
@@ -161,6 +240,8 @@ export const useChat = create<ChatState>((set, get) => {
         patch(id, () => ({ error: errorMessage(e) }))
         return
       }
+      changed(id, 'messages', 'running', 'interrupt', 'todos')
+      stateRequests.set(id, (stateRequests.get(id) ?? 0) + 1)
       // drop the old branch from view; the main process re-emits the (possibly edited) user message
       patch(id, (cur) => ({ messages: cur.messages.slice(0, idx), running: true, error: null, interrupt: null, todos: [] }))
       try {
@@ -175,9 +256,11 @@ export const useChat = create<ChatState>((set, get) => {
       const id = e.threadId
       switch (e.type) {
         case 'run_start':
-          patch(id, () => ({ running: true, error: null, interrupt: null, runStartedAt: Date.now(), lastActivityAt: Date.now() }))
+          changed(id, 'running', 'interrupt', 'recoverableMessageIds')
+          patch(id, () => ({ recoverableMessageIds: [], running: true, error: null, interrupt: null, runStartedAt: Date.now(), lastActivityAt: Date.now() }))
           break
         case 'token':
+          changed(id, 'messages')
           patch(id, (v) => {
             const i = v.messages.findIndex((m) => m.id === e.messageId)
             const field = e.reasoning ? 'reasoning' : 'content'
@@ -193,6 +276,7 @@ export const useChat = create<ChatState>((set, get) => {
           })
           break
         case 'message':
+          changed(id, 'messages')
           patch(id, (v) => {
             const msg = e.message
             let i = v.messages.findIndex((m) => m.id === msg.id && m.role === msg.role)
@@ -206,18 +290,22 @@ export const useChat = create<ChatState>((set, get) => {
           })
           break
         case 'todos':
+          changed(id, 'todos')
           patch(id, () => ({ todos: e.todos, lastActivityAt: Date.now() }))
           break
         case 'interrupt':
+          changed(id, 'interrupt')
           patch(id, () => ({ interrupt: e.interrupt, lastActivityAt: Date.now() }))
           break
         case 'interrupt_cleared':
+          changed(id, 'interrupt')
           patch(id, (view) => (view.interrupt?.id === e.interruptId ? { interrupt: null, lastActivityAt: Date.now() } : {}))
           break
         case 'error':
           patch(id, () => ({ error: e.error, lastActivityAt: Date.now() }))
           break
         case 'run_end':
+          changed(id, 'running', 'messages', 'recoverableMessageIds')
           patch(id, (v) => ({
             running: false,
             runStartedAt: null,
@@ -225,6 +313,7 @@ export const useChat = create<ChatState>((set, get) => {
             traceUrl: e.traceUrl ?? v.traceUrl,
             messages: v.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
           }))
+          if (get().activeId === id || get().views[id]?.loaded) void get().loadThread(id)
           break
       }
     },

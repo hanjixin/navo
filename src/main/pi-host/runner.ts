@@ -9,10 +9,11 @@ import {
   type StreamFn,
   type AgentToolCall,
 } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Message, ToolResultMessage } from '@earendil-works/pi-ai'
+import type { AssistantMessage, ImageContent, Message, TextContent, ToolResultMessage } from '@earendil-works/pi-ai'
 import type { ChatEvent, PendingInterrupt, ThreadState, UIMessage } from '@shared/types'
 import type { RunRequest, RunResult, RuntimeModel, ToolCallRequest, UsageEvent } from '../agent-runtime/contracts'
 import { piModelAdapter } from './model'
+import { cancelPiPending } from './cancel'
 
 interface Pending {
   assistant: AssistantMessage
@@ -37,11 +38,39 @@ export interface PiRunnerDeps {
   stream?(model: RuntimeModel): StreamFn
 }
 class Pause extends Error {}
+function imageContent(url: string): ImageContent {
+  const match = /^data:(image\/[\w.+-]+);base64,([\s\S]+)$/.exec(url)
+  if (!match) throw new Error('Pi images must be base64 image data URLs')
+  return { type: 'image', mimeType: match[1], data: match[2] }
+}
+function toolContent(value: unknown): { content: (TextContent | ImageContent)[]; isError?: boolean } {
+  const result = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+  const blocks = Array.isArray(value) ? value : Array.isArray(result?.content) ? result.content : [value]
+  const content: (TextContent | ImageContent)[] = blocks.map((block) => {
+    if (typeof block === 'string') return { type: 'text', text: block }
+    const item = block && typeof block === 'object' ? (block as Record<string, unknown>) : null
+    if (item?.type === 'text' && typeof item.text === 'string') return { type: 'text', text: item.text }
+    if (item?.type === 'image' && typeof item.data === 'string' && typeof item.mimeType === 'string')
+      return { type: 'image', data: item.data, mimeType: item.mimeType }
+    if (item?.type === 'image_url') {
+      const url = typeof item.image_url === 'string' ? item.image_url : (item.image_url as { url?: string } | undefined)?.url
+      if (typeof url === 'string') return imageContent(url)
+    }
+    return { type: 'text', text: JSON.stringify(block) ?? '' }
+  })
+  return { content, ...(result?.isError === true || result?.status === 'error' ? { isError: true } : {}) }
+}
 export class PiRunner {
-  private active = new Map<string, AbortController>()
+  private active = new Map<string, { controller: AbortController; state: PiSnapshot }>()
   constructor(private deps: PiRunnerDeps) {}
   abort(threadId: string): void {
-    this.active.get(threadId)?.abort()
+    const active = this.active.get(threadId)
+    active?.controller.abort()
+    const state = active?.state ?? this.deps.read(threadId)
+    if (!state) return
+    const messages = cancelPiPending(state)
+    this.deps.write(threadId, state)
+    for (const message of messages) this.deps.emit({ type: 'message', threadId, message })
   }
   state(threadId: string): Omit<ThreadState, 'running'> {
     const s = this.deps.read(threadId)
@@ -62,12 +91,13 @@ export class PiRunner {
     if (req.fromCheckpointId) throw new Error('Pi historical regeneration is not supported')
     const state = this.deps.read(req.threadId) ?? { messages: [], ui: [], pending: null, inFlight: null }
     if (state.inFlight) throw new Error('A Pi tool outcome is unknown after interruption; it will not be executed again automatically')
-    if (!state.messages.some((message) => message.role === 'system')) {
-      state.messages.unshift({ role: 'system', content: req.systemPrompt, timestamp: Date.now() })
-      this.deps.write(req.threadId, state)
-    }
+    // The first system message belongs to Navo; later Pi tool-change messages stay intact.
+    const system = state.messages.findIndex((message) => message.role === 'system')
+    const prompt = { role: 'system' as const, content: req.systemPrompt, timestamp: Date.now() }
+    if (system < 0) state.messages.unshift(prompt)
+    else state.messages[system] = prompt
+    this.deps.write(req.threadId, state)
     const controller = new AbortController()
-    this.active.set(req.threadId, controller)
     const save = () => this.deps.write(req.threadId, state)
     const ui = (message: UIMessage) => {
       const index = state.ui.findIndex((m) => m.id === message.id)
@@ -87,13 +117,15 @@ export class PiRunner {
         state.inFlight = callId
         save()
         const value = await this.deps.callTool({ runId: req.runId, threadId: req.threadId, name: tool.name, args: args as Record<string, unknown> })
-        return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }], details: {} }
+        if (controller.signal.aborted) throw new Error('Pi run cancelled')
+        return { ...toolContent(value), details: {} }
       },
     }))
     let finalText = ''
     let messageId = ''
     let error: string | undefined
     const emit = async (event: AgentEvent): Promise<void> => {
+      if (controller.signal.aborted) return
       if (event.type === 'message_start' && event.message.role === 'assistant') messageId = randomUUID()
       if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta')
         this.deps.emit({ type: 'token', threadId: req.threadId, messageId, text: event.assistantMessageEvent.delta })
@@ -149,6 +181,7 @@ export class PiRunner {
             .filter((c) => c.type === 'text')
             .map((c) => c.text)
             .join('\n'),
+          images: message.content.filter((c) => c.type === 'image').map((c) => `data:${c.mimeType};base64,${c.data}`),
           status: message.isError ? 'error' : 'success',
         })
       }
@@ -171,6 +204,7 @@ export class PiRunner {
           context: { messages: state.messages, tools },
           signal: controller.signal,
         })
+        if (controller.signal.aborted) throw new Error('Pi run cancelled')
         const result: ToolResultMessage = {
           role: 'toolResult',
           toolCallId: call.id,
@@ -184,6 +218,7 @@ export class PiRunner {
       state.pending = null
       save()
     }
+    this.active.set(req.threadId, { controller, state })
     try {
       if (req.input.kind === 'resume') {
         if (!state.pending || state.pending.approved) throw new Error('Pi approval is no longer pending')
@@ -210,9 +245,18 @@ export class PiRunner {
         save()
       } else {
         if (state.pending) throw new Error('Resolve the pending Pi tool batch before sending another message')
-        ui({ id: req.input.id, role: 'user', content: req.input.text, attachments: req.input.attachments })
+        const images = req.input.images.map(imageContent)
+        if (images.length && !req.model.supportsVision) throw new Error('The selected Pi model does not support images')
+        ui({
+          id: req.input.id,
+          role: 'user',
+          content: req.input.text,
+          images: req.input.images.slice(req.input.attachmentImages ?? 0),
+          attachments: req.input.attachments,
+          memories: req.input.memories,
+        })
         const text = [req.input.text, req.input.context].filter(Boolean).join('\n\n')
-        const messages: AgentMessage[] = [{ role: 'user', content: text, timestamp: Date.now() }]
+        const messages: AgentMessage[] = [{ role: 'user', content: images.length ? [{ type: 'text', text }, ...images] : text, timestamp: Date.now() }]
         try {
           await runAgentLoop(messages, { messages: [...state.messages], tools }, config, emit, controller.signal, stream)
         } catch (e) {
@@ -220,6 +264,7 @@ export class PiRunner {
         }
       }
       while (state.pending) {
+        if (controller.signal.aborted) break
         if (!state.pending.approved) {
           this.deps.emit({ type: 'interrupt', threadId: req.threadId, interrupt: state.pending.interrupt })
           return { finalText, interrupted: true }
@@ -232,6 +277,9 @@ export class PiRunner {
         }
       }
       return { finalText, interrupted: false, ...(error ? { error } : {}), ...(controller.signal.aborted ? { aborted: true } : {}) }
+    } catch (cause) {
+      if (controller.signal.aborted) return { finalText, interrupted: false, aborted: true }
+      throw cause
     } finally {
       save()
       this.active.delete(req.threadId)

@@ -94,13 +94,20 @@ export async function connectEndpoint(ep: McpEndpoint): Promise<Conn> {
     useStandardContentBlocks: true,
     onConnectionError: 'throw',
   })
-  const tools = await client.getTools()
-  return { client, tools }
+  try {
+    const tools = await client.getTools()
+    return { client, tools }
+  } catch (error) {
+    await client.close().catch(() => undefined)
+    throw error
+  }
 }
 
-class McpService {
+export class McpService {
   private conns = new Map<string, Conn>()
   private statuses = new Map<string, McpStatus>()
+  private generations = new Map<string, number>()
+  private closed = false
 
   list(): McpServer[] {
     return (db().prepare('SELECT * FROM mcp_servers ORDER BY name').all() as Row[]).map(toServer)
@@ -144,11 +151,12 @@ class McpService {
   }
 
   async delete(id: string): Promise<void> {
-    await this.disconnect(id)
+    const closing = this.disconnect(id)
     db().prepare('DELETE FROM mcp_servers WHERE id = ?').run(id)
     secrets.delete(secretKey(id))
     this.statuses.delete(id)
     this.push()
+    await closing
   }
 
   /** Accepts Claude Desktop / Cursor style `{ "mcpServers": { name: {command,args,env} | {url} } }`. */
@@ -216,6 +224,7 @@ class McpService {
   }
 
   async connectAll(): Promise<void> {
+    this.closed = false
     this.migrateSecrets()
     await Promise.all(
       this.list()
@@ -225,13 +234,18 @@ class McpService {
   }
 
   async disconnect(id: string): Promise<void> {
+    this.generations.set(id, (this.generations.get(id) ?? 0) + 1)
     const c = this.conns.get(id)
     this.conns.delete(id)
     await c?.client.close().catch(() => undefined)
   }
 
   async reconnect(id: string): Promise<void> {
-    await this.disconnect(id)
+    const closing = this.disconnect(id)
+    const generation = this.generations.get(id)
+    const current = () => !this.closed && this.generations.get(id) === generation
+    await closing
+    if (!current()) return
     const server = this.get(id)
     if (!server || !server.enabled) {
       this.setStatus({ id, state: 'disconnected', tools: [] })
@@ -240,10 +254,15 @@ class McpService {
     this.setStatus({ id, state: 'connecting', tools: [] })
     try {
       const conn = await connectEndpoint(server)
+      if (!current() || !this.get(id)?.enabled) {
+        await conn.client.close().catch(() => undefined)
+        return
+      }
       this.conns.set(id, conn)
       this.setStatus({ id, state: 'connected', tools: conn.tools.map((t) => ({ name: t.name, description: t.description })) })
       log.info(`[mcp] ${server.name} connected with ${conn.tools.length} tools`)
     } catch (err) {
+      if (!current()) return
       const error = err instanceof Error ? err.message : String(err)
       log.warn(`[mcp] ${server.name} failed: ${error}`)
       this.setStatus({ id, state: 'error', error, tools: [] })
@@ -255,7 +274,8 @@ class McpService {
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.conns.keys()].map((id) => this.disconnect(id)))
+    this.closed = true
+    await Promise.all([...this.generations.keys()].map((id) => this.disconnect(id)))
   }
 }
 

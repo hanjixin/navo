@@ -107,6 +107,18 @@ async function run(text) {
   const tools = await mcp('tools/list')
   if (!['memory_search', 'browser_navigate', 'write_file'].every((name) => tools.tools.some((item) => item.name === name)))
     throw new Error('Required Navo tool not advertised')
+  if (scenario === 'upload') {
+    const uploadPath = /path="(\/uploads\/[^"\n]+)"/.exec(text)?.[1]
+    if (!uploadPath || !text.includes('truncated="true"') || text.includes('UPLOAD-TAIL-7F29'))
+      throw new Error('Expected a truncated upload preview without the tail marker')
+    const read = await tool('read_file', { file_path: uploadPath, offset: 1100, limit: 200 })
+    if (read.isError || !JSON.stringify(read.content).includes('UPLOAD-TAIL-7F29')) throw new Error('Upload tail was not readable through Navo')
+    for (const file_path of [uploadPath, '/skills/bridge-blocked.md']) {
+      const blocked = await tool('write_file', { file_path, content: 'must not be written' })
+      if (!blocked.isError || !JSON.stringify(blocked.content).includes('read-only')) throw new Error('Read-only mount write was not rejected')
+    }
+    return emitText(`DONE:${engine}:${marker}`)
+  }
   if (scenario === 'full') {
     const memory = await tool('memory_search', { query: 'bridge-fixture' })
     if (memory.isError) throw new Error('Memory lookup failed')

@@ -4,6 +4,7 @@ import type { AgentRuntime, RuntimeCallbacks } from './types'
 import type { RunRequest, RunResult } from './contracts'
 import { PiStateStore } from './pi-state'
 import { BuiltinRuntimeAdapter } from './builtin'
+import { cancelPiPending } from '../pi-host/cancel'
 
 /** Pi Core executes in an isolated worker; history and approvals never start the worker. */
 export class PiRuntimeAdapter implements AgentRuntime {
@@ -19,7 +20,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
     workspaceTools: true,
   }
   private readonly worker: BuiltinRuntimeAdapter
-  constructor(callbacks: RuntimeCallbacks) {
+  constructor(private readonly callbacks: RuntimeCallbacks) {
     this.worker = new BuiltinRuntimeAdapter(callbacks, 'out/main/pi-host.js')
   }
   private get store(): PiStateStore {
@@ -28,8 +29,20 @@ export class PiRuntimeAdapter implements AgentRuntime {
   run(request: RunRequest): Promise<RunResult> {
     return this.worker.run(request)
   }
-  abort(threadId: string): Promise<void> {
-    return this.worker.abort(threadId)
+  async abort(threadId: string): Promise<void> {
+    const interruptId = this.store.read(threadId)?.pending?.interrupt.id
+    try {
+      await this.worker.abort(threadId)
+    } finally {
+      // No worker after restart (or a failed RPC) must not leave the original approval stuck.
+      // A delayed abort response must never cancel an approval created by a newer run.
+      const saved = this.store.read(threadId)
+      if (interruptId && saved?.pending?.interrupt.id === interruptId) {
+        const messages = cancelPiPending(saved)
+        this.store.write(threadId, saved)
+        for (const message of messages) this.callbacks.event({ type: 'message', threadId, message })
+      }
+    }
   }
   async state(threadId: string): Promise<Omit<ThreadState, 'running'>> {
     const saved = this.store.read(threadId)

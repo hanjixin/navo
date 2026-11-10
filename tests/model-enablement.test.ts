@@ -94,6 +94,13 @@ it('falls back to an enabled default and rejects explicitly disabled or removed 
   models.delete(a.id)
   expect(models.default()).toBeNull()
 })
+it('uses the same deterministic fallback in the model picker and submission when labels match', () => {
+  for (const id of ['z-first', 'a-second'])
+    models.save({ id, providerId, model: id, displayName: 'Same label', supportsTools: true, supportsVision: false, enabled: true })
+  state.db.exec('UPDATE models SET is_default=0')
+  expect(models.list().filter((model) => model.enabled)[0].id).toBe('a-second')
+  expect(models.default()?.id).toBe('a-second')
+})
 it('preserves disabled state on legacy edits and allows connection testing without enabling', async () => {
   const model = create('Disabled', false)
   const { enabled: _enabled, ...input } = model

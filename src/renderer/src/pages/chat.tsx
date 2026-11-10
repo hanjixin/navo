@@ -203,18 +203,9 @@ export function ChatPage() {
 
   const decide = async (decisions: Decision[], alwaysAllow?: string[]) => {
     if (!activeId) return
-    useChat.setState((s) => ({
-      views: {
-        ...s.views,
-        [activeId]: { ...s.views[activeId], interrupt: null, running: true, runStartedAt: Date.now(), lastActivityAt: Date.now() },
-      },
-    }))
     try {
-      await call('chat.resume', activeId, decisions, alwaysAllow, view?.interrupt?.id)
+      await useChat.getState().resume(activeId, decisions, alwaysAllow)
     } catch (e) {
-      useChat.setState((s) => ({
-        views: { ...s.views, [activeId]: { ...s.views[activeId], running: false, runStartedAt: null, error: errorMessage(e) } },
-      }))
       toast.error(t('提交失败'), { description: errorMessage(e) })
     }
   }
@@ -373,9 +364,10 @@ export function ChatPage() {
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  void call('chat.retrySubmission', activeId!, view.recoverableMessageIds![0]).catch((e) =>
-                    toast.error(t('提交失败'), { description: errorMessage(e) }),
-                  )
+                  void useChat
+                    .getState()
+                    .retrySubmission(activeId!, view.recoverableMessageIds![0])
+                    .catch((e) => toast.error(t('提交失败'), { description: errorMessage(e) }))
                 }
               >
                 {t('继续已保存的消息')}

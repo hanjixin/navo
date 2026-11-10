@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   database: null as unknown as Database.Database,
   waitFiles: null as null | Promise<unknown[]>,
   enabled: true,
+  defaultModelId: 'default-model',
   runtimeKind: 'builtin' as AgentRuntimeKind,
   recoveryFails: false,
   runtimeFails: false,
@@ -47,9 +48,9 @@ vi.mock('../src/main/memory/memory-service', () => ({ memory: { forRun: () => nu
 vi.mock('../src/main/memory/recall', () => ({ hostOf: () => null }))
 vi.mock('../src/main/browser/agent-session', () => ({ sessions: { begin: vi.fn(), end: vi.fn(), peek: () => null } }))
 vi.mock('../src/main/models/registry', () => ({
-  resolveModel: () => {
-    if (!state.enabled) throw new Error('disabled model')
-    return { supportsVision: false, model: 'test' }
+  resolveModel: (id?: string | null) => {
+    if (!state.enabled || id === 'disabled') throw new Error('disabled model')
+    return { id: id ?? state.defaultModelId, supportsVision: false, model: 'test' }
   },
 }))
 vi.mock('../src/main/skills/skill-service', () => ({ skills: { mounts: () => [] } }))
@@ -98,6 +99,7 @@ beforeEach(() => {
   }) as unknown as Database.Database
   state.waitFiles = null
   state.enabled = true
+  state.defaultModelId = 'default-model'
   state.runtimeKind = 'builtin'
   state.recoveryFails = false
   state.runtimeFails = false
@@ -108,7 +110,8 @@ beforeEach(() => {
   const runtime: AgentRuntime = {
     get capabilities() {
       const builtin = state.runtimeKind === 'builtin'
-      return { navoTools: builtin, nativeTools: true, approvals: builtin, images: builtin, resume: true, fork: builtin, tokenStreaming: true }
+      const navo = builtin || state.runtimeKind === 'pi'
+      return { navoTools: navo, requiresNavoModel: navo, nativeTools: true, approvals: navo, images: navo, resume: true, fork: builtin, tokenStreaming: true }
     },
     pendingApprovals: async () => {
       if (state.recoveryFails) throw new Error('builtin unavailable')
@@ -149,6 +152,47 @@ afterEach(async () => {
 })
 
 describe('submission acceptance and run coordination', () => {
+  it.each(['builtin', 'pi'] as const)('captures the default model for a fresh %s draft without an explicit selection', async (kind) => {
+    state.runtimeKind = kind
+    const receipt = await agent.submit({ requestId: 'implicit-model', text: 'Hello', modelId: null, runtimeId: kind })
+    expect(agent.getThread(receipt.threadId)?.modelId).toBe('default-model')
+    state.defaultModelId = 'new-default'
+    await drain()
+    expect(state.runs).toHaveLength(1)
+    expect(state.runs[0].model.id).toBe('default-model')
+    await agent.submit({ requestId: 'next-message', threadId: receipt.threadId, text: 'Continue' })
+    await drain()
+    expect(state.runs[1].model.id).toBe('default-model')
+  })
+  it('requires an explicit model for an existing unbound Pi conversation and preserves its draft', async () => {
+    state.runtimeKind = 'pi'
+    const thread = agent.createThread()
+    sqlite.prepare('UPDATE threads SET model_id=NULL WHERE id=?').run(thread.id)
+    const scope = { surface: 'main' as const, threadId: thread.id }
+    const draft = drafts.save({ scope, text: 'Keep', fileIds: [], projectFiles: [], modelId: null, expectedVersion: 0 })
+    await expect(agent.submit({ requestId: 'legacy-pi', threadId: thread.id, text: 'Keep', draft: { scope, version: draft.version } })).rejects.toThrow(
+      'Choose an enabled Navo model',
+    )
+    expect(drafts.get(scope).text).toBe('Keep')
+    expect(state.runs).toHaveLength(0)
+    await agent.submit({ requestId: 'selected-pi', threadId: thread.id, text: 'Keep', modelId: 'selected-model' })
+    await drain()
+    expect(agent.getThread(thread.id)?.modelId).toBe('selected-model')
+    expect(state.runs[0].model.id).toBe('selected-model')
+  })
+  it('retains default-model compatibility for existing unbound builtin conversations', async () => {
+    const thread = agent.createThread()
+    sqlite.prepare('UPDATE threads SET model_id=NULL WHERE id=?').run(thread.id)
+    await agent.submit({ requestId: 'legacy-builtin', threadId: thread.id, text: 'Continue' })
+    await drain()
+    expect(agent.getThread(thread.id)?.modelId).toBe('default-model')
+    expect(state.runs[0].model.id).toBe('default-model')
+  })
+  it('does not replace an explicitly disabled model with the default', async () => {
+    await expect(agent.submit({ requestId: 'disabled-model', text: 'Keep', modelId: 'disabled' })).rejects.toThrow('disabled model')
+    expect(agent.listThreads()).toHaveLength(0)
+    expect(state.runs).toHaveLength(0)
+  })
   it('ends UI waiting when a durable submission is cancelled before its deferred run starts', async () => {
     const events: ChatEvent[] = []
     agent.subscribe((event) => events.push(event))

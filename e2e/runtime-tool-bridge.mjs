@@ -98,6 +98,37 @@ try {
       assert.equal(artifacts.items[0].name, 'approved.txt')
       console.log(`PASS ${engine}: real memory/browser/write_file, approval-before-effect, Artifacts, no Navo model`)
 
+      // Long uploads remain outside the inline preview and are read through the real virtual filesystem.
+      await api('settings.set', { approvalTools: [] })
+      const uploadSource = join(profile, 'long-upload.txt')
+      writeFileSync(
+        uploadSource,
+        `${Array.from({ length: 1200 }, (_, index) => `Line ${index}: ${'offline upload fixture '.repeat(4)}`).join('\n')}\nUPLOAD-TAIL-7F29\n`,
+      )
+      const [upload] = await api('files.addPaths', [uploadSource])
+      await expect.poll(async () => (await api('files.get', upload.id)).status, { timeout: 30_000 }).toBe('ready')
+      const originalUpload = await api('files.markdown', upload.id)
+      const uploadTurn = await api('chat.submit', {
+        requestId: `${engine}-upload-tail`,
+        runtimeId: engine,
+        text: 'TEST:upload:upload-tail',
+        fileIds: [upload.id],
+      })
+      await finished(uploadTurn.threadId, 'upload-tail')
+      const uploadState = await state(uploadTurn.threadId)
+      assert.ok(
+        uploadState.messages.some((message) => message.role === 'tool' && message.toolName === 'read_file' && message.content.includes('UPLOAD-TAIL-7F29')),
+      )
+      assert.equal(
+        uploadState.messages.filter((message) => message.role === 'tool' && message.toolName === 'write_file' && message.status === 'error').length,
+        2,
+      )
+      assert.equal(await api('files.markdown', upload.id), originalUpload)
+      assert.equal(existsSync(join(profile, 'skills', 'bridge-blocked.md')), false)
+      assert.equal((await api('artifacts.query', { threadId: uploadTurn.threadId })).items.length, 0)
+      await api('settings.set', { approvalTools: ['write_file'] })
+      console.log(`PASS ${engine}: paged upload tail read, upload/skills write denial and no accidental artifact`)
+
       // Each new native process must resume the same vendor session.
       await submit('continued', 'plain', first.threadId)
       await finished(first.threadId, 'continued')

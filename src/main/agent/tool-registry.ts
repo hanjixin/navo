@@ -15,7 +15,8 @@ import { createSwitchTool } from '../external-browser/tools'
 import { targets } from '../external-browser/instance'
 import { SANDBOX } from '../external-browser/targets'
 import { createDesktopTools } from '../desktop/tools'
-import { WorkspaceBackend } from '../agent-host/workspace-backend'
+import { runtimeFileTools } from '../agent-runtime/file-tools'
+import type { RuntimeFilesystemConfig } from '../agent-runtime/filesystem'
 
 export interface ToolEntry {
   tool: StructuredToolInterface
@@ -45,65 +46,8 @@ function navoTools(threadId?: string): ToolEntry[] {
 /** Destructive management tools always pause for approval (unless allowed for the conversation). */
 export const NAVO_DESTRUCTIVE = NAVO_TOOLS.filter((d) => d.destructive).map((d) => d.name)
 
-/** All tool implementations for one run, bound to that conversation's tab. */
-function workspaceTools(workspaceRoot: string): ToolEntry[] {
-  const backend = new WorkspaceBackend(workspaceRoot, async () => {})
-  const pathOf = (path?: string) => (path === '/workspace' ? '/' : path?.startsWith('/workspace/') ? path.slice('/workspace'.length) : (path ?? '/'))
-  const stringify = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value, null, 2))
-  const result = async (operation: Promise<unknown>) => {
-    const value = (await operation) as { error?: string }
-    if (value?.error) throw new Error(value.error)
-    return stringify(value)
-  }
-  return [
-    {
-      source: 'navo' as const,
-      tool: tool(async ({ file_path, offset, limit }) => result(backend.read(pathOf(file_path), offset, limit)), {
-        name: 'read_file',
-        description: '读取 /workspace/ 下的文本文件。file_path 必须是 /workspace/ 开头的路径。',
-        schema: z.object({
-          file_path: z.string(),
-          offset: z.number().int().min(0).optional(),
-          limit: z.number().int().min(1).max(2000).optional(),
-        }),
-      }) as unknown as StructuredToolInterface,
-    },
-    {
-      source: 'navo' as const,
-      tool: tool(async ({ file_path, content }) => result(backend.write(pathOf(file_path), content)), {
-        name: 'write_file',
-        description: '写入 /workspace/ 下的文件，生成需要保留的工作产物。',
-        schema: z.object({ file_path: z.string(), content: z.string() }),
-      }) as unknown as StructuredToolInterface,
-    },
-    {
-      source: 'navo' as const,
-      tool: tool(async ({ file_path, old_string, new_string, replace_all }) => result(backend.edit(pathOf(file_path), old_string, new_string, replace_all)), {
-        name: 'edit_file',
-        description: '编辑 /workspace/ 下的文件，按精确文本替换内容。',
-        schema: z.object({ file_path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() }),
-      }) as unknown as StructuredToolInterface,
-    },
-    {
-      source: 'navo' as const,
-      tool: tool(async ({ path, pattern, glob }) => result(backend.grep(pattern, pathOf(path), glob)), {
-        name: 'grep',
-        description: '在 /workspace/ 下按文本搜索文件。',
-        schema: z.object({ pattern: z.string(), path: z.string().optional(), glob: z.string().optional() }),
-      }) as unknown as StructuredToolInterface,
-    },
-    {
-      source: 'navo' as const,
-      tool: tool(async ({ path }) => result(backend.ls(pathOf(path))), {
-        name: 'ls',
-        description: '列出 /workspace/ 下的文件和目录。',
-        schema: z.object({ path: z.string().optional() }),
-      }) as unknown as StructuredToolInterface,
-    },
-  ]
-}
-
-export function collectTools(ctx: ToolCtx, supportsVision = false, workspaceRoot?: string, includeWorkspace = false): ToolEntry[] {
+/** All tool implementations for one run, bound to that conversation's tab and file mounts. */
+export function collectTools(ctx: ToolCtx, supportsVision = false, workspaceRoot?: string, filesystem?: RuntimeFilesystemConfig): ToolEntry[] {
   const myBrowser = getSettings().computerUse.myBrowser
   const builtin = myBrowser ? (t: StructuredToolInterface) => builtinOnly(t, ctx.threadId ?? SANDBOX) : (t: StructuredToolInterface) => t
   return [
@@ -121,7 +65,7 @@ export function collectTools(ctx: ToolCtx, supportsVision = false, workspaceRoot
     ...connectors.tools().map((tool) => ({ tool, source: 'connector' as const })),
     ...navoTools(ctx.threadId),
     ...(ctx.threadId ? [{ source: 'navo' as const, tool: exportFileTool(ctx.threadId, workspaceRoot) }] : []),
-    ...(includeWorkspace && workspaceRoot ? workspaceTools(workspaceRoot) : []),
+    ...(filesystem ? runtimeFileTools(filesystem).map((tool) => ({ tool, source: 'navo' as const })) : []),
   ]
 }
 

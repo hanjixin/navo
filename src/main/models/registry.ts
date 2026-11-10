@@ -175,7 +175,7 @@ export const providers = {
 
 export const models = {
   list(): ModelConfig[] {
-    return (db().prepare('SELECT * FROM models ORDER BY is_default DESC, display_name').all() as ModelRow[]).map(toModel)
+    return (db().prepare('SELECT * FROM models ORDER BY is_default DESC, display_name, id').all() as ModelRow[]).map(toModel)
   },
   get(id: string): ModelConfig | null {
     const row = db().prepare('SELECT * FROM models WHERE id = ?').get(id) as ModelRow | undefined

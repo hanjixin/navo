@@ -42,6 +42,7 @@ interface LiveRun {
   decision: ReturnType<typeof deferred<Decision>> | null
   queue: Promise<unknown>
   calls: Map<string, { fingerprint: string; promise: Promise<RuntimeToolResult> }>
+  activeCalls: Set<string>
   accepted: boolean
   initialInput: Extract<RunRequest['input'], { kind: 'message' }>
   prefix: string
@@ -221,7 +222,8 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
     const fingerprint = JSON.stringify([call.name, call.args])
     const previous = live.calls.get(call.id)
     if (previous) return previous.fingerprint === fingerprint ? previous.promise : Promise.resolve(errorResult('Tool request ID reused with different content'))
-    const promise = live.queue.then(() => this.execute(live, structuredClone(call)))
+    live.activeCalls.add(call.id)
+    const promise = live.queue.then(() => this.execute(live, structuredClone(call))).finally(() => live.activeCalls.delete(call.id))
     live.queue = promise.catch(() => undefined)
     live.calls.set(call.id, { fingerprint, promise })
     return promise
@@ -327,6 +329,7 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
       decision: null,
       queue: Promise.resolve(),
       calls: new Map(),
+      activeCalls: new Set(),
       accepted: false,
       initialInput: request.input,
       prefix: request.runId,
@@ -355,7 +358,9 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
         ? {
             tools: {
               call: (call: RuntimeToolInvocation) => this.dispatch(live, call),
-              cancel: () => this.abort(this.threadId),
+              cancel: (id: string) => {
+                if (this.valid(live) && live.activeCalls.has(id)) this.abort(this.threadId)
+              },
             },
           }
         : {}),

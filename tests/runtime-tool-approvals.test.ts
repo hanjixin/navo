@@ -104,6 +104,53 @@ function setup(behavior: ExternalRuntimeDriver['run'], store = new MemoryStore()
 const done = { finalText: 'Done', interrupted: false }
 
 describe('external runtime tool approval lifecycle', () => {
+  it('ignores unknown and completed tool cancellations while the engine remains active', async () => {
+    const finished = pending<void>()
+    const hold = pending<void>()
+    const { adapter } = setup(async (context) => {
+      context.tools!.cancel?.('unknown')
+      expect(context.signal.aborted).toBe(false)
+      await context.tools!.call({ id: 'read', name: 'memory_search', args: {} })
+      context.tools!.cancel?.('read')
+      expect(context.signal.aborted).toBe(false)
+      finished.resolve()
+      await hold.promise
+      return done
+    })
+    const running = adapter.run(request())
+    await finished.promise
+    hold.resolve()
+    expect(await running).toMatchObject({ finalText: 'Done', interrupted: false })
+  })
+  it('ignores an old execution cancel even when the new execution reuses its tool ID', async () => {
+    let oldCancel: ((id: string) => void) | undefined
+    const { adapter } = setup(async (context) => {
+      if (!oldCancel) {
+        oldCancel = context.tools!.cancel
+        return done
+      }
+      const tool = context.tools!.call(write('shared-id'))
+      oldCancel('shared-id')
+      expect(context.signal.aborted).toBe(false)
+      await tool
+      return done
+    })
+    await adapter.run(request())
+    expect(await adapter.run(request({ runId: 'new-run' }))).toMatchObject({ interrupted: true })
+    expect(await adapter.run(resume('approved-run'))).toMatchObject({ finalText: 'Done' })
+  })
+  it('allows cancellation of a currently pending tool approval', async () => {
+    let cancel: ((id: string) => void) | undefined
+    const { adapter } = setup(async (context) => {
+      cancel = context.tools!.cancel
+      await context.tools!.call(write('pending'))
+      return done
+    })
+    expect(await adapter.run(request())).toMatchObject({ interrupted: true })
+    cancel?.('pending')
+    await drain()
+    await expect(adapter.run(resume())).rejects.toThrow()
+  })
   it('finalizes observed native tools when cancellation suppresses their late protocol events', async () => {
     const { adapter, callbacks } = setup(async (context) => {
       context.emit({

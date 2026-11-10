@@ -1,4 +1,6 @@
 import { FilesystemBackend } from 'deepagents'
+import { realpath } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 type AnyResult = Record<string, unknown> & { error?: string }
 const EXTERNAL_READ_ONLY = '外部 Skill 目录是只读的；如需修改，请先在「Skill」页面复制到本地。'
@@ -12,7 +14,7 @@ export class ScopedSkillBackend {
   private inner: FilesystemBackend
 
   constructor(
-    rootDir: string,
+    private readonly rootDir: string,
     /** top-level entries to expose; null = everything */
     private readonly allowed: Set<string> | null,
     /** what a write attempt is told */
@@ -25,44 +27,57 @@ export class ScopedSkillBackend {
     return (p ?? '/').replace(/^\/+/, '').split('/')[0]
   }
 
-  private visible(p?: string | null): boolean {
-    const t = this.top(p)
-    return t === '' || !this.allowed || this.allowed.has(t)
+  private async visible(p?: string | null): Promise<boolean> {
+    if (!this.allowed) return true
+    const key = p ?? '/'
+    if (key.includes('\\') || key.includes('\0') || key.split('/').some((part) => part === '.' || part === '..')) return false
+    const t = this.top(key)
+    if (t && !this.allowed.has(t)) return false
+    try {
+      const [root, target] = await Promise.all([realpath(this.rootDir), realpath(resolve(this.rootDir, key.replace(/^\/+/, '')))])
+      const actual = relative(root, target)
+      if (actual === '..' || actual.startsWith(`..${sep}`) || isAbsolute(actual)) return false
+      return actual === '' || this.allowed.has(actual.split(sep)[0])
+    } catch {
+      return false
+    }
   }
 
-  private filter<T extends AnyResult>(res: T, key: 'files' | 'matches'): T {
+  private async filter<T extends AnyResult>(res: T, key: 'files' | 'matches'): Promise<T> {
     const list = res?.[key]
     if (!Array.isArray(list)) return res
-    return { ...res, [key]: list.filter((x: { path?: string }) => this.visible(x.path)) }
+    const visible = await Promise.all(list.map((item: { path?: string }) => typeof item.path === 'string' && this.visible(item.path)))
+    return { ...res, [key]: list.filter((_, index) => visible[index]) }
   }
 
   async ls(path: string) {
-    if (!this.visible(path)) return { error: `路径不存在: ${path}` }
+    if (!(await this.visible(path))) return { error: `路径不存在: ${path}` }
     return this.filter((await this.inner.ls(path)) as AnyResult, 'files')
   }
 
   async read(filePath: string, offset?: number, limit?: number) {
-    if (!this.visible(filePath)) return { error: `文件不存在: ${filePath}` }
+    if (!(await this.visible(filePath))) return { error: `文件不存在: ${filePath}` }
     return this.inner.read(filePath, offset, limit)
   }
 
   async readRaw(filePath: string) {
-    if (!this.visible(filePath)) return { error: `文件不存在: ${filePath}` }
+    if (!(await this.visible(filePath))) return { error: `文件不存在: ${filePath}` }
     return this.inner.readRaw(filePath)
   }
 
   async grep(pattern: string, path?: string | null, glob?: string | null, maxCount?: number | null) {
-    if (!this.visible(path)) return { matches: [] }
+    if (!(await this.visible(path))) return { matches: [] }
     return this.filter((await this.inner.grep(pattern, path ?? undefined, glob, maxCount)) as AnyResult, 'matches')
   }
 
   async glob(pattern: string, path?: string) {
-    if (!this.visible(path)) return { files: [] }
+    if (!(await this.visible(path))) return { files: [] }
     return this.filter((await this.inner.glob(pattern, path)) as AnyResult, 'files')
   }
 
   async downloadFiles(paths: string[]) {
-    return this.inner.downloadFiles(paths.filter((p) => this.visible(p)))
+    const visible = await Promise.all(paths.map((path) => this.visible(path)))
+    return this.inner.downloadFiles(paths.filter((_, index) => visible[index]))
   }
 
   async write() {
