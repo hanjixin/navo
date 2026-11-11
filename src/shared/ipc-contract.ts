@@ -46,6 +46,9 @@ import type {
   MacroVersion,
   QuickStatus,
   Skill,
+  DiscoveredSkill,
+  SkillDetails,
+  SkillInstallResult,
   SkillEvolved,
   SkillProposal,
   SkillStats,
@@ -157,6 +160,9 @@ export interface Api {
   'skills.removeSource': (id: string) => void
   /** Copies an external skill into the local library so it can be edited */
   'skills.copyToLocal': (id: string) => Skill
+  'skills.find': (query: string) => DiscoveredSkill[]
+  'skills.findDetails': (id: string) => SkillDetails
+  'skills.install': (source: string, skillId: string) => SkillInstallResult
   // fixed flows (replay without the model)
   /** browser actions the agent took in the conversation's last run (null: nothing replayable) */
   'flows.traceInfo': (threadId: string) => { actions: number } | null

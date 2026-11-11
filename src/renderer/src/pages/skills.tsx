@@ -1,7 +1,25 @@
-import { Copy, FolderCog, FolderInput, FolderOpen, FolderPlus, History, Lock, Plus, RotateCw, Save, Sparkles, Trash2, WandSparkles, X } from 'lucide-react'
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  FolderCog,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  History,
+  Lock,
+  Plus,
+  RotateCw,
+  Save,
+  Search,
+  Sparkles,
+  Trash2,
+  WandSparkles,
+  X,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { Skill } from '@shared/types'
+import type { DiscoveredSkill, Skill, SkillDetails } from '@shared/types'
 import { CodeEditor } from '@/components/code-editor'
 import { PageHeader } from '@/components/layout/page'
 import { EvolutionSettingsDialog, ProposalCards, SkillHistoryDialog } from '@/components/skills/evolution'
@@ -63,7 +81,7 @@ function SourcesDialog({ onClose, onChanged }: { onClose: () => void; onChanged:
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {s.label}
-                      {s.builtin && s.id !== 'local' ? <Badge variant="outline">{t('内置')}</Badge> : null}
+                      {s.builtin && s.id !== 'local' ? <Badge variant="outline">{t('默认来源')}</Badge> : null}
                     </div>
                     <div className="truncate font-mono text-xs text-muted-foreground">{s.path}</div>
                   </div>
@@ -94,6 +112,174 @@ function SourcesDialog({ onClose, onChanged }: { onClose: () => void; onChanged:
   )
 }
 
+function DiscoverDialog({ onClose, onInstalled }: { onClose: () => void; onInstalled: () => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<DiscoveredSkill[]>([])
+  const [selected, setSelected] = useState<DiscoveredSkill | null>(null)
+  const [details, setDetails] = useState<SkillDetails | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults([])
+      setSelected(null)
+      setDetails(null)
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      setError(null)
+      void call('skills.find', q)
+        .then((items) => {
+          if (!controller.signal.aborted) setResults(items)
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setError(errorMessage(e))
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false)
+        })
+    }, 250)
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [query])
+
+  useEffect(() => {
+    if (!selected) {
+      setDetails(null)
+      return
+    }
+    const controller = new AbortController()
+    setDetailLoading(true)
+    setDetails(null)
+    void call('skills.findDetails', selected.id)
+      .then((value) => {
+        if (!controller.signal.aborted) setDetails(value)
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(errorMessage(e))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailLoading(false)
+      })
+    return () => controller.abort()
+  }, [selected])
+
+  const install = async () => {
+    if (!selected) return
+    setInstalling(true)
+    try {
+      const installed = await call('skills.install', selected.source, selected.skillId)
+      toast.success(t('已安装 Skill：{{v0}}', { v0: installed.name }), { description: t('Skill 已启用，可以在对话中使用。') })
+      onInstalled()
+      onClose()
+    } catch (e) {
+      toast.error(t('安装失败'), { description: errorMessage(e) })
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        title={t('发现 Skill')}
+        description={t('从公开 Skill 目录搜索并安装可复用的工作流程。安装只复制 Skill 文件，不会执行仓库脚本。')}
+        className="w-[min(880px,calc(100vw-2rem))]"
+        footer={
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t('关闭')}
+            </Button>
+            <Button variant="primary" loading={installing} disabled={!selected || installing} onClick={() => void install()}>
+              {!installing ? <Download /> : null}
+              {t('安装并启用')}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid min-h-[440px] grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-4">
+          <div className="min-h-0 border-r border-border pr-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('搜索场景，例如资料调研')} className="pl-8" autoFocus />
+            </div>
+            <div className="mt-3 max-h-[370px] overflow-y-auto">
+              {loading ? <ListSkeleton rows={5} /> : null}
+              {!loading && query.trim().length < 2 ? (
+                <p className="px-2 py-8 text-center text-xs text-muted-foreground">{t('输入至少 2 个字符开始搜索')}</p>
+              ) : null}
+              {!loading && query.trim().length >= 2 && !results.length && !error ? (
+                <p className="px-2 py-8 text-center text-xs text-muted-foreground">{t('没有找到匹配的 Skill')}</p>
+              ) : null}
+              {error ? <ErrorState error={error} /> : null}
+              <div className="grid gap-1">
+                {results.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelected(item)}
+                    className={cn(
+                      'rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-accent/50',
+                      selected?.id === item.id && 'border-primary/40 bg-accent/40',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium">{item.name}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{item.installs.toLocaleString()}</span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.source}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="min-w-0">
+            {!selected ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border px-6 text-center text-sm text-muted-foreground">
+                {t('选择一个 Skill 查看用途和安装信息')}
+              </div>
+            ) : detailLoading ? (
+              <div className="grid gap-2">
+                <Skeleton className="h-7 w-2/3" />
+                <Skeleton className="h-24" />
+                <Skeleton className="h-40" />
+              </div>
+            ) : details ? (
+              <div className="flex h-full flex-col">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-lg font-semibold">{selected.name}</h3>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">{selected.source}</p>
+                  </div>
+                  <a href={details.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" aria-label={t('打开来源')}>
+                    <ExternalLink className="size-4" />
+                  </a>
+                </div>
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">{details.description || t('暂无描述')}</p>
+                <div className="mt-5 rounded-lg border border-border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-medium">{t('安装来源')}</p>
+                  <code className="block font-mono text-xs break-all text-muted-foreground">{details.command}</code>
+                </div>
+                <p className="mt-auto pt-5 text-xs text-subtle-foreground">{t('安装后会复制到 Navo 的本地 Skill 目录，并默认启用。')}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('无法读取 Skill 详情')}</p>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function SkillsPage() {
   const list = useAsync(() => call('skills.list'))
   const [selected, setSelected] = useState<string | null>(null)
@@ -103,6 +289,7 @@ export function SkillsPage() {
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [discoverOpen, setDiscoverOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [q, setQ] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -215,6 +402,10 @@ export function SkillsPage() {
             <Button variant="secondary" onClick={() => setEvolutionOpen(true)}>
               <WandSparkles />
               {t('自迭代')}
+            </Button>
+            <Button variant="secondary" onClick={() => setDiscoverOpen(true)}>
+              <Search />
+              {t('发现')}
             </Button>
             <Button variant="secondary" onClick={() => setSourcesOpen(true)}>
               <FolderCog />
@@ -429,6 +620,7 @@ export function SkillsPage() {
         ) : null}
       </Dialog>
       {sourcesOpen ? <SourcesDialog onClose={() => setSourcesOpen(false)} onChanged={list.reload} /> : null}
+      {discoverOpen ? <DiscoverDialog onClose={() => setDiscoverOpen(false)} onInstalled={list.reload} /> : null}
       {evolutionOpen ? <EvolutionSettingsDialog onClose={() => setEvolutionOpen(false)} /> : null}
       {historyOpen && current && !current.readOnly ? (
         <SkillHistoryDialog

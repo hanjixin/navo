@@ -1683,5 +1683,22 @@
   "使用本机模型配置，通过 Navo 工具完成任务。": "Uses local model configuration and Navo tools.",
   "暂不支持直接图片输入。": "Direct image input is not supported yet.",
   "Claude 使用本机 CLI 模型与登录，通过本次运行专属的 MCP 桥接入 Navo 工具和审批；不加载其他本机 MCP、原生工具或 Hooks。": "Claude uses your local CLI model and login. A bridge dedicated to this run provides Navo tools and approvals; other local MCP servers, native tools, and hooks are not loaded.",
-  "Codex 使用本机 CLI 模型与登录；Navo 工具按 Navo 的审批规则执行，原生命令仍受只读沙箱限制。其他本机 MCP、浏览器和桌面集成不加载。": "Codex uses your local CLI model and login. Navo tools follow Navo approval rules; native commands remain in a read-only sandbox. Other local MCP servers, browser, and desktop integrations are not loaded."
+  "Codex 使用本机 CLI 模型与登录；Navo 工具按 Navo 的审批规则执行，原生命令仍受只读沙箱限制。其他本机 MCP、浏览器和桌面集成不加载。": "Codex uses your local CLI model and login. Navo tools follow Navo approval rules; native commands remain in a read-only sandbox. Other local MCP servers, browser, and desktop integrations are not loaded.",
+  "发现 Skill": "Discover skills",
+  "从公开 Skill 目录搜索并安装可复用的工作流程。安装只复制 Skill 文件，不会执行仓库脚本。": "Search and install reusable workflows from the public Skill directory. Installation only copies Skill files and never runs repository scripts.",
+  "安装并启用": "Install and enable",
+  "已安装 Skill：{{v0}}": "Installed Skill: {{v0}}",
+  "Skill 已启用，可以在对话中使用。": "The Skill is enabled and ready to use in conversations.",
+  "安装失败": "Installation failed",
+  "搜索场景，例如资料调研": "Search a scenario, such as research",
+  "输入至少 2 个字符开始搜索": "Enter at least 2 characters to search",
+  "没有找到匹配的 Skill": "No matching Skills found",
+  "选择一个 Skill 查看用途和安装信息": "Select a Skill to view its purpose and installation details",
+  "打开来源": "Open source",
+  "暂无描述": "No description available",
+  "安装来源": "Installation source",
+  "安装后会复制到 Navo 的本地 Skill 目录，并默认启用。": "The Skill will be copied to Navo’s local Skill directory and enabled by default.",
+  "无法读取 Skill 详情": "Unable to load Skill details",
+  "发现": "Discover",
+  "默认来源": "Default source"
 }

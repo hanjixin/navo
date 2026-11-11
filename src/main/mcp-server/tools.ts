@@ -9,7 +9,9 @@ import { models, providers, testModel } from '../models/registry'
 import { skillEvolution } from '../skills/evolution'
 import { skills } from '../skills/skill-service'
 import { skillVersions } from '../skills/versions'
+import { skillDiscovery } from '../skills/discovery'
 import { t } from '@shared/i18n'
+import { emit } from '../core/ipc'
 
 /**
  * Navo's management surface: conversations, models, skills, MCP servers and connectors.
@@ -75,6 +77,25 @@ function describeMessages(messages: UIMessage[], limit: number) {
 }
 
 export const NAVO_TOOLS: ToolDef[] = [
+  {
+    name: 'navo_find_skills',
+    description: 'Search the public skills.sh directory for reusable agent skills.',
+    access: 'read',
+    input: { query: z.string().min(2).max(100) },
+    run: ({ query }) => skillDiscovery.search(query as string),
+  },
+  {
+    name: 'navo_install_skill',
+    description: 'Install a selected skill from GitHub into Navo local skills. It copies files without running repository code.',
+    access: 'write',
+    destructive: true,
+    input: { source: z.string(), skillId: z.string() },
+    run: async ({ source, skillId }) => {
+      const installed = await skillDiscovery.install(source as string, skillId as string)
+      emit('skills.changed')
+      return installed
+    },
+  },
   // ---------- conversations
   {
     name: 'navo_list_conversations',

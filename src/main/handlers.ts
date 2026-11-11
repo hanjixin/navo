@@ -1,5 +1,5 @@
 import { shell, dialog, BrowserWindow } from 'electron'
-import { handleAll } from './core/ipc'
+import { emit, handleAll } from './core/ipc'
 import { log } from './core/logger'
 import { paths } from './core/paths'
 import { getSettings, setSettings, testLangfuse, getIntegrationStatus } from './core/settings'
@@ -19,6 +19,7 @@ import { computerUse } from './computer-use'
 import { desktopConsent } from './desktop/desktop-service'
 import { skillEvolution } from './skills/evolution'
 import { skillVersions } from './skills/versions'
+import { skillDiscovery } from './skills/discovery'
 import { mcp } from './mcp/mcp-service'
 import { connectors } from './connectors/connector-service'
 import { plugins } from './plugins/plugin-service'
@@ -163,6 +164,17 @@ export function registerHandlers(): void {
     'skills.addSource': () => skills.addSource(),
     'skills.removeSource': (id) => skills.removeSource(id),
     'skills.copyToLocal': (id) => skills.copyToLocal(id),
+    'skills.find': (query) => skillDiscovery.search(query),
+    'skills.findDetails': (id) => {
+      const split = String(id).split('/')
+      const skillId = split.pop() ?? ''
+      return skillDiscovery.details(split.join('/'), skillId)
+    },
+    'skills.install': async (source, skillId) => {
+      const installed = await skillDiscovery.install(source, skillId)
+      emit('skills.changed')
+      return installed
+    },
     'quick.status': () => quick.getStatus(),
     'quick.show': () => void quick.show(),
     'quick.hide': () => quick.hide(),

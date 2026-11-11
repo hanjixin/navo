@@ -297,6 +297,30 @@ export interface Skill {
   shadowed?: boolean
 }
 
+export interface DiscoveredSkill {
+  id: string
+  source: string
+  skillId: string
+  name: string
+  installs: number
+  description?: string
+  url?: string
+  installCommand?: string
+}
+
+export interface SkillDetails {
+  url: string
+  description?: string
+  command: string
+}
+
+export interface SkillInstallResult {
+  name: string
+  path: string
+  source: string
+  skillId: string
+}
+
 export interface SkillSource {
   id: string
   label: string
