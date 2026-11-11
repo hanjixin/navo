@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal, Activity, PackageOpen, ShieldCheck, Cpu } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { ErrorState, ListSkeleton } from '@/components/ui/states'
@@ -19,6 +19,21 @@ import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
+const runStatusLabel = (status?: string | null) =>
+  ({
+    waiting_approval: t('等待确认'),
+    queued: t('排队中'),
+    running: t('运行中'),
+    success: t('成功'),
+    error: t('失败'),
+    cancelled: t('已取消'),
+    skipped: t('已跳过'),
+  })[status ?? ''] ??
+  status ??
+  t('暂无运行')
+
+const runtimeLabel = (runtimeId: string) => ({ builtin: t('内置 Agent'), pi: 'Pi', claude: 'Claude', codex: 'Codex', dsh: 'DSH' })[runtimeId] ?? runtimeId
+
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
@@ -33,6 +48,18 @@ export function ProjectDetailPage() {
   const modelId = draft.data?.modelId ?? null
   const runtimeId = draft.data?.runtimeId ?? 'builtin'
   const { activeModels: models, load: loadModels } = useModels()
+  const summary = useAsync(async () => {
+    const ids = new Set(project?.threads.map((thread) => thread.id) ?? [])
+    const [artifacts, approvals, runs] = await Promise.all([call('artifacts.list', projectId), call('approvals.list'), call('tasks.runs')])
+    return {
+      artifacts: artifacts.slice(0, 5),
+      approvals: approvals.filter((item) => ids.has(item.threadId)),
+      runs: runs
+        .filter((run) => ids.has(run.threadId))
+        .sort((a, b) => b.startedAt - a.startedAt)
+        .slice(0, 5),
+    }
+  }, [projectId, project?.updatedAt, revision])
   const noModels = (runtimeId === 'builtin' || runtimeId === 'pi') && models !== undefined && models.length === 0
   useEffect(() => {
     void loadModels()
@@ -85,6 +112,40 @@ export function ProjectDetailPage() {
         </Button>
       </header>
       {detail.error ? <ErrorState error={detail.error} onRetry={detail.reload} compact className="mx-5 mb-3 shrink-0" /> : null}
+      <section className="mx-5 mb-3 grid shrink-0 gap-2 @3xl:mx-7 @3xl:grid-cols-4" aria-label={t('项目运行摘要')} data-testid="project-runtime-summary">
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Activity className="size-3.5" />
+            {t('最近运行')}
+          </div>
+          <div className="mt-2 text-sm font-medium">{summary.loading ? t('加载中') : runStatusLabel(summary.data?.runs[0]?.status)}</div>
+          {summary.data?.runs[0]?.summary ? <p className="mt-1 truncate text-xs text-muted-foreground">{summary.data.runs[0].summary}</p> : null}
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ShieldCheck className="size-3.5" />
+            {t('待确认')}
+          </div>
+          <div className="mt-2 text-sm font-medium">{summary.loading ? '—' : t('{{count}} 项', { count: summary.data?.approvals.length ?? 0 })}</div>
+          <p className="mt-1 text-xs text-muted-foreground">{t('当前项目的会话')}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <PackageOpen className="size-3.5" />
+            {t('最近产物')}
+          </div>
+          <div className="mt-2 text-sm font-medium">{summary.loading ? '—' : t('{{count}} 个', { count: summary.data?.artifacts.length ?? 0 })}</div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{summary.data?.artifacts[0]?.name ?? t('暂无产物')}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Cpu className="size-3.5" />
+            {t('当前配置')}
+          </div>
+          <div className="mt-2 truncate text-sm font-medium">{runtimeLabel(runtimeId)}</div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{modelId ?? t('模型由发送时选择')}</p>
+        </div>
+      </section>
       <div className="flex shrink-0 gap-1 border-b border-border px-5 pb-2 @3xl:px-7" role="tablist" aria-label={t('项目')}>
         {[
           { id: 'threads', label: t('对话') },

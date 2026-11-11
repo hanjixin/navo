@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 vi.mock('@/lib/ipc', () => ({ call: vi.fn(), on: vi.fn(() => () => {}) }))
 import type { ToolCall, UIMessage } from '@shared/types'
 import { groupMessages, toolDisplayStatus, toolGroupPreview } from '@/components/chat/message-groups'
-import { toolPresentation } from '@/components/chat/tool-meta'
+import { toolPresentation, toolScopeLabel } from '@/components/chat/tool-meta'
 import { ToolCard } from '@/components/chat/tool-card'
 import { RuntimeWarning } from '@/components/chat/runtime-warning'
 import { MessageList } from '@/components/chat/message-list'
@@ -24,6 +24,15 @@ const result = (id: string, status: 'success' | 'error' = 'success'): UIMessage 
   content: 'output',
   toolCallId: id,
   status,
+})
+
+describe('tool safety scope labels', () => {
+  it('labels common execution boundaries', () => {
+    expect(toolScopeLabel('browser_click')).toBe('Navo 浏览器')
+    expect(toolScopeLabel('memory_search')).toBe('记忆')
+    expect(toolScopeLabel('mcp_calendar')).toBe('MCP 服务')
+    expect(toolScopeLabel('write_file')).toBe('项目工作区')
+  })
 })
 
 describe('tool activity presentation', () => {

@@ -1,10 +1,26 @@
-import { CalendarClock, History, ListChecks, MessageSquare, MoreHorizontal, PackageOpen, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import {
+  CalendarClock,
+  CheckCircle2,
+  CircleAlert,
+  History,
+  ListChecks,
+  MessageSquare,
+  MoreHorizontal,
+  PackageOpen,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Square,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import type { MonitorConfig, Task, TaskRunStatus } from '@shared/types'
 import { MonitorFields } from '@/components/tasks/monitor-fields'
 import { MonitorHistory } from '@/components/tasks/monitor-history'
+import { taskRunTimeline } from '@/components/tasks/run-timeline'
 import { Page, PageHeader, Section } from '@/components/layout/page'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -222,6 +238,7 @@ function TaskDialog({ task, onClose, onSaved }: { task: Task | null; onClose: ()
 export function TasksPage() {
   const tasks = useAsync(() => call('tasks.list'))
   const runs = useAsync(() => call('tasks.runs'))
+  const approvals = useAsync(() => call('approvals.list'))
   const outputCounts = useAsync(() => call('outputs.counts'))
   const [editing, setEditing] = useState<Task | 'new' | null>(null)
   const [history, setHistory] = useState<Task | null>(null)
@@ -241,6 +258,12 @@ export function TasksPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(
+    () => on('approvals.changed', () => approvals.reload()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
 
   useEffect(
     () => on('outputs.changed', () => outputCounts.reload()),
@@ -413,47 +436,65 @@ export function TasksPage() {
             <Card className="divide-y divide-border">
               {list.map((r) => {
                 const s = STATUS[r.status]
+                const approval = approvals.data?.find((item) => item.executionId === r.executionId)
+                const timeline = taskRunTimeline(r.status, !!approval)
                 return (
-                  <div key={r.id} className="flex items-center gap-4 px-4 py-2.5">
-                    <Badge variant={s.variant} className="w-14 justify-center">
-                      {s.label}
-                    </Badge>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm">{taskName(r.taskId)}</div>
-                      <div className="truncate text-xs text-muted-foreground">{r.error ?? r.summary ?? (r.status === 'running' ? t('正在执行…') : '')}</div>
+                  <div key={r.id} className="px-4 py-3">
+                    <div className="flex items-center gap-4">
+                      <Badge variant={s.variant} className="w-14 justify-center">
+                        {s.label}
+                      </Badge>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm">{taskName(r.taskId)}</div>
+                        <div className="truncate text-xs text-muted-foreground">{r.error ?? r.summary ?? (r.status === 'running' ? t('正在执行…') : '')}</div>
+                      </div>
+                      <span className="shrink-0 text-xs text-subtle-foreground">{timeAgo(r.startedAt)}</span>
+                      {r.threadId && outputCounts.data?.[r.threadId] ? (
+                        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={t('这次运行产生的文件')}>
+                          <PackageOpen className="size-3.5" />
+                          {t('产出 {{v0}}', { v0: outputCounts.data[r.threadId] })}
+                        </span>
+                      ) : null}
+                      {r.status === 'running' || r.status === 'waiting_approval' ? (
+                        <Button variant="ghost" size="sm" disabled={pending.has(r.id)} onClick={() => void cancelRun(r.id)}>
+                          <Square className="size-3 fill-current" />
+                          {t('停止')}
+                        </Button>
+                      ) : null}
+                      {r.status === 'error' ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const task = tasks.data?.find((x) => x.id === r.taskId)
+                            if (task) void runNow(task)
+                          }}
+                        >
+                          <RefreshCw />
+                          {t('重试')}
+                        </Button>
+                      ) : null}
+                      {r.threadId ? (
+                        <Button variant="ghost" size="sm" onClick={() => openThread(r.threadId)}>
+                          <MessageSquare />
+                          {r.status === 'waiting_approval' ? t('等待确认') : t('查看会话')}
+                        </Button>
+                      ) : null}
                     </div>
-                    <span className="shrink-0 text-xs text-subtle-foreground">{timeAgo(r.startedAt)}</span>
-                    {r.threadId && outputCounts.data?.[r.threadId] ? (
-                      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={t('这次运行产生的文件')}>
-                        <PackageOpen className="size-3.5" />
-                        {t('产出 {{v0}}', { v0: outputCounts.data[r.threadId] })}
-                      </span>
-                    ) : null}
-                    {r.status === 'running' || r.status === 'waiting_approval' ? (
-                      <Button variant="ghost" size="sm" disabled={pending.has(r.id)} onClick={() => void cancelRun(r.id)}>
-                        <Square className="size-3 fill-current" />
-                        {t('停止')}
-                      </Button>
-                    ) : null}
-                    {r.status === 'error' ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const task = tasks.data?.find((x) => x.id === r.taskId)
-                          if (task) void runNow(task)
-                        }}
-                      >
-                        <RefreshCw />
-                        {t('重试')}
-                      </Button>
-                    ) : null}
-                    {r.threadId ? (
-                      <Button variant="ghost" size="sm" onClick={() => openThread(r.threadId)}>
-                        <MessageSquare />
-                        {r.status === 'waiting_approval' ? t('等待确认') : t('查看会话')}
-                      </Button>
-                    ) : null}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 pl-1" aria-label={t('运行时间线')}>
+                      {timeline.map((step, index) => (
+                        <div key={`${r.id}-${step.label}`} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          {step.done ? (
+                            <CheckCircle2 className={cn('size-3.5', step.label === t('等待确认') ? 'text-amber-500' : 'text-emerald-500')} />
+                          ) : (
+                            <CircleAlert className="size-3.5 text-muted-foreground" />
+                          )}
+                          <span>{step.label}</span>
+                          {index < timeline.length - 1 ? <span className="text-border">→</span> : null}
+                        </div>
+                      ))}
+                    </div>
+                    {approval ? <p className="mt-1 pl-6 text-xs text-amber-600">{t('有待处理的确认，请打开会话继续')}</p> : null}
                   </div>
                 )
               })}

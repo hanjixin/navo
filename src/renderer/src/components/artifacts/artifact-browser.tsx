@@ -1,5 +1,5 @@
 import type { OutputKind } from '@shared/types'
-import { FileBox, MessageSquare, PackageOpen, RotateCw, Search } from 'lucide-react'
+import { FileBox, FolderOpen, MessageSquare, PackageOpen, RotateCw, Search } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { artifactScopeKey, useArtifacts, type ArtifactScope } from '@/stores/artifacts'
 import { formatFileSize } from '@/stores/files'
 import { cn, timeAgo } from '@/lib/utils'
-import { currentSearchParams, threadPath } from '@/lib/routes'
+import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
 import { t } from '@shared/i18n'
 
 const scrollPositions = new Map<string, number>()
@@ -121,8 +121,20 @@ export function ArtifactBrowser({ projectId, threadId }: ArtifactScope) {
                   <span className={cn('block truncate text-sm font-medium', artifact.missing && 'line-through')}>{artifact.name}</span>
                   <span className="mt-1 block truncate text-xs text-muted-foreground">
                     {formatFileSize(artifact.size)} · {timeAgo(artifact.at)}
-                    {projectId === undefined ? ` · ${artifact.projectName ?? t('未归属项目')}` : ''}
                   </span>
+                  {projectId === undefined && artifact.projectId ? (
+                    <Link
+                      to={projectPath(artifact.projectId)}
+                      className="interactive mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs text-subtle-foreground hover:text-foreground"
+                      aria-label={t('打开所属项目')}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <FolderOpen className="size-3 shrink-0" />
+                      <span className="truncate">{artifact.projectName}</span>
+                    </Link>
+                  ) : projectId === undefined ? (
+                    <span className="mt-1 block truncate text-xs text-subtle-foreground">{t('未归属项目')}</span>
+                  ) : null}
                   <span className="mt-1 block truncate text-xs text-subtle-foreground">{artifact.threadTitle}</span>
                 </span>
                 {artifact.missing ? (

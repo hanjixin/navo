@@ -18,6 +18,7 @@ function RuntimeEditor({ info, reload }: { info: AgentRuntimeInfo; reload: () =>
   const [busy, setBusy] = useState<'save' | 'probe' | null>(null)
   const [error, setError] = useState('')
   const [status, setStatus] = useState<AgentRuntimeStatus | null>(null)
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null)
   const builtin = draft.kind === 'builtin'
   const pi = draft.kind === 'pi'
   const dirty = JSON.stringify(draft) !== JSON.stringify(info.profile) || args !== JSON.stringify(info.profile.args)
@@ -71,6 +72,7 @@ function RuntimeEditor({ info, reload }: { info: AgentRuntimeInfo; reload: () =>
     setError('')
     try {
       setStatus(await call('runtimes.probe', draft.id))
+      setLastCheckedAt(Date.now())
     } catch (cause) {
       setError(errorMessage(cause))
     } finally {
@@ -93,13 +95,33 @@ function RuntimeEditor({ info, reload }: { info: AgentRuntimeInfo; reload: () =>
         <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
       <div className="space-y-4 px-5 pb-5">
-        <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-          {capabilities.map(([label, supported]) => (
-            <span key={label} className="inline-flex items-center gap-1">
-              {supported ? <Check className="size-3 text-success" /> : <X className="size-3" />}
-              {label}
+        <div className="rounded-lg border border-border bg-muted/30 p-3" data-testid="runtime-health">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium">{t('能力与健康')}</span>
+            <span className={`text-xs ${status?.available === false ? 'text-danger' : status?.available ? 'text-success' : 'text-muted-foreground'}`}>
+              {status?.available === false ? t('不可用') : status?.available ? t('可用') : t('未检测')}
             </span>
-          ))}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-muted-foreground @3xl:grid-cols-3">
+            {capabilities.map(([label, supported]) => (
+              <span key={label} className="inline-flex items-center gap-1">
+                {supported ? <Check className="size-3 text-success" /> : <X className="size-3" />}
+                {label}
+              </span>
+            ))}
+          </div>
+          {status?.available ? <p className="mt-2 text-xs text-muted-foreground">{t('版本：{{version}}', { version: status.version || t('未知') })}</p> : null}
+          {status?.error ? (
+            <p role="alert" className="mt-2 text-xs break-words text-danger">
+              {status.error}
+            </p>
+          ) : null}
+          {!status?.available && !builtin && !pi ? (
+            <p className="mt-2 text-xs text-muted-foreground">{t('请检查命令路径、参数和运行时登录状态，然后重新检测。')}</p>
+          ) : null}
+          {lastCheckedAt ? (
+            <p className="mt-1 text-[11px] text-subtle-foreground">{t('最近检测：{{time}}', { time: new Date(lastCheckedAt).toLocaleTimeString() })}</p>
+          ) : null}
         </div>
         {builtin ? (
           <p className="text-xs text-muted-foreground">{t('内置运行时始终可用，使用「模型」页配置及 Navo 工具。')}</p>

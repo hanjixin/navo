@@ -116,6 +116,18 @@ export function toolPresentation(call: ToolCall): { label: string; icon: LucideI
   return { label, icon, summary: summary.replace(/\s+/g, ' '), command, cwd, paths: activity?.paths }
 }
 
+/** Stable safety hint for users: identifies the execution boundary without exposing raw vendor protocol. */
+export function toolScopeLabel(name: string): string {
+  if (name.startsWith('browser_')) return t('Navo 浏览器')
+  if (name.startsWith('desktop_')) return t('Navo 桌面')
+  if (name.startsWith('mcp_') || name.includes('.mcp')) return t('MCP 服务')
+  if (name.startsWith('plugin_')) return t('插件')
+  if (name.startsWith('memory_')) return t('记忆')
+  if (name.includes('codex_') || name.includes('claude_')) return t('外部运行时')
+  if (['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep'].includes(name)) return t('项目工作区')
+  return t('Navo 工具')
+}
+
 /** One-line summary of the most meaningful argument. */
 export function argSummary(name: string, args: Record<string, unknown>): string {
   const pick = (k: string) => (typeof args[k] === 'string' || typeof args[k] === 'number' ? String(args[k]) : '')

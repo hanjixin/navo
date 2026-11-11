@@ -2,7 +2,7 @@ import { Check, ChevronRight, Clock3, Loader2, Minus, X } from 'lucide-react'
 import { useId, useState } from 'react'
 import type { ToolCall, UIMessage } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { toolPresentation } from './tool-meta'
+import { toolPresentation, toolScopeLabel } from './tool-meta'
 import { toolDisplayStatus, type ToolDisplayStatus } from './message-groups'
 import { RuntimeWarning } from './runtime-warning'
 import { t } from '@shared/i18n'
@@ -22,6 +22,7 @@ export function ToolCard({ call, result, pending, compact = false }: { call: Too
   const { label, icon: Icon, summary, command, cwd, paths } = toolPresentation(call)
   const status = toolDisplayStatus(call, result, pending)
   const stateText = statusLabel(status)
+  const scopeText = toolScopeLabel(call.name)
 
   return (
     <div className={cn('min-w-0 rounded-md', compact ? 'bg-transparent' : 'border border-border bg-card', status === 'error' && 'bg-danger/5')}>
@@ -40,6 +41,9 @@ export function ToolCard({ call, result, pending, compact = false }: { call: Too
         <Icon aria-hidden="true" className="size-3.5 shrink-0 stroke-[1.75] text-muted-foreground" />
         <span className="max-w-[45%] min-w-0 shrink-0 truncate font-medium text-foreground" title={label}>
           {label}
+        </span>
+        <span className="shrink-0 rounded border border-border/70 px-1 py-0.5 text-[10px] text-subtle-foreground" title={scopeText}>
+          {scopeText}
         </span>
         {summary ? (
           <span title={summary} className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground">

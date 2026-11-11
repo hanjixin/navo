@@ -1,6 +1,6 @@
 import type { ProjectFileSearchResult } from '@shared/files-query'
 import { Input } from '@/components/ui/input'
-import { Copy, ChevronDown, ChevronRight, File, Plus, Folder, FolderOpen, RotateCw } from 'lucide-react'
+import { Check, Copy, ChevronDown, ChevronRight, File, Plus, Folder, FolderOpen, RotateCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { mainDraftScope, useDrafts } from '@/stores/drafts'
 import { useParams, useSearchParams } from 'react-router'
@@ -15,6 +15,8 @@ import { cn, errorMessage } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 type Listing = Awaited<ReturnType<typeof listDirectory>>
+const formatBytes = (size: number): string =>
+  size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${Math.round(size / 1024)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`
 const listDirectory = (projectId: string, path: string, showHidden: boolean, cursor?: string) =>
   call('projectFiles.listPage', projectId, path, showHidden, cursor)
 interface DirectoryState {
@@ -52,6 +54,7 @@ function FileTree({ cacheKey, projectId, workingDirectory }: { cacheKey: string;
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<Map<string, ProjectFileSearchResult['entries'][number]>>(new Map())
   const pending = useRef(new Set<string>())
   const [params, setParams] = useSearchParams()
   const { threadId } = useParams()
@@ -66,6 +69,26 @@ function FileTree({ cacheKey, projectId, workingDirectory }: { cacheKey: string;
   }
   const selected = params.get('file')
   const folder = params.get('directory')
+  const selectedSize = [...selectedFiles.values()].reduce((total, entry) => total + entry.size, 0)
+  const toggleSelected = (entry: ProjectFileSearchResult['entries'][number]) => {
+    setSelectedFiles((current) => {
+      const next = new Map(current)
+      if (next.has(entry.path)) next.delete(entry.path)
+      else next.set(entry.path, entry)
+      return next
+    })
+  }
+  const addSelected = async () => {
+    if (!root || !selectedFiles.size) return
+    try {
+      const scope = mainDraftScope(projectId, threadId)
+      for (const entry of selectedFiles.values()) await useDrafts.getState().addProjectFile(scope, { projectId, root, path: entry.path, name: entry.name })
+      toast.success(t('已添加 {{v0}} 个文件到对话', { v0: selectedFiles.size }))
+      setSelectedFiles(new Map())
+    } catch (error) {
+      toast.error(t('操作失败'), { description: errorMessage(error) })
+    }
+  }
   const update = useCallback(() => {
     if (mounted.current) render((n) => n + 1)
   }, [])
@@ -194,6 +217,22 @@ function FileTree({ cacheKey, projectId, workingDirectory }: { cacheKey: string;
         {state.data.entries.map((entry) => (
           <div key={entry.path}>
             <div className="group flex items-center">
+              {entry.kind === 'file' ? (
+                <button
+                  type="button"
+                  className={cn(
+                    'ml-1 flex size-5 shrink-0 items-center justify-center rounded border',
+                    selectedFiles.has(entry.path) ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                  )}
+                  aria-label={selectedFiles.has(entry.path) ? t('取消选择 {{name}}', { name: entry.name }) : t('选择文件 {{name}}', { name: entry.name })}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleSelected(entry)
+                  }}
+                >
+                  {selectedFiles.has(entry.path) ? <Check className="size-3" /> : null}
+                </button>
+              ) : null}
               <button
                 className={cn(
                   'interactive flex w-full min-w-0 items-center gap-1.5 rounded-md py-1.5 pr-2 text-left text-xs text-muted-foreground hover:bg-accent',
@@ -260,8 +299,20 @@ function FileTree({ cacheKey, projectId, workingDirectory }: { cacheKey: string;
   return (
     <section className="flex min-h-0 flex-1 flex-col px-2 py-4" data-testid="project-files">
       <div className="mb-2 flex items-center justify-between gap-1 px-2">
-        <h3 className="text-xs font-medium text-muted-foreground">{t('项目文件')}</h3>
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="text-xs font-medium text-muted-foreground">{t('项目文件')}</h3>
+          {selectedFiles.size ? (
+            <span className="text-[11px] text-muted-foreground">
+              {selectedFiles.size} · {formatBytes(selectedSize)}
+            </span>
+          ) : null}
+        </div>
         <div className="flex gap-1">
+          {selectedFiles.size ? (
+            <Button size="sm" variant="secondary" onClick={() => void addSelected()}>
+              {t('添加到对话')}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -332,29 +383,43 @@ function FileTree({ cacheKey, projectId, workingDirectory }: { cacheKey: string;
             {searching ? <p className="p-2 text-xs">{t('加载中')}</p> : null}
             {searchError ? <ErrorState compact error={searchError} /> : null}
             {search?.entries.map((entry) => (
-              <button
-                key={entry.path}
-                className="block w-full truncate rounded p-2 text-left text-xs hover:bg-accent"
-                onClick={() =>
-                  setParams(() => {
-                    const next = currentSearchParams()
-                    next.delete('artifact')
-                    if (entry.kind === 'file') {
-                      next.set('file', entry.path)
-                      next.delete('panel')
-                    } else {
-                      next.set('directory', entry.path)
-                      next.set('panel', 'project')
-                      next.delete('file')
-                      setQuery('')
-                    }
-                    return next
-                  })
-                }
-              >
-                {entry.kind === 'directory' ? <Folder className="mr-1 inline size-3" /> : <File className="mr-1 inline size-3" />}
-                {entry.path}
-              </button>
+              <div key={entry.path} className="flex items-center gap-1">
+                {entry.kind === 'file' ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      'ml-1 flex size-5 shrink-0 items-center justify-center rounded border',
+                      selectedFiles.has(entry.path) ? 'border-primary bg-primary text-primary-foreground' : 'border-border',
+                    )}
+                    aria-label={selectedFiles.has(entry.path) ? t('取消选择 {{name}}', { name: entry.name }) : t('选择文件 {{name}}', { name: entry.name })}
+                    onClick={() => toggleSelected(entry)}
+                  >
+                    {selectedFiles.has(entry.path) ? <Check className="size-3" /> : null}
+                  </button>
+                ) : null}
+                <button
+                  className="block min-w-0 flex-1 truncate rounded p-2 text-left text-xs hover:bg-accent"
+                  onClick={() =>
+                    setParams(() => {
+                      const next = currentSearchParams()
+                      next.delete('artifact')
+                      if (entry.kind === 'file') {
+                        next.set('file', entry.path)
+                        next.delete('panel')
+                      } else {
+                        next.set('directory', entry.path)
+                        next.set('panel', 'project')
+                        next.delete('file')
+                        setQuery('')
+                      }
+                      return next
+                    })
+                  }
+                >
+                  {entry.kind === 'directory' ? <Folder className="mr-1 inline size-3" /> : <File className="mr-1 inline size-3" />}
+                  {entry.path}
+                </button>
+              </div>
             ))}
             {search?.truncated ? <p className="p-2 text-xs text-muted-foreground">{t('搜索结果已截断，请缩小搜索范围')}</p> : null}
             {search && !search.entries.length ? <p className="p-2 text-xs text-muted-foreground">{t('没有匹配文件')}</p> : null}
