@@ -24,6 +24,7 @@ type Session = {
   window?: DesktopWindow
   stopped: boolean
   failures: number
+  outcomeUnknown: boolean
 }
 export type DesktopLocation = { ref?: string; x?: number; y?: number }
 
@@ -99,7 +100,7 @@ export class DesktopController {
 
   beginRun(threadId: string, executionId: string = randomUUID()): void {
     this.options.consent.beginExecution(threadId, executionId)
-    this.sessions.set(threadId, { executionId, snapshot: new DesktopSnapshot(), stopped: false, failures: 0 })
+    this.sessions.set(threadId, { executionId, snapshot: new DesktopSnapshot(), stopped: false, failures: 0, outcomeUnknown: false })
   }
 
   endExecution(threadId: string, executionId: string): void {
@@ -206,8 +207,10 @@ export class DesktopController {
   }
 
   action(threadId: string, cmd: 'click' | 'type' | 'key' | 'scroll', args: Record<string, unknown> & DesktopLocation): Promise<string> {
+    const session = this.sessions.get(threadId)
     return this.operation(threadId, false, async (s) => {
       if (!s.app) throw new Error('请先调用 desktop_activate 或 desktop_snapshot 选择应用')
+      if (s.outcomeUnknown) throw new Error('上一次桌面操作结果未知，请先由用户确认状态后重新开始')
       // Resolve refs and image coordinates before reactivation; stale captures must never select a new target.
       await this.location(threadId, s, args)
       await this.prepare(threadId, s)
@@ -230,6 +233,13 @@ export class DesktopController {
       await new Promise((resolve) => setTimeout(resolve, 150))
       this.check(threadId, s)
       return this.capture(threadId, s, true)
+    }).catch((error) => {
+      if (error instanceof DesktopTransportError && session) {
+        session.outcomeUnknown = true
+        this.invalidate(session)
+        throw new Error('桌面操作结果未知，已停止自动重试；请重新获取快照并由用户确认当前状态', { cause: error })
+      }
+      throw error
     })
   }
 

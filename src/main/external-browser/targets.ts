@@ -53,7 +53,7 @@ export class Targets {
   async beginRun(threadId: string): Promise<void> {
     if (!this.using.has(threadId)) return
     const previous = this.mine.get(threadId)
-    if (!previous) return
+    if (!previous) throw new Error('浏览器标签页未恢复，请重新选择标签页')
     const version = this.versions.get(threadId) ?? 0
     try {
       await this.deps.tabs.list()
@@ -65,7 +65,11 @@ export class Targets {
       this.blocked.delete(threadId)
       this.deps.selected?.(driver)
     } catch (error) {
-      if ((this.versions.get(threadId) ?? 0) === version) this.blocked.set(threadId, error instanceof Error ? error : new Error(String(error)))
+      if ((this.versions.get(threadId) ?? 0) === version) {
+        const failure = error instanceof Error ? error : new Error(String(error))
+        this.blocked.set(threadId, failure)
+        throw failure
+      }
     }
   }
 

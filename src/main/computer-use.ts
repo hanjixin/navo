@@ -156,7 +156,12 @@ export const computerUse = {
   },
   async beginRun(threadId: string, executionId?: string): Promise<void> {
     desktop.beginRun(threadId, executionId)
-    await targets.beginRun(threadId)
+    try {
+      await targets.beginRun(threadId)
+    } catch (error) {
+      await desktop.endRun(threadId).catch(() => undefined)
+      throw error
+    }
   },
   endExecution(threadId: string, executionId: string): void {
     desktop.endExecution(threadId, executionId)
