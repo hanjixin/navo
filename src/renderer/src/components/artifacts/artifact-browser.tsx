@@ -137,7 +137,9 @@ export function ArtifactBrowser({ projectId, threadId }: ArtifactScope) {
                   ) : null}
                   <span className="mt-1 block truncate text-xs text-subtle-foreground">{artifact.threadTitle}</span>
                 </span>
-                {artifact.missing ? (
+                {artifact.contentChanged ? (
+                  <Badge variant="warning">{t('文件已变化')}</Badge>
+                ) : artifact.missing ? (
                   <Badge variant="warning">{t('已移除')}</Badge>
                 ) : artifact.unavailableReason === 'unreadable' ? (
                   <Badge variant="warning">{t('无法读取')}</Badge>

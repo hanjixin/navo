@@ -77,6 +77,8 @@ export interface OutputFile {
   /** gone since (deleted or moved) */
   missing: boolean
   unavailableReason?: 'missing' | 'unreadable'
+  /** current file differs from the content indexed when the artifact was recorded */
+  contentChanged?: boolean
   /** what it can be exported to */
   exports: ExportFormat[]
 }
@@ -155,6 +157,25 @@ export interface Artifact extends OutputFile {
   projectId: string | null
   projectName: string | null
   threadTitle: string
+  runId?: string | null
+  executionId?: string | null
+  messageId?: string | null
+  contentHash?: string | null
+}
+
+export interface ToolAuditEntry {
+  id: string
+  threadId: string
+  projectId: string | null
+  runId: string
+  executionId: string
+  runtimeId: string
+  toolName: string
+  source: string
+  status: 'started' | 'success' | 'error' | 'cancelled'
+  error: string | null
+  startedAt: number
+  finishedAt: number | null
 }
 
 export interface Thread {
@@ -319,6 +340,7 @@ export interface SkillInstallResult {
   path: string
   source: string
   skillId: string
+  overwritten?: boolean
 }
 
 export interface SkillSource {

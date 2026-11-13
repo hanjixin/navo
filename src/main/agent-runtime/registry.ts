@@ -141,9 +141,18 @@ export class RuntimeRegistry {
   }
 
   async pendingApprovals(callbacks: RuntimeCallbacks): ReturnType<AgentRuntime['pendingApprovals']> {
-    // Reading persisted external history invalidates stale requests from disconnected MCP channels.
+    // Approval summaries are the recovery index. Only inspect external runtimes that have a
+    // persisted waiting approval; do not instantiate every historical external conversation and
+    // deserialize its full transcript during startup.
     const external: Awaited<ReturnType<AgentRuntime['pendingApprovals']>> = []
-    const rows = db().prepare("SELECT id FROM threads WHERE runtime_id NOT IN ('builtin','pi')").all() as { id: string }[]
+    const rows = db()
+      .prepare(
+        `SELECT DISTINCT t.id FROM approval_summaries a
+         JOIN agent_executions e ON e.id = a.execution_id AND e.phase = 'waiting_approval'
+         JOIN threads t ON t.id = a.thread_id
+         WHERE t.runtime_id NOT IN ('builtin','pi')`,
+      )
+      .all() as { id: string }[]
     for (const row of rows) external.push(...(await this.get(row.id, callbacks).pendingApprovals()))
     const pi = await (this.pi ??= new PiRuntimeAdapter(callbacks)).pendingApprovals()
     if (!db().prepare("SELECT 1 FROM threads WHERE runtime_id = 'builtin' LIMIT 1").get()) return [...pi, ...external]

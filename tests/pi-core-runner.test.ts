@@ -57,6 +57,24 @@ describe('bundled Pi core', () => {
     expect(await f.runner.run(request())).toMatchObject({ finalText: 'hello', interrupted: false })
     expect(f.runner.state('thread').messages.map((m) => m.role)).toEqual(['user', 'assistant'])
   })
+  it('forks from a prior user message while retaining the visible old branch', async () => {
+    const f = setup([fauxAssistantMessage('first'), fauxAssistantMessage('second'), fauxAssistantMessage('regenerated')])
+    const req = request()
+    await f.runner.run({ ...req, input: { kind: 'message', id: 'u1', text: 'first question', images: [] } })
+    await f.runner.run({ ...req, runId: 'run-2', input: { kind: 'message', id: 'u2', text: 'second question', images: [] } })
+    expect(f.runner.forkPoint('thread', 'u1')).toBe('u1')
+    await f.runner.run({ ...req, runId: 'run-3', fromCheckpointId: 'u1', input: { kind: 'message', id: 'u3', text: 'edited question', images: [] } })
+    const userMessages = f.contexts.at(-1)?.messages.filter((message) => message.role === 'user') ?? []
+    expect(userMessages.map((message) => message.content)).toEqual(['edited question'])
+    expect(f.runner.state('thread').messages.map((message) => message.content)).toEqual([
+      'first question',
+      'first',
+      'second question',
+      'second',
+      'edited question',
+      'regenerated',
+    ])
+  })
   it('runs a Navo tool and continues with its actual result', async () => {
     const f = setup([fauxAssistantMessage(fauxToolCall('lookup', { query: 'q' }, { id: 'call' }), { stopReason: 'toolUse' }), fauxAssistantMessage('answer')])
     expect(await f.runner.run(request())).toMatchObject({ finalText: 'answer' })

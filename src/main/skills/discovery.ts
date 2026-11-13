@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import type { DiscoveredSkill, SkillInstallResult } from '@shared/types'
 import { paths } from '../core/paths'
 import { parseFrontmatter } from './frontmatter'
+import { skillVersions } from './versions'
 
 const REGISTRY = 'https://skills.sh'
 const SEARCH_LIMIT = 30
@@ -143,8 +144,9 @@ export const skillDiscovery = {
     if (!SKILL_RE.test(skillId)) throw new Error('Skill 名称无效')
     const name = skillId.toLowerCase()
     const destination = join(paths.skills, name)
-    if (existsSync(destination)) throw new Error(`本地已存在同名 Skill「${name}」`)
     const temp = await mkdtemp(join(tmpdir(), 'navo-find-skill-'))
+    const backup = await mkdtemp(join(tmpdir(), 'navo-find-skill-backup-'))
+    let existed = false
     try {
       const downloaded = join(temp, 'skill')
       const found = await downloadGithubSkill(source, skillId, downloaded)
@@ -152,6 +154,13 @@ export const skillDiscovery = {
       const frontmatter = parseFrontmatter(readFileSync(join(found, 'SKILL.md'), 'utf8'))
       if (!frontmatter.name || !frontmatter.description) throw new Error('Skill 的 SKILL.md 缺少 name 或 description')
       const realFound = realpathSync(found)
+      existed = existsSync(destination)
+      if (existed) {
+        const oldContent = readFileSync(join(destination, 'SKILL.md'), 'utf8')
+        skillVersions.record(name, oldContent, 'import', `安装 ${source}/${skillId} 前的本地版本`)
+        await copyTree(destination, backup)
+        await rm(destination, { recursive: true, force: true })
+      }
       await mkdir(destination, { recursive: true })
       for (const entry of readdirSync(realFound, { withFileTypes: true })) {
         if (entry.isSymbolicLink()) throw new Error('Skill 包含符号链接，已停止安装以保护本地文件')
@@ -175,9 +184,27 @@ export const skillDiscovery = {
         }
       }
       await copy(sourceRoot)
-      return { name, path: destination, source, skillId }
+      const installedContent = readFileSync(join(destination, 'SKILL.md'), 'utf8')
+      skillVersions.record(name, installedContent, 'import', `从 ${source}/${skillId} 安装`)
+      return { name, path: destination, source, skillId, overwritten: existed }
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true }).catch(() => undefined)
+      if (existed) await copyTree(backup, destination).catch(() => undefined)
+      throw error
     } finally {
       await rm(temp, { recursive: true, force: true }).catch(() => undefined)
+      await rm(backup, { recursive: true, force: true }).catch(() => undefined)
     }
   },
+}
+
+async function copyTree(source: string, destination: string): Promise<void> {
+  await mkdir(destination, { recursive: true })
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name)
+    const to = join(destination, entry.name)
+    if (entry.isDirectory()) await copyTree(from, to)
+    else if (entry.isFile()) await writeFile(to, readFileSync(from), { flag: 'wx' })
+    else throw new Error('Skill 包含不支持的文件类型')
+  }
 }

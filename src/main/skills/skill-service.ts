@@ -2,7 +2,8 @@ import { dialog, shell } from 'electron'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { Skill, SkillSource, SkillVersionSource } from '@shared/types'
-import { db } from '../core/db'
+import { db, kv } from '../core/db'
+import { emit } from '../core/ipc'
 import { paths } from '../core/paths'
 import { skillVersions } from './versions'
 import { addCustomSource, parseFrontmatter, removeCustomSource, scanSources, sourceInfo, tildify, type SkillMount } from './sources'
@@ -92,20 +93,38 @@ export const skills = {
   },
 
   /** Mounts for the agent backend: only enabled, non-shadowed external skills are visible. */
-  mounts(): { id: string; root: string; allowed: Set<string> }[] {
+  /** Enabled external Skill mounts, optionally filtered by a project's local deny list. */
+  mounts(projectId?: string | null): { id: string; root: string; allowed: Set<string> }[] {
     const localNames = new Set(
       listLocal()
         .filter((s) => s.enabled)
         .map((s) => s.name),
     )
     const off = disabledExternal()
+    const projectOff = projectId ? new Set(kv.get<string[]>(`project.skills.disabled.${projectId}`, [])) : new Set<string>()
     return scanSources()
       .map((m) => ({
         id: m.id,
         root: m.root,
-        allowed: new Set(m.skills.filter((s) => !off.has(extId(m.id, s.dir)) && !localNames.has(s.name)).map((s) => s.dir)),
+        allowed: new Set(
+          m.skills.filter((s) => !off.has(extId(m.id, s.dir)) && !projectOff.has(extId(m.id, s.dir)) && !localNames.has(s.name)).map((s) => s.dir),
+        ),
       }))
       .filter((m) => m.allowed.size > 0)
+  },
+
+  /** Enable or disable one read-only external Skill for a project. */
+  setProjectEnabled(projectId: string, skillId: string, enabled: boolean): void {
+    if (!skillId.startsWith('ext:')) throw new Error(t('项目只能配置外部 Skill'))
+    const disabled = new Set(kv.get<string[]>(`project.skills.disabled.${projectId}`, []))
+    if (enabled) disabled.delete(skillId)
+    else disabled.add(skillId)
+    kv.set(`project.skills.disabled.${projectId}`, [...disabled])
+    emit('skills.changed')
+  },
+
+  projectEnabled(projectId: string, skillId: string): boolean {
+    return !new Set(kv.get<string[]>(`project.skills.disabled.${projectId}`, [])).has(skillId)
   },
 
   read(id: string): string {

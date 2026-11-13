@@ -497,8 +497,9 @@ export const NAVO_TOOLS: ToolDef[] = [
     run: async ({ kind, title, content, evidence, site }, ctx) => {
       const conv = ctx.threadId ? agent.getThread(ctx.threadId) : null
       const ok = await backedByUser(ctx, kind as string, evidence as string | undefined)
+      const projectScope = kind === 'knowledge' && conv?.projectId ? `project:${conv.projectId}` : null
       const r = memory.save(
-        { kind: kind as never, title: title as string, content: content as string, scope: (site as string) ?? null },
+        { kind: kind as never, title: title as string, content: content as string, scope: (site as string) ?? projectScope },
         { source: conv ? { threadId: conv.id, title: conv.title } : null, status: ok ? 'active' : 'pending', keepExisting: !ok },
       )
       if (!ok && conv && r.op !== 'none') memory.announcePending(conv.id, r.memory)

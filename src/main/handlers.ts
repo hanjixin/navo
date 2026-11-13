@@ -2,6 +2,7 @@ import { shell, dialog, BrowserWindow } from 'electron'
 import { emit, handleAll } from './core/ipc'
 import { log } from './core/logger'
 import { paths } from './core/paths'
+import { db } from './core/db'
 import { getSettings, setSettings, testLangfuse, getIntegrationStatus } from './core/settings'
 import { models, providers, testModel } from './models/registry'
 import { agent } from './agent/agent-service'
@@ -36,6 +37,7 @@ import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
 import { navoMcpServer } from './mcp-server/navo-mcp-server'
 import { t } from '@shared/i18n'
+import { listToolAudits } from './agent/tool-audit'
 import { isAbsolute } from 'node:path'
 
 let sandboxRelease: NodeJS.Timeout | undefined
@@ -133,6 +135,7 @@ export function registerHandlers(): void {
       background(agent.regenerate(threadId, messageId, text))
     },
     'chat.stop': (threadId) => agent.stop(threadId),
+    'tools.audit': (threadId, limit) => listToolAudits(db(), threadId, limit),
 
     'browser.state': () => browser.state(),
     'browser.setBounds': (b) => browser.setBounds(b),
@@ -164,6 +167,8 @@ export function registerHandlers(): void {
     'skills.addSource': () => skills.addSource(),
     'skills.removeSource': (id) => skills.removeSource(id),
     'skills.copyToLocal': (id) => skills.copyToLocal(id),
+    'skills.projectEnabled': (projectId, skillId) => skills.projectEnabled(projectId, skillId),
+    'skills.setProjectEnabled': (projectId, skillId, enabled) => skills.setProjectEnabled(projectId, skillId, enabled),
     'skills.find': (query) => skillDiscovery.search(query),
     'skills.findDetails': (id) => {
       const split = String(id).split('/')
@@ -209,6 +214,8 @@ export function registerHandlers(): void {
     'memory.deleteDay': (day, threadId) => memory.deleteDay(day, threadId),
     'memory.threadEnabled': (threadId) => memory.threadEnabled(threadId),
     'memory.setThreadEnabled': (threadId, enabled) => memory.setThreadEnabled(threadId, enabled),
+    'memory.projectEnabled': (projectId) => memory.projectEnabled(projectId),
+    'memory.setProjectEnabled': (projectId, enabled) => memory.setProjectEnabled(projectId, enabled),
 
     'mcp.list': () => mcp.list(),
     'mcp.save': (s) => mcp.save(s),
@@ -218,6 +225,8 @@ export function registerHandlers(): void {
     'mcp.importJson': (json) => mcp.importJson(json),
     'mcp.discover': () => mcp.discover(),
     'mcp.importDiscovered': (keys) => mcp.importDiscovered(keys),
+    'mcp.projectEnabled': (projectId, serverId) => mcp.projectEnabled(projectId, serverId),
+    'mcp.setProjectEnabled': (projectId, serverId, enabled) => mcp.setProjectEnabled(projectId, serverId, enabled),
 
     'connectors.catalog': () => connectors.catalog(),
     'connectors.states': () => connectors.states(),

@@ -72,6 +72,7 @@ import type {
   ExportFormat,
   Thread,
   ThreadState,
+  ToolAuditEntry,
   TraceEntry,
 } from './types'
 
@@ -129,6 +130,7 @@ export interface Api {
   /** Re-run from a user message; pass text to edit it first */
   'chat.regenerate': (threadId: string, messageId: string, text?: string) => void
   'chat.stop': (threadId: string) => void
+  'tools.audit': (threadId?: string, limit?: number) => ToolAuditEntry[]
 
   // browser
   'browser.state': () => BrowserState
@@ -160,6 +162,8 @@ export interface Api {
   'skills.removeSource': (id: string) => void
   /** Copies an external skill into the local library so it can be edited */
   'skills.copyToLocal': (id: string) => Skill
+  'skills.projectEnabled': (projectId: string, skillId: string) => boolean
+  'skills.setProjectEnabled': (projectId: string, skillId: string, enabled: boolean) => void
   'skills.find': (query: string) => DiscoveredSkill[]
   'skills.findDetails': (id: string) => SkillDetails
   'skills.install': (source: string, skillId: string) => SkillInstallResult
@@ -219,6 +223,8 @@ export interface Api {
   'memory.deleteDay': (day: string, threadId: string) => void
   'memory.threadEnabled': (threadId: string) => boolean
   'memory.setThreadEnabled': (threadId: string, enabled: boolean) => void
+  'memory.projectEnabled': (projectId: string | null) => boolean
+  'memory.setProjectEnabled': (projectId: string, enabled: boolean) => void
 
   // mcp
   'mcp.list': () => McpServer[]
@@ -230,6 +236,8 @@ export interface Api {
   /** Scans .agents, Claude Code, Claude Desktop, Cursor, Codex and Gemini configs */
   'mcp.discover': () => DiscoveredMcp[]
   'mcp.importDiscovered': (keys: string[]) => McpServer[]
+  'mcp.projectEnabled': (projectId: string, serverId: string) => boolean
+  'mcp.setProjectEnabled': (projectId: string, serverId: string, enabled: boolean) => void
 
   // connectors
   'connectors.catalog': () => ConnectorDef[]

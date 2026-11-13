@@ -14,7 +14,7 @@ export class PiRuntimeAdapter implements AgentRuntime {
     approvals: true,
     images: true,
     resume: true,
-    fork: false,
+    fork: true,
     tokenStreaming: true,
     requiresNavoModel: true,
     workspaceTools: true,
@@ -56,8 +56,10 @@ export class PiRuntimeAdapter implements AgentRuntime {
     }
     return result
   }
-  async forkPoint(): Promise<null> {
-    throw new Error('Pi historical regeneration is not supported')
+  async forkPoint(threadId: string, messageId: string): Promise<string | null> {
+    const saved = this.store.read(threadId)
+    if (!saved || saved.pending || saved.inFlight) return null
+    return saved.ui.some((message) => message.id === messageId && message.role === 'user') ? messageId : null
   }
   async deleteThread(threadId: string): Promise<void> {
     await this.worker.deleteThread(threadId)

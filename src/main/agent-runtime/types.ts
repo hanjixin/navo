@@ -53,6 +53,7 @@ export interface ExternalRuntimeContext {
   saveSession(session: RuntimeSessionReference): void
   /** Only structured requests on the current engine connection may use this bridge. */
   tools?: RuntimeToolDispatcher
+  watchdog?: { activity(): void; pause(): void; resume(): void }
 }
 
 export interface ExternalRuntimeDriver {

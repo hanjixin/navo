@@ -73,7 +73,7 @@ export class ClaudeRuntimeDriver implements ExternalRuntimeDriver {
     approvals: true,
     requiresNavoModel: false,
     workspaceTools: true,
-    images: false,
+    images: true,
     resume: true,
     fork: false,
     tokenStreaming: true,
@@ -83,7 +83,6 @@ export class ClaudeRuntimeDriver implements ExternalRuntimeDriver {
     const { request, profile, signal } = context
     if (signal.aborted) return { finalText: '', interrupted: false, aborted: true }
     if (request.input.kind !== 'message') throw new Error('Claude approval resume must continue the live tool bridge')
-    if (request.input.images.length) throw new Error('Claude runtime does not support images')
     if (request.tools.length && !context.tools) throw new Error('Claude requires a Navo tool bridge for this run')
     validateClaudeArgs(profile.args)
     const bridge = context.tools ? new ClaudeMcpBridge(context) : null
@@ -295,7 +294,13 @@ export class ClaudeRuntimeDriver implements ExternalRuntimeDriver {
         clearTimeout(initializationTimer)
       }
       const text = [request.input.text, request.input.context].filter(Boolean).join('\n\n')
-      child.send({ type: 'user', session_id: context.session?.sessionId ?? '', message: { role: 'user', content: text }, parent_tool_use_id: null })
+      const imageBlocks = request.input.images.map((url) => {
+        const match = /^data:(image\/[\w.+-]+);base64,([\s\S]+)$/.exec(url)
+        if (!match) throw new Error('Claude image input must be a base64 image data URL')
+        return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } }
+      })
+      const content = imageBlocks.length ? [{ type: 'text', text }, ...imageBlocks] : text
+      child.send({ type: 'user', session_id: context.session?.sessionId ?? '', message: { role: 'user', content }, parent_tool_use_id: null })
       return await Promise.race([result, child.failure])
     } catch (error) {
       flushStreams()

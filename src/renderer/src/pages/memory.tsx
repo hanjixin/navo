@@ -51,7 +51,7 @@ type Filter = 'all' | MemoryKind | 'pending' | 'daily' | 'merges'
 
 // ---------- editor
 
-function MemoryEditor({ initial, onClose }: { initial: Partial<Memory> | null; onClose: () => void }) {
+function MemoryEditor({ initial, projectId, onClose }: { initial: Partial<Memory> | null; projectId?: string | null; onClose: () => void }) {
   const [kind, setKind] = useState<MemoryKind>(initial?.kind ?? 'preference')
   const [title, setTitle] = useState(initial?.title ?? '')
   const [content, setContent] = useState(initial?.content ?? '')
@@ -66,7 +66,14 @@ function MemoryEditor({ initial, onClose }: { initial: Partial<Memory> | null; o
     setSaving(true)
     setError(null)
     try {
-      await call('memory.save', { id: initial?.id, kind, title, content, scope: kind === 'site' ? site : null, pinned })
+      await call('memory.save', {
+        id: initial?.id,
+        kind,
+        title,
+        content,
+        scope: kind === 'site' ? site : kind === 'knowledge' && projectId ? `project:${projectId}` : null,
+        pinned,
+      })
       toast.success(editing ? t('已保存') : t('已添加记忆'))
       onClose()
     } catch (e) {
@@ -660,6 +667,7 @@ export function MemoryPage() {
   const filter = (params.get('filter') as Filter | null) ?? 'all'
   const merges = useMerges()
   const focus = params.get('focus')
+  const projectId = params.get('project')
 
   useEffect(() => {
     void load()
@@ -806,7 +814,7 @@ export function MemoryPage() {
         )}
       </div>
 
-      {editing ? <MemoryEditor initial={editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? <MemoryEditor initial={editing} projectId={projectId} onClose={() => setEditing(null)} /> : null}
       {settingsOpen && settings ? <MemorySettingsDialog count={items?.length ?? 0} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   )

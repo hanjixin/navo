@@ -82,14 +82,36 @@ export class PiRunner {
       return interrupt ? [{ threadId, interrupt }] : []
     })
   }
+  forkPoint(threadId: string, messageId: string): string | null {
+    const state = this.deps.read(threadId)
+    if (!state || state.pending || state.inFlight) return null
+    const index = state.ui.findIndex((message) => message.id === messageId && message.role === 'user')
+    if (index < 0) return null
+    return messageId
+  }
   deleteThread(threadId: string): void {
     if (this.active.has(threadId)) throw new Error('Pi conversation is still running')
     this.deps.remove(threadId)
   }
   async run(req: RunRequest): Promise<RunResult> {
     if (this.active.has(req.threadId)) throw new Error('Pi conversation is already running')
-    if (req.fromCheckpointId) throw new Error('Pi historical regeneration is not supported')
     const state = this.deps.read(req.threadId) ?? { messages: [], ui: [], pending: null, inFlight: null }
+    if (req.fromCheckpointId) {
+      const target = state.ui.findIndex((message) => message.id === req.fromCheckpointId && message.role === 'user')
+      if (target < 0) throw new Error('Pi checkpoint does not exist')
+      const userBefore = state.ui.slice(0, target).filter((message) => message.role === 'user').length
+      let seen = 0
+      const cut = state.messages.findIndex((message) => {
+        if (message.role !== 'user') return false
+        if (seen === userBefore) return true
+        seen += 1
+        return false
+      })
+      if (cut >= 0) state.messages = state.messages.slice(0, cut)
+      state.pending = null
+      state.inFlight = null
+      this.deps.write(req.threadId, state)
+    }
     if (state.inFlight) throw new Error('A Pi tool outcome is unknown after interruption; it will not be executed again automatically')
     // The first system message belongs to Navo; later Pi tool-change messages stay intact.
     const system = state.messages.findIndex((message) => message.role === 'system')

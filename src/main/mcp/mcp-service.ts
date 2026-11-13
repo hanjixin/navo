@@ -4,7 +4,7 @@ import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.
 import type { DiscoveredMcp, McpServer, McpStatus } from '@shared/types'
 import { discoverMcp } from './discovery'
 import { isNavoSelfUrl } from '../mcp-server/self'
-import { db, json } from '../core/db'
+import { db, json, kv } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { log } from '../core/logger'
@@ -269,8 +269,21 @@ export class McpService {
     }
   }
 
-  tools(): StructuredToolInterface[] {
-    return [...this.conns.values()].flatMap((c) => c.tools)
+  tools(projectId?: string | null): StructuredToolInterface[] {
+    const disabled = projectId ? new Set(kv.get<string[]>(`project.mcp.disabled.${projectId}`, [])) : new Set<string>()
+    return [...this.conns.entries()].filter(([id]) => !disabled.has(id)).flatMap(([, c]) => c.tools)
+  }
+
+  projectEnabled(projectId: string, serverId: string): boolean {
+    return !new Set(kv.get<string[]>(`project.mcp.disabled.${projectId}`, [])).has(serverId)
+  }
+
+  setProjectEnabled(projectId: string, serverId: string, enabled: boolean): void {
+    const disabled = new Set(kv.get<string[]>(`project.mcp.disabled.${projectId}`, []))
+    if (enabled) disabled.delete(serverId)
+    else disabled.add(serverId)
+    kv.set(`project.mcp.disabled.${projectId}`, [...disabled])
+    emit('mcp.status', this.status())
   }
 
   async closeAll(): Promise<void> {

@@ -68,7 +68,9 @@ describe('project upgrade and editing', () => {
     for (const sql of migrations.slice(projectIndex)) state.db.exec(sql)
     const thread = state.db.prepare('SELECT * FROM threads WHERE id=?').get('old')!
     expect(thread).toMatchObject({ id: 'old', title: 'Existing conversation', created_at: 10, updated_at: 20, project_id: null })
-    expect(state.db.prepare('SELECT * FROM outputs').all()).toEqual(before.map((row) => ({ ...row, workspace_root: null, name: '', kind: 'other' })))
+    expect(state.db.prepare('SELECT * FROM outputs').all()).toEqual(
+      before.map((row) => ({ ...row, workspace_root: null, run_id: null, execution_id: null, message_id: null, content_hash: null, name: '', kind: 'other' })),
+    )
     expect(projects.list()).toEqual([])
   })
   it('edits while retaining createdAt, trims values, and rejects blank or invalid inputs', () => {

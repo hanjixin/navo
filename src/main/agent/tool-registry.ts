@@ -61,7 +61,7 @@ export function collectTools(ctx: ToolCtx, supportsVision = false, workspaceRoot
       : []),
     ...plugins.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'plugin' as const })),
     ...recorder.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'macro' as const })),
-    ...mcp.tools().map((tool) => ({ tool, source: 'mcp' as const })),
+    ...mcp.tools(ctx.projectId).map((tool) => ({ tool, source: 'mcp' as const })),
     ...connectors.tools().map((tool) => ({ tool, source: 'connector' as const })),
     ...navoTools(ctx.threadId),
     ...(ctx.threadId ? [{ source: 'navo' as const, tool: exportFileTool(ctx.threadId, workspaceRoot) }] : []),

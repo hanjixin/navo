@@ -32,7 +32,10 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (scenario === 'crash') return die('fixture failure')
   if (scenario === 'malformed') return process.stdout.write('not-json\n')
   if (kind === 'claude') {
-    if (message.type !== 'user' || message.message.content !== '--dangerously-skip-permissions\n\nfile context') die('prompt changed or passed as arguments')
+    if (message.type !== 'user') die('prompt changed or passed as arguments')
+    const claudeText = Array.isArray(message.message.content) ? message.message.content.find((block) => block.type === 'text')?.text : message.message.content
+    if (claudeText !== '--dangerously-skip-permissions\n\nfile context') die('prompt changed or passed as arguments')
+    if (Array.isArray(message.message.content) && !message.message.content.some((block) => block.type === 'image' && block.source?.type === 'base64')) die('Claude image block missing')
     send({ type: 'system', subtype: 'init', session_id: 'claude-session' })
     if (scenario === 'approval') return send({ type: 'control_request', request_id: 'approval', request: { subtype: 'can_use_tool' } })
     if (scenario === 'unexpected-tool') return send({ type: 'assistant', message: { id: 'answer', content: [{ type: 'tool_use', name: 'Bash' }] } })
@@ -57,6 +60,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (message.method === 'turn/start') {
     if (message.params.sandboxPolicy.type !== 'readOnly' || message.params.sandboxPolicy.networkAccess !== false || message.params.approvalPolicy !== 'never') die('unsafe turn permissions')
     if (message.params.input[0].text !== '--dangerously-skip-permissions\n\nfile context') die('prompt changed')
+    if (scenario === 'image' && message.params.input[1]?.type !== 'image') die('Codex image block missing')
     send({ id: message.id, result: { turn: { id: 'turn' } } })
     if (scenario === 'approval') return send({ id: 99, method: 'item/commandExecution/requestApproval', params: { threadId: 'codex-thread' } })
     if (scenario === 'unknown-request') return send({ id: 99, method: 'item/tool/requestUserInput', params: { threadId: 'codex-thread' } })
@@ -142,10 +146,10 @@ describe.each(['claude', 'codex'] as const)('%s runtime adapter', (kind) => {
     setTimeout(() => controller.abort(), 50)
     expect(await pending).toEqual({ finalText: '', interrupted: false, aborted: true })
   })
-  it('rejects unsupported image input before launching a process', async () => {
-    const { context, driver } = setup(kind)
-    if (context.request.input.kind === 'message') context.request.input.images = ['image']
-    await expect(driver.run(context)).rejects.toThrow('does not support images')
+  it('passes image input to the vendor protocol', async () => {
+    const { context, driver } = setup(kind, 'image')
+    if (context.request.input.kind === 'message') context.request.input.images = ['data:image/png;base64,aGVsbG8=']
+    expect(await driver.run(context)).toEqual({ finalText: 'Hello', interrupted: false })
   })
 })
 

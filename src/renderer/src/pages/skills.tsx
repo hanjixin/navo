@@ -177,7 +177,9 @@ function DiscoverDialog({ onClose, onInstalled }: { onClose: () => void; onInsta
     setInstalling(true)
     try {
       const installed = await call('skills.install', selected.source, selected.skillId)
-      toast.success(t('已安装 Skill：{{v0}}', { v0: installed.name }), { description: t('Skill 已启用，可以在对话中使用。') })
+      toast.success(installed.overwritten ? t('已更新 Skill：{{v0}}', { v0: installed.name }) : t('已安装 Skill：{{v0}}', { v0: installed.name }), {
+        description: t('旧版本已记录，可以从版本历史回滚。'),
+      })
       onInstalled()
       onClose()
     } catch (e) {

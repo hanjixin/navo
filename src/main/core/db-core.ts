@@ -148,6 +148,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE outputs ADD COLUMN workspace_root TEXT;
   `,
   `
+  ALTER TABLE outputs ADD COLUMN run_id TEXT;
+  ALTER TABLE outputs ADD COLUMN execution_id TEXT;
+  ALTER TABLE outputs ADD COLUMN message_id TEXT;
+  ALTER TABLE outputs ADD COLUMN content_hash TEXT;
+  CREATE INDEX outputs_execution ON outputs(execution_id, at);
+  `,
+  `
   ALTER TABLE models ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
   `,
   `
@@ -176,6 +183,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE outputs ADD COLUMN kind TEXT NOT NULL DEFAULT 'other';
   CREATE INDEX outputs_at_id ON outputs(at DESC, id DESC);
   CREATE INDEX outputs_thread_at_id ON outputs(thread_id, at DESC, id DESC);
+  `,
+  `
+  CREATE TABLE tool_audits (
+    id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE, project_id TEXT,
+    run_id TEXT NOT NULL, execution_id TEXT NOT NULL, runtime_id TEXT NOT NULL, tool_name TEXT NOT NULL, source TEXT NOT NULL,
+    status TEXT NOT NULL, error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER
+  );
+  CREATE INDEX tool_audits_thread ON tool_audits(thread_id, started_at DESC);
+  CREATE INDEX tool_audits_execution ON tool_audits(execution_id, started_at DESC);
   `,
   `
   ALTER TABLE threads ADD COLUMN runtime_id TEXT NOT NULL DEFAULT 'builtin';

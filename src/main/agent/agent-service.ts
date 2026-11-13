@@ -30,6 +30,7 @@ import { runtimeRegistry } from '../agent-runtime/registry'
 import { isSpawnedConversation } from '../mcp-server/tools'
 import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
 import { t } from '@shared/i18n'
+import { finishToolAudit, startToolAudit } from './tool-audit'
 import { targets } from '../external-browser/instance'
 import { computerUse } from '../computer-use'
 import { projects } from '../projects/project-service'
@@ -64,9 +65,11 @@ type Listener = (e: ChatEvent) => void
 
 interface ActiveRun {
   runtime: AgentRuntime
+  capabilities: AgentRuntime['capabilities']
   workspaceRoot: string
   runId: string
   executionId: string
+  projectId: string | null
   tools: Map<string, ToolEntry>
   /** the agent managed memory itself, so automatic learning skips this exchange */
   usedMemoryTools: boolean
@@ -108,7 +111,10 @@ export class AgentService {
       event: (event) => this.send(event),
       callTool: (request) => this.callTool(request),
       workspaceWrite: (event) => {
-        acceptWorkspaceWrite(event, this.runs, (threadId, path) => outputs.recordWorkspaceWrite(threadId, path, this.runs.get(threadId)!.workspaceRoot))
+        acceptWorkspaceWrite(event, this.runs, (threadId, path) => {
+          const run = this.runs.get(threadId)!
+          outputs.recordWorkspaceWrite(threadId, path, run.workspaceRoot, { runId: run.runId, executionId: run.executionId })
+        })
       },
       usage: (event) => usage.record({ modelId: event.modelId, model: event.model, purpose: 'chat', threadId: event.threadId, usage: event.usage }),
       unavailable: ({ threadId, executionId, runId, error }) => {
@@ -612,7 +618,7 @@ export class AgentService {
       return { finalText: '', interrupted: false, aborted: true }
     }
     const settings = getSettings()
-    const ctx = { threadId, tab: () => sessions.tabFor(threadId), page: () => targets.page(threadId) }
+    const ctx = { threadId, projectId: thread.projectId, tab: () => sessions.tabFor(threadId), page: () => targets.page(threadId) }
     let runtime: AgentRuntime
     let profile: AgentRuntimeProfile
     try {
@@ -626,7 +632,16 @@ export class AgentService {
       this.send({ type: 'run_end', threadId, runId })
       return result
     }
-    const runState = { runtime, workspaceRoot: paths.workspace, runId, executionId, tools: new Map<string, ToolEntry>(), usedMemoryTools: false }
+    const runState = {
+      runtime,
+      capabilities: runtime.capabilities,
+      workspaceRoot: paths.workspace,
+      runId,
+      executionId,
+      projectId: thread.projectId,
+      tools: new Map<string, ToolEntry>(),
+      usedMemoryTools: false,
+    }
     this.runs.set(threadId, runState)
     this.publishExecution({ threadId, executionId, phase: 'running' })
     this.send({ type: 'run_start', threadId, runId })
@@ -651,7 +666,7 @@ export class AgentService {
       const resolved = opts.model ?? this.model(profile, thread.modelId)
       const fileConfig = {
         paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
-        mounts: runtime.capabilities.navoTools ? skills.mounts().map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
+        mounts: runtime.capabilities.navoTools ? skills.mounts(thread.projectId).map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
       }
       const entries = runtime.capabilities.navoTools
         ? collectTools(ctx, resolved.supportsVision, workspaceRoot, runtime.capabilities.workspaceTools ? fileConfig : undefined)
@@ -662,7 +677,12 @@ export class AgentService {
       // "那它用什么打包" alone says nothing) and the site the conversation's tab is on
       const page = this.pageInfo(threadId)
       const earlier = input.kind === 'message' ? (await this.recentUserTexts(threadId, 2)).map((t) => t.slice(0, 500)) : []
-      const mem = memory.forRun(threadId, [thread.title, ...earlier, input.kind === 'message' ? input.text : ''].join('\n'), page?.url ?? null)
+      const mem = memory.forRun(
+        threadId,
+        [thread.title, ...earlier, input.kind === 'message' ? input.text : ''].join('\n'),
+        page?.url ?? null,
+        thread.projectId,
+      )
       if (input.kind === 'message' && mem?.refs.length) input = { ...input, memories: mem.refs }
       const req: RunRequest = {
         runId,
@@ -802,10 +822,38 @@ export class AgentService {
   private async callTool(req: ToolCallRequest): Promise<unknown> {
     const run = this.runs.get(req.threadId)
     if (!run || run.runId !== req.runId || this.locks.get(req.threadId)?.cancelled) throw new Error(t('运行已结束'))
+    const execution = submissions.execution(req.threadId)
+    if (!execution || execution.id !== run.executionId || execution.phase === 'cancelled' || execution.phase === 'error') throw new Error(t('运行已结束'))
     if (req.name === 'memory_save' || req.name === 'memory_update' || req.name === 'memory_delete') run.usedMemoryTools = true
     const entry = run.tools.get(req.name)
     if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: req.name }))
-    const out = await entry.tool.invoke(req.args)
+    if (entry.source !== 'navo' && !run.capabilities.navoTools) throw new Error(t('当前运行时没有权限调用 Navo 工具'))
+    const workspaceTool =
+      req.name === 'read_file' ||
+      req.name === 'write_file' ||
+      req.name === 'edit_file' ||
+      req.name === 'grep' ||
+      req.name === 'ls' ||
+      req.name === 'export_file'
+    if (workspaceTool && !run.capabilities.workspaceTools) throw new Error(t('当前运行时没有权限访问项目工作区'))
+    const auditId = startToolAudit(db(), {
+      threadId: req.threadId,
+      projectId: run.projectId,
+      runId: run.runId,
+      executionId: run.executionId,
+      runtimeId: this.getThread(req.threadId)?.runtimeId ?? 'builtin',
+      toolName: req.name,
+      source: entry.source,
+      startedAt: Date.now(),
+    })
+    let out: unknown
+    try {
+      out = await entry.tool.invoke(req.args)
+      finishToolAudit(db(), auditId, 'success', null)
+    } catch (error) {
+      finishToolAudit(db(), auditId, 'error', error instanceof Error ? error.message : String(error))
+      throw error
+    }
     if (this.runs.get(req.threadId) !== run || this.locks.get(req.threadId)?.cancelled) throw new Error(t('运行已结束'))
     const toolFailed = !!out && typeof out === 'object' && ((out as { status?: string }).status === 'error' || (out as { isError?: boolean }).isError === true)
     if (toolFailed)
@@ -816,7 +864,11 @@ export class AgentService {
       )
     if ((req.name === 'write_file' || req.name === 'edit_file') && !toolFailed && !(out as { error?: unknown })?.error) {
       const filePath = String(req.args.file_path ?? '')
-      outputs.recordWorkspaceWrite(req.threadId, filePath.startsWith('/workspace/') ? filePath.slice('/workspace'.length) : filePath, run.workspaceRoot)
+      outputs.recordWorkspaceWrite(req.threadId, filePath.startsWith('/workspace/') ? filePath.slice('/workspace'.length) : filePath, run.workspaceRoot, {
+        runId: run.runId,
+        executionId: run.executionId,
+        messageId: run.executionId,
+      })
     }
     // MCP tools may return message objects / content blocks; keep them plain for the RPC
     const content = (out as { content?: unknown })?.content ?? out

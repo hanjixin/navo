@@ -93,6 +93,10 @@ describe('runtime bindings', () => {
     thread('legacy')
     thread()
     registry.bind('thread', configured())
+    sqlite.prepare("INSERT INTO agent_executions(id,thread_id,phase,updated_at) VALUES('legacy-execution','legacy','waiting_approval',1)").run()
+    sqlite.prepare("INSERT INTO approval_summaries(thread_id,execution_id,interrupt,updated_at) VALUES('legacy','legacy-execution','{}',1)").run()
+    sqlite.prepare("INSERT INTO agent_executions(id,thread_id,phase,updated_at) VALUES('thread-execution','thread','waiting_approval',1)").run()
+    sqlite.prepare("INSERT INTO approval_summaries(thread_id,execution_id,interrupt,updated_at) VALUES('thread','thread-execution','{}',1)").run()
     state.pending.mockResolvedValue([
       { threadId: 'legacy', interrupt: {} },
       { threadId: 'thread', interrupt: {} },

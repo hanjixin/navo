@@ -18,6 +18,7 @@ export interface ToolCtx {
   /** the page the tools drive; defaults to `tab` in the built-in browser */
   page?: () => PageDriver
   threadId?: string
+  projectId?: string | null
   /** Dev sandbox: behave like an agent (dialog/file-chooser takeover) for the duration of a call */
   sandbox?: boolean
 }

@@ -53,7 +53,7 @@ export class CodexRuntimeDriver implements ExternalRuntimeDriver {
     navoTools: true,
     nativeTools: true,
     approvals: true,
-    images: false,
+    images: true,
     resume: true,
     fork: false,
     tokenStreaming: true,
@@ -65,7 +65,6 @@ export class CodexRuntimeDriver implements ExternalRuntimeDriver {
     const { request, profile, signal } = context
     if (signal.aborted) return { finalText: '', interrupted: false, aborted: true }
     if (request.input.kind !== 'message') throw new Error('Codex runtime does not support approval resume')
-    if (request.input.images.length) throw new Error('Codex runtime does not support images')
     if (request.tools.length && !context.tools) throw new Error('Codex requires a Navo tool bridge for this run')
     validateCodexArgs(profile.args)
     let finalText = ''
@@ -377,7 +376,10 @@ export class CodexRuntimeDriver implements ExternalRuntimeDriver {
             cwd: request.paths.workspace,
             approvalPolicy: 'never',
             sandboxPolicy: { type: 'readOnly', networkAccess: false },
-            input: [{ type: 'text', text: [request.input.text, request.input.context].filter(Boolean).join('\n\n'), text_elements: [] }],
+            input: [
+              { type: 'text', text: [request.input.text, request.input.context].filter(Boolean).join('\n\n'), text_elements: [] },
+              ...request.input.images.map((image_url) => ({ type: 'image', image_url })),
+            ],
           },
         },
         {

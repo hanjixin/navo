@@ -119,7 +119,7 @@ class MemoryService {
     if (content.length > MAX_CONTENT) throw new Error(t('内容太长（最多 {{v0}} 字），请只保留要点', { v0: MAX_CONTENT }))
     const secret = findSecret(`${title}\n${content}`)
     if (secret) throw new Error(t('记忆中不能保存{{v0}}等敏感信息', { v0: secret }))
-    const scope = input.kind === 'site' ? normalizeScope(input.scope) : null
+    const scope = input.kind === 'site' ? normalizeScope(input.scope) : input.kind === 'knowledge' && input.scope?.startsWith('project:') ? input.scope : null
     if (input.kind === 'site' && !scope) throw new Error(t('站点经验需要指定网站域名'))
     return { kind: input.kind, title, content, scope }
   }
@@ -253,6 +253,16 @@ class MemoryService {
     return getSettings().memory.enabled && kv.get(`thread.memory.${threadId}`, true)
   }
 
+  /** Project-level switch. It defaults on so existing projects keep their current behavior. */
+  projectEnabled(projectId: string | null | undefined): boolean {
+    return !projectId || kv.get(`project.memory.${projectId}`, true)
+  }
+
+  setProjectEnabled(projectId: string, enabled: boolean): void {
+    kv.set(`project.memory.${projectId}`, enabled)
+    emit('memory.changed')
+  }
+
   setThreadEnabled(threadId: string, enabled: boolean): void {
     kv.set(`thread.memory.${threadId}`, enabled)
   }
@@ -261,10 +271,13 @@ class MemoryService {
    * Memory for one run: profile and preferences always, pinned memories, the knowledge most relevant
    * to the message, and the experience noted for the site the conversation's tab is on.
    */
-  forRun(threadId: string, text: string, url: string | null): RunMemory | null {
+  forRun(threadId: string, text: string, url: string | null, projectId?: string | null): RunMemory | null {
     this.siteSeen.set(threadId, new Set())
-    if (!this.threadEnabled(threadId)) return null
-    const all = this.active()
+    if (!this.threadEnabled(threadId) || !this.projectEnabled(projectId)) return null
+    const all = this.active().filter((memory) => {
+      if (!memory.scope?.startsWith('project:')) return true
+      return !!projectId && memory.scope === `project:${projectId}`
+    })
     const always = all
       .filter((m) => m.kind === 'profile' || m.kind === 'preference')
       .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.useCount - a.useCount || b.updatedAt - a.updatedAt)

@@ -8,6 +8,7 @@ import type { RunRequest, RunResult } from './contracts'
 import type { AgentRuntime, ExternalRuntimeDriver, RuntimeCallbacks, RuntimeSessionReference, RuntimeToolInvocation, RuntimeToolResult } from './types'
 import { KvRuntimeStateStore, type RuntimeStateStore } from './state-store'
 import { normalizeRuntimeText } from './message-normalizer'
+import { RuntimeWatchdog } from './watchdog'
 
 interface PendingTool {
   call: RuntimeToolInvocation
@@ -48,6 +49,7 @@ interface LiveRun {
   prefix: string
   finalText: string
   done: ReturnType<typeof deferred<void>>
+  watchdog?: { pause(): void; resume(): void }
 }
 function displayMessages(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => {
@@ -238,6 +240,7 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
     }
     const needsApproval = live.request.interruptOn.includes(call.name) || live.saved.uncertainTools?.includes(call.name)
     if (needsApproval) {
+      live.watchdog?.pause()
       live.saved.pending = pending
       live.decision = deferred<Decision>()
       this.toolEvent(live, pending, 'pending')
@@ -252,6 +255,7 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
       } catch {
         return errorResult('Tool approval cancelled')
       }
+      live.watchdog?.resume()
       if (!this.valid(live)) return errorResult('Runtime stopped')
       live.decision = null
       live.saved.pending = null
@@ -275,9 +279,12 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
     this.persist(live.saved)
     let result: RuntimeToolResult
     try {
+      live.watchdog?.pause()
       result = resultOf(await this.callbacks.callTool({ runId: live.request.runId, threadId: this.threadId, name: call.name, args: pending.call.args }))
     } catch (error) {
       result = errorResult(error instanceof Error ? error.message : String(error))
+    } finally {
+      live.watchdog?.resume()
     }
     if (!this.valid(live)) {
       live.saved.uncertainTools = [...new Set([...(live.saved.uncertainTools ?? []), call.name])]
@@ -338,13 +345,25 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
     }
     this.live = live
     const response = live.segment!.promise
+    const watchdog = new RuntimeWatchdog({
+      onTimeout: (message) => {
+        if (!this.valid(live)) return
+        live.controller.abort()
+        this.finish(live, undefined, new Error(message))
+      },
+    })
+    watchdog.start()
+    live.watchdog = watchdog
     const work = this.driver.run({
       profile: this.profile,
       request,
       session: live.saved.session,
       stateDir: join(paths.userData, 'runtimes', this.profile.kind, createHash('sha256').update(this.threadId).digest('hex')),
       signal: live.controller.signal,
-      emit: (event) => this.emit(live, event),
+      emit: (event) => {
+        watchdog.activity()
+        this.emit(live, event)
+      },
       usage: (event) => {
         if (this.valid(live) && event.threadId === this.threadId) this.callbacks.usage(event)
       },
@@ -354,6 +373,7 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
           this.persist(live.saved)
         }
       },
+      watchdog,
       ...(this.capabilities.navoTools
         ? {
             tools: {
@@ -366,8 +386,14 @@ export class ExternalRuntimeAdapter implements AgentRuntime {
         : {}),
     })
     void work.then(
-      (result) => this.finish(live, result),
-      (error) => this.finish(live, undefined, error),
+      (result) => {
+        watchdog.stop()
+        this.finish(live, result)
+      },
+      (error) => {
+        watchdog.stop()
+        this.finish(live, undefined, error)
+      },
     )
     return response
   }

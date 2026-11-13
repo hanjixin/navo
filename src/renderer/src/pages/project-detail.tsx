@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal, Activity, PackageOpen, ShieldCheck, Cpu } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { ErrorState, ListSkeleton } from '@/components/ui/states'
 import { ProjectEditor, ProjectDeleteDialog } from '@/components/projects/project-dialogs'
 import { ThreadList } from '@/components/chat/thread-list'
@@ -48,6 +49,21 @@ export function ProjectDetailPage() {
   const modelId = draft.data?.modelId ?? null
   const runtimeId = draft.data?.runtimeId ?? 'builtin'
   const { activeModels: models, load: loadModels } = useModels()
+  const projectMemory = useAsync(() => call('memory.projectEnabled', projectId ?? null), [projectId, revision])
+  const projectSkills = useAsync(async () => {
+    const skills = await call('skills.list')
+    return Promise.all(
+      skills
+        .filter((skill) => skill.readOnly)
+        .map(async (skill) => ({ ...skill, projectEnabled: projectId ? await call('skills.projectEnabled', projectId, skill.id) : true })),
+    )
+  }, [projectId, revision])
+  const projectMcp = useAsync(async () => {
+    const servers = await call('mcp.list')
+    return Promise.all(
+      servers.map(async (server) => ({ ...server, projectEnabled: projectId ? await call('mcp.projectEnabled', projectId, server.id) : true })),
+    )
+  }, [projectId, revision])
   const summary = useAsync(async () => {
     const ids = new Set(project?.threads.map((thread) => thread.id) ?? [])
     const [artifacts, approvals, runs] = await Promise.all([call('artifacts.list', projectId), call('approvals.list'), call('tasks.runs')])
@@ -180,6 +196,54 @@ export function ProjectDetailPage() {
             <p className="mt-2 mb-5 font-mono text-sm break-all text-muted-foreground">{project.workingDirectory ?? t('默认 Navo 工作区')}</p>
             <h2 className="font-medium">{t('项目说明')}</h2>
             <p className="mt-2 text-sm whitespace-pre-wrap text-muted-foreground">{project.description || t('暂无项目说明')}</p>
+            <div className="mt-5 flex items-center justify-between rounded-lg border border-border p-3">
+              <div>
+                <h2 className="font-medium">{t('项目记忆')}</h2>
+                <p className="mt-1 text-xs text-muted-foreground">{t('关闭后，本项目不会注入项目级记忆；会话关闭记忆仍优先。')}</p>
+              </div>
+              <Switch
+                checked={projectMemory.data ?? true}
+                disabled={projectMemory.loading}
+                onCheckedChange={(enabled) => void call('memory.setProjectEnabled', project.id, enabled).then(projectMemory.reload)}
+              />
+            </div>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => navigate(`/memory?project=${encodeURIComponent(project.id)}`)}>
+              {t('添加项目记忆')}
+            </Button>
+            <div className="mt-5 rounded-lg border border-border p-3">
+              <h2 className="font-medium">{t('项目 Skill')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t('关闭后，这些外部 Skill 不会挂载到本项目的 Agent。')}</p>
+              <div className="mt-3 grid gap-2">
+                {(projectSkills.data ?? []).map((skill) => (
+                  <label key={skill.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">{skill.name}</span>
+                    <Switch
+                      checked={skill.projectEnabled}
+                      disabled={!projectId}
+                      onCheckedChange={(enabled) => projectId && void call('skills.setProjectEnabled', projectId, skill.id, enabled).then(projectSkills.reload)}
+                    />
+                  </label>
+                ))}
+                {!projectSkills.loading && !(projectSkills.data ?? []).length ? <p className="text-xs text-muted-foreground">{t('暂无外部 Skill')}</p> : null}
+              </div>
+            </div>
+            <div className="mt-5 rounded-lg border border-border p-3">
+              <h2 className="font-medium">{t('项目 MCP')}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t('关闭后，这些 MCP 服务不会暴露给本项目的 Agent。')}</p>
+              <div className="mt-3 grid gap-2">
+                {(projectMcp.data ?? []).map((server) => (
+                  <label key={server.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">{server.name}</span>
+                    <Switch
+                      checked={server.projectEnabled}
+                      disabled={!projectId || !server.enabled}
+                      onCheckedChange={(enabled) => projectId && void call('mcp.setProjectEnabled', projectId, server.id, enabled).then(projectMcp.reload)}
+                    />
+                  </label>
+                ))}
+                {!projectMcp.loading && !(projectMcp.data ?? []).length ? <p className="text-xs text-muted-foreground">{t('暂无 MCP 服务')}</p> : null}
+              </div>
+            </div>
             <div className="mt-5 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setEditing(true)}>
                 <Pencil />

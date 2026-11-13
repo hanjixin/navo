@@ -14,6 +14,7 @@ import { decodeText } from '../files/text-utils'
 import { exportTargets, kindOf, markdownToDocx, markdownToHtml, toXlsx } from './convert'
 import { insideWorkspace, workspaceFile, storedWorkspacePath, outputAbsolutePath } from './workspace-paths'
 import { t } from '@shared/i18n'
+import { createHash } from 'node:crypto'
 
 interface Row {
   id: string
@@ -23,6 +24,10 @@ interface Row {
   size: number
   at: number
   workspace_root: string | null
+  run_id: string | null
+  execution_id: string | null
+  message_id: string | null
+  content_hash: string | null
 }
 
 /** text previews stop here */
@@ -42,7 +47,12 @@ const storedPath = (abs: string, root: string) => storedWorkspacePath(abs, root,
  * downloaded in its tab — previewed in the app and exported to Word, PDF or Excel.
  */
 class OutputsService {
-  recordWorkspaceWrite(threadId: string, path: string, workspaceRoot = paths.workspace): void {
+  recordWorkspaceWrite(
+    threadId: string,
+    path: string,
+    workspaceRoot = paths.workspace,
+    provenance: { runId?: string; executionId?: string; messageId?: string } = {},
+  ): void {
     let abs: string
     if (!db().prepare('SELECT 1 FROM threads WHERE id=?').get(threadId)) return
     let stat: ReturnType<typeof statSync>
@@ -55,7 +65,7 @@ class OutputsService {
       throw error
     }
     if (!stat.isFile()) return
-    this.upsert(threadId, storedPath(abs, workspaceRoot), 'agent', Number(stat.size), workspaceRoot)
+    this.upsert(threadId, storedPath(abs, workspaceRoot), 'agent', Number(stat.size), workspaceRoot, provenance)
     emit('outputs.changed', { threadId })
   }
 
@@ -66,13 +76,41 @@ class OutputsService {
     emit('outputs.changed', { threadId })
   }
 
-  private upsert(threadId: string, path: string, source: Row['source'], size: number, workspaceRoot: string | null = null): void {
+  private upsert(
+    threadId: string,
+    path: string,
+    source: Row['source'],
+    size: number,
+    workspaceRoot: string | null = null,
+    provenance: { runId?: string; executionId?: string; messageId?: string } = {},
+  ): void {
+    let contentHash: string | null = null
+    try {
+      const abs = outputAbsolutePath({ path, workspace_root: workspaceRoot, thread_id: threadId } as Row, paths.workspace)
+      if (statSync(abs).isFile()) contentHash = createHash('sha256').update(readFileSync(abs)).digest('hex')
+    } catch {
+      /* provenance is best effort */
+    }
     db()
       .prepare(
-        `INSERT INTO outputs(id, thread_id, path, source, size, at, workspace_root, name, kind) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at, workspace_root = excluded.workspace_root, name = excluded.name, kind = excluded.kind`,
+        `INSERT INTO outputs(id, thread_id, path, source, size, at, workspace_root, name, kind, run_id, execution_id, message_id, content_hash) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, path) DO UPDATE SET size = excluded.size, at = excluded.at, workspace_root = excluded.workspace_root, name = excluded.name, kind = excluded.kind, run_id = excluded.run_id, execution_id = excluded.execution_id, message_id = excluded.message_id, content_hash = excluded.content_hash`,
       )
-      .run(newId(), threadId, path, source, size, Date.now(), workspaceRoot, basename(path), kindOf(path))
+      .run(
+        newId(),
+        threadId,
+        path,
+        source,
+        size,
+        Date.now(),
+        workspaceRoot,
+        basename(path),
+        kindOf(path),
+        provenance.runId ?? null,
+        provenance.executionId ?? null,
+        provenance.messageId ?? null,
+        contentHash,
+      )
     emit('artifacts.changed')
     emit('projects.changed')
   }
@@ -89,12 +127,14 @@ class OutputsService {
     let unavailableReason: OutputFile['unavailableReason']
     let text: string | undefined
     let fd: number | undefined
+    let contentChanged = false
     try {
       const abs = absOf(r)
       // Reject directories/special files before opening, then inspect the opened file too.
       if (!statSync(abs).isFile()) throw new Error('Not a regular file')
       if (!readContent) {
         size = statSync(abs).size
+        if (r.content_hash && size <= 20 * 1024 * 1024) contentChanged = createHash('sha256').update(readFileSync(abs)).digest('hex') !== r.content_hash
         return {
           id: r.id,
           threadId: r.thread_id,
@@ -105,6 +145,7 @@ class OutputsService {
           size,
           at: r.at,
           missing: false,
+          ...(contentChanged ? { contentChanged: true } : {}),
           exports: exportTargets(name),
         }
       }
@@ -112,6 +153,7 @@ class OutputsService {
       const stat = fstatSync(fd)
       if (!stat.isFile()) throw new Error('Not a regular file')
       size = stat.size
+      if (r.content_hash && size <= 20 * 1024 * 1024) contentChanged = createHash('sha256').update(readFileSync(abs)).digest('hex') !== r.content_hash
       // Never trust the indexed size: an external editor may have enlarged the file.
       if (size < 2_000_000 && /\.(md|markdown|txt|json)$/i.test(name)) {
         const buffer = Buffer.alloc(size)
@@ -141,6 +183,7 @@ class OutputsService {
       at: r.at,
       missing: unavailableReason === 'missing',
       ...(unavailableReason ? { unavailableReason } : {}),
+      ...(contentChanged ? { contentChanged: true } : {}),
       exports: unavailableReason ? [] : exportTargets(name, text),
     }
   }
@@ -160,7 +203,16 @@ class OutputsService {
       project_id: string | null
       project_name: string | null
     })[]
-    return rows.map((r) => ({ ...this.toFile(r), projectId: r.project_id, projectName: r.project_name, threadTitle: r.thread_title }))
+    return rows.map((r) => ({
+      ...this.toFile(r),
+      projectId: r.project_id,
+      projectName: r.project_name,
+      threadTitle: r.thread_title,
+      runId: r.run_id,
+      executionId: r.execution_id,
+      messageId: r.message_id,
+      contentHash: r.content_hash,
+    }))
   }
 
   query(query: ArtifactsQuery = {}): ArtifactsPage {
@@ -201,7 +253,16 @@ class OutputsService {
     const page = rows.slice(0, limit)
     const last = page.at(-1)
     return {
-      items: page.map((row) => ({ ...this.toFile(row, false), projectId: row.project_id, projectName: row.project_name, threadTitle: row.thread_title })),
+      items: page.map((row) => ({
+        ...this.toFile(row, false),
+        projectId: row.project_id,
+        projectName: row.project_name,
+        threadTitle: row.thread_title,
+        runId: row.run_id,
+        executionId: row.execution_id,
+        messageId: row.message_id,
+        contentHash: row.content_hash,
+      })),
       nextCursor: rows.length > limit && last ? Buffer.from(JSON.stringify({ at: last.at, id: last.id, scope })).toString('base64url') : null,
     }
   }
@@ -213,7 +274,18 @@ class OutputsService {
       FROM outputs o JOIN threads t ON t.id=o.thread_id LEFT JOIN projects p ON p.id=t.project_id WHERE o.id=?`,
       )
       .get(id) as (Row & { thread_title: string; project_id: string | null; project_name: string | null }) | undefined
-    return row ? { ...this.toFile(row), projectId: row.project_id, projectName: row.project_name, threadTitle: row.thread_title } : null
+    return row
+      ? {
+          ...this.toFile(row),
+          projectId: row.project_id,
+          projectName: row.project_name,
+          threadTitle: row.thread_title,
+          runId: row.run_id,
+          executionId: row.execution_id,
+          messageId: row.message_id,
+          contentHash: row.content_hash,
+        }
+      : null
   }
 
   counts(): Record<string, number> {

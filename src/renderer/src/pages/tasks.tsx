@@ -2,6 +2,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleAlert,
+  ChevronDown,
   History,
   ListChecks,
   MessageSquare,
@@ -13,11 +14,12 @@ import {
   RefreshCw,
   Square,
   Trash2,
+  Wrench,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import type { MonitorConfig, Task, TaskRunStatus } from '@shared/types'
+import type { MonitorConfig, Task, TaskRunStatus, ToolAuditEntry } from '@shared/types'
 import { MonitorFields } from '@/components/tasks/monitor-fields'
 import { MonitorHistory } from '@/components/tasks/monitor-history'
 import { taskRunTimeline } from '@/components/tasks/run-timeline'
@@ -67,6 +69,43 @@ const hostOf = (url?: string) => {
   } catch {
     return url ?? ''
   }
+}
+
+const auditSourceLabel = (source: ToolAuditEntry['source']) =>
+  ({
+    browser: t('Navo 浏览器'),
+    desktop: t('Navo 桌面'),
+    mcp: t('MCP 服务'),
+    plugin: t('插件'),
+    macro: t('录制宏'),
+    connector: t('连接器'),
+    navo: t('Navo 工具'),
+  })[source] ?? source
+
+function ToolAuditPanel({ threadId }: { threadId: string }) {
+  const audit = useAsync(() => call('tools.audit', threadId, 100), [threadId])
+  return (
+    <div className="mt-2 rounded-md border border-border/70 bg-muted/20 p-2" data-testid="tool-audit-panel">
+      {audit.loading ? <p className="px-2 py-2 text-xs text-muted-foreground">{t('加载工具审计…')}</p> : null}
+      {audit.error ? <p className="px-2 py-2 text-xs text-danger">{audit.error}</p> : null}
+      {!audit.loading && !audit.error && !audit.data?.length ? <p className="px-2 py-2 text-xs text-muted-foreground">{t('这次运行没有工具调用')}</p> : null}
+      <div className="grid gap-1">
+        {(audit.data ?? []).map((entry) => (
+          <div key={entry.id} className="flex min-w-0 items-center gap-2 px-2 py-1.5 text-xs">
+            <Wrench className="size-3 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-mono">{entry.toolName}</span>
+            <span className="shrink-0 text-subtle-foreground">{auditSourceLabel(entry.source)}</span>
+            <Badge variant={entry.status === 'success' ? 'success' : entry.status === 'started' ? 'primary' : 'danger'}>{entry.status}</Badge>
+            {entry.error ? (
+              <span className="max-w-56 truncate text-danger" title={entry.error}>
+                {entry.error}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 const STATUS: Record<
@@ -245,6 +284,7 @@ export function TasksPage() {
   const monitors = useAsync(() => call('monitor.summary'))
   const activeModels = useModels((s) => s.activeModels) ?? []
   const [pending, setPending] = useState<Set<string>>(() => new Set())
+  const [auditRun, setAuditRun] = useState<string | null>(null)
   const loadModels = useModels((s) => s.load)
   const select = useChat((s) => s.select)
   const navigate = useNavigate()
@@ -495,6 +535,18 @@ export function TasksPage() {
                       ))}
                     </div>
                     {approval ? <p className="mt-1 pl-6 text-xs text-amber-600">{t('有待处理的确认，请打开会话继续')}</p> : null}
+                    {r.threadId ? (
+                      <button
+                        type="button"
+                        className="mt-2 inline-flex items-center gap-1 pl-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        onClick={() => setAuditRun(auditRun === r.id ? null : r.id)}
+                        aria-expanded={auditRun === r.id}
+                      >
+                        <ChevronDown className={cn('size-3 transition-transform', auditRun === r.id && 'rotate-180')} />
+                        {t('工具审计')}
+                      </button>
+                    ) : null}
+                    {auditRun === r.id && r.threadId ? <ToolAuditPanel threadId={r.threadId} /> : null}
                   </div>
                 )
               })}
