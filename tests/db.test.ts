@@ -10,4 +10,10 @@ describe('database migrations', async () => {
     expect(entries.length).toBeGreaterThanOrEqual(2)
     for (const e of entries) expect(e).toMatch(/CREATE TABLE|ALTER TABLE/)
   })
+
+  it('repairs partially applied output metadata migrations on startup', () => {
+    expect(src).toContain('PRAGMA table_info(outputs)')
+    for (const column of ['workspace_root', 'run_id', 'execution_id', 'message_id', 'content_hash', 'name', 'kind']) expect(src).toContain(`['${column}',`)
+    expect(src).toContain('CREATE INDEX IF NOT EXISTS outputs_execution')
+  })
 })

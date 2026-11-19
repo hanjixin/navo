@@ -208,10 +208,42 @@ export function openDatabase(path: string): Database.Database {
   const version = d.pragma('user_version', { simple: true }) as number
   for (let i = version; i < MIGRATIONS.length; i++) {
     d.transaction(() => {
-      d.exec(MIGRATIONS[i])
+      // Older local builds could finish part of a migration before exiting. Run each
+      // statement separately so a duplicate legacy column does not prevent the rest
+      // of the migration (and the app window) from starting.
+      for (const statement of MIGRATIONS[i]
+        .split(';')
+        .map((sql) => sql.trim())
+        .filter(Boolean)) {
+        try {
+          d.exec(statement)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (!/^duplicate column name:/i.test(message)) throw error
+        }
+      }
       d.pragma(`user_version = ${i + 1}`)
     })()
   }
+  // A few older builds advanced user_version after partially applying a migration.
+  // Repair additive output metadata independently of the recorded version so a
+  // successful file write cannot be reported as a tool failure when its artifact
+  // provenance is persisted immediately afterwards.
+  const outputColumns = new Set((d.prepare('PRAGMA table_info(outputs)').all() as { name: string }[]).map((column) => column.name))
+  for (const [name, definition] of [
+    ['workspace_root', 'TEXT'],
+    ['run_id', 'TEXT'],
+    ['execution_id', 'TEXT'],
+    ['message_id', 'TEXT'],
+    ['content_hash', 'TEXT'],
+    ['name', "TEXT NOT NULL DEFAULT ''"],
+    ['kind', "TEXT NOT NULL DEFAULT 'other'"],
+  ] as const) {
+    if (!outputColumns.has(name)) d.exec(`ALTER TABLE outputs ADD COLUMN ${name} ${definition}`)
+  }
+  d.exec('CREATE INDEX IF NOT EXISTS outputs_execution ON outputs(execution_id, at)')
+  d.exec('CREATE INDEX IF NOT EXISTS outputs_at_id ON outputs(at DESC, id DESC)')
+  d.exec('CREATE INDEX IF NOT EXISTS outputs_thread_at_id ON outputs(thread_id, at DESC, id DESC)')
   // Only legacy rows have an empty name; metadata backfill never reads file contents.
   const legacyOutputs = d.prepare("SELECT id,path FROM outputs WHERE name = ''").all() as { id: string; path: string }[]
   if (legacyOutputs.length)

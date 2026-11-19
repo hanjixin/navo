@@ -46,6 +46,7 @@ app.on('second-instance', () => {
 })
 
 function createWindow(): BrowserWindow {
+  console.error('[startup] createWindow')
   const dark = nativeTheme.shouldUseDarkColors
   const win = new BrowserWindow({
     width: 1480,
@@ -76,6 +77,15 @@ function createWindow(): BrowserWindow {
     if (mainWin === win) mainWin = null
   })
   mainWin = win
+  win.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    console.error(`[startup] did-fail-load ${url} ${code} ${description}`)
+    if (isMainFrame) log.error(`[window] failed to load ${url}: ${code} ${description}`)
+  })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[startup] render-process-gone ${details.reason} ${details.exitCode ?? ''}`)
+    log.error(`[window] renderer exited: ${details.reason}${details.exitCode != null ? ` (${details.exitCode})` : ''}`)
+    if (!win.isDestroyed()) win.show()
+  })
   // links in the app UI (e.g. in agent replies) open as tabs in the built-in browser panel
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
@@ -86,6 +96,10 @@ function createWindow(): BrowserWindow {
   })
   if (is.dev && process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(appFile('out/renderer/index.html'))
+  // Show immediately so a renderer load failure is visible and recoverable; ready-to-show can
+  // remain pending when Chromium fails before the first paint.
+  win.show()
+  console.error('[startup] window shown')
   return win
 }
 

@@ -69,6 +69,11 @@ export function ToolCard({ call, result, pending, compact = false }: { call: Too
             <Minus aria-hidden="true" className="size-3.5 text-muted-foreground" />
           )}
         </span>
+        {status === 'error' && result?.content ? (
+          <span className="max-w-[28%] truncate text-[10px] text-danger" title={result.content}>
+            {result.content}
+          </span>
+        ) : null}
       </button>
       {result?.runtimeWarning ? (
         <div className="mx-2 mb-1.5">
