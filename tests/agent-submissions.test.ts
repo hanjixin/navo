@@ -318,6 +318,21 @@ describe('submission acceptance and run coordination', () => {
     expect(state.runs).toHaveLength(1)
   })
 
+  it('passes explicit interruption recovery only for retrying a saved submission and preserves its identity', async () => {
+    state.runtimeKind = 'pi'
+    const receipt = await agent.submit({ requestId: 'pi-recovery', text: 'Continue', runtimeId: 'pi' })
+    await drain()
+    expect(state.runs[0].recoverUnknownTool).toBeUndefined()
+    await agent.retrySubmission(receipt.threadId, receipt.messageId)
+    expect(state.runs).toHaveLength(2)
+    expect(state.runs[1]).toMatchObject({
+      recoverUnknownTool: true,
+      executionId: receipt.executionId,
+      input: { kind: 'message', id: receipt.messageId },
+    })
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM chat_submissions').get()?.n).toBe(1)
+  })
+
   it('retains execution identity through approval and rejects decisions after cancellation', async () => {
     const thread = agent.createThread()
     const events: ExecutionEvent[] = []

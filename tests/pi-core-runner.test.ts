@@ -132,6 +132,7 @@ describe('bundled Pi core', () => {
       fauxAssistantMessage([fauxToolCall('lookup', { query: 'first' }, { id: 'first' }), fauxToolCall('lookup', { query: 'second' }, { id: 'second' })], {
         stopReason: 'toolUse',
       }),
+      fauxAssistantMessage('continued without replay'),
     ])
     let complete!: (value: string) => void
     f.callTool.mockImplementation(
@@ -154,6 +155,82 @@ describe('bundled Pi core', () => {
     ])
     await expect(new PiRunner(f.deps).run(request())).rejects.toThrow('outcome is unknown')
     expect(f.callTool).toHaveBeenCalledTimes(1)
+    const recovered = await new PiRunner(f.deps).run({
+      ...request(),
+      recoverUnknownTool: true,
+      input: { kind: 'message', id: 'saved-user', text: 'Continue this saved message', images: [] },
+    })
+    expect(recovered).toMatchObject({ finalText: 'continued without replay', interrupted: false })
+    const final = f.snapshots.get('thread')!
+    expect(final).toMatchObject({ pending: null, inFlight: null })
+    expect(final.ui.filter((message) => message.id === 'saved-user')).toHaveLength(1)
+    expect(final.messages.filter((message) => message.role === 'toolResult')).toHaveLength(2)
+    expect(final.ui.find((message) => message.toolCallId === 'first')).toMatchObject({ runtimeWarning: 'tool_outcome_unknown' })
+    expect(f.callTool).toHaveBeenCalledTimes(1)
+  })
+  it('closes a crashed tool batch on explicit recovery without executing unfinished calls', async () => {
+    const calls = ['completed', 'unknown', 'unexecuted'].map((id) => fauxToolCall('lookup', { query: id }, { id }))
+    const f = setup([fauxAssistantMessage(calls, { stopReason: 'toolUse' }), fauxAssistantMessage('recovered after crash')])
+    await f.runner.run({ ...request(), interruptOn: ['lookup'] })
+    const state = f.snapshots.get('thread')!
+    state.pending!.approved = true
+    state.inFlight = 'unknown'
+    state.messages.push({
+      role: 'toolResult',
+      toolCallId: 'completed',
+      toolName: 'lookup',
+      content: [{ type: 'text', text: 'already completed' }],
+      isError: false,
+      timestamp: Date.now(),
+    })
+    await expect(
+      new PiRunner(f.deps).run({ ...request(), recoverUnknownTool: true, input: { kind: 'resume', decisions: calls.map(() => ({ type: 'approve' })) } }),
+    ).rejects.toThrow('outcome is unknown')
+    expect(
+      await new PiRunner(f.deps).run({
+        ...request(),
+        recoverUnknownTool: true,
+        input: { kind: 'message', id: 'next', text: 'A new request', images: [] },
+      }),
+    ).toMatchObject({ finalText: 'recovered after crash' })
+    const saved = f.snapshots.get('thread')!
+    expect(saved).toMatchObject({ pending: null, inFlight: null })
+    const results = saved.messages.filter((message) => message.role === 'toolResult')
+    expect(results).toHaveLength(3)
+    expect(results.find((message) => message.toolCallId === 'completed')).toMatchObject({ isError: false })
+    expect(saved.ui.find((message) => message.toolCallId === 'unknown')).toMatchObject({ runtimeWarning: 'tool_outcome_unknown', status: 'error' })
+    expect(saved.ui.find((message) => message.toolCallId === 'unexecuted')).toMatchObject({ content: expect.stringContaining('not executed') })
+    expect(f.callTool).not.toHaveBeenCalled()
+  })
+  it('recovers an interrupted call from its transcript when pending metadata is absent', async () => {
+    const f = setup([
+      fauxAssistantMessage(
+        [fauxToolCall('lookup', { query: 'q' }, { id: 'lost-pending' }), fauxToolCall('lookup', { query: 'sibling' }, { id: 'lost-sibling' })],
+        { stopReason: 'toolUse' },
+      ),
+      fauxAssistantMessage('ok'),
+    ])
+    await f.runner.run({ ...request(), interruptOn: ['lookup'] })
+    const state = f.snapshots.get('thread')!
+    state.inFlight = 'lost-pending'
+    state.pending = null
+    await new PiRunner(f.deps).run({ ...request(), recoverUnknownTool: true, input: { kind: 'message', id: 'next', text: 'Continue', images: [] } })
+    const saved = f.snapshots.get('thread')!
+    expect(saved.inFlight).toBeNull()
+    expect(saved.ui.find((message) => message.toolCallId === 'lost-pending')).toMatchObject({ status: 'error', runtimeWarning: 'tool_outcome_unknown' })
+    expect(saved.ui.find((message) => message.toolCallId === 'lost-sibling')).toMatchObject({
+      status: 'error',
+      content: expect.stringContaining('not executed'),
+    })
+    expect(f.callTool).not.toHaveBeenCalled()
+  })
+  it('refuses to erase an unidentified interrupted call during explicit recovery', async () => {
+    const f = setup([])
+    f.snapshots.set('thread', { messages: [], ui: [], pending: null, inFlight: 'missing-call' })
+    await expect(new PiRunner(f.deps).run({ ...request(), recoverUnknownTool: true })).rejects.toThrow('could not be identified')
+    expect(f.snapshots.get('thread')?.inFlight).toBe('missing-call')
+    expect(f.contexts).toEqual([])
+    expect(f.callTool).not.toHaveBeenCalled()
   })
   it('sends image blocks to the model and preserves user image presentation', async () => {
     const f = setup([fauxAssistantMessage('seen')])

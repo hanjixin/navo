@@ -88,6 +88,7 @@ interface RunOptions {
   headless?: boolean
   executionId?: string
   model?: ResolvedModel
+  recoverUnknownTool?: boolean
 }
 
 /**
@@ -487,7 +488,7 @@ export class AgentService {
       if (submissions.execution(threadId)?.phase === 'waiting_approval') throw new Error('Resolve the pending approval before retrying')
       const pending = submissions.pendingInput(threadId, messageId)
       if (!pending) throw new Error('Message is already checkpointed; regenerate it instead')
-      return await this.run(threadId, pending.input, { executionId: pending.executionId }, undefined, lock)
+      return await this.run(threadId, pending.input, { executionId: pending.executionId, recoverUnknownTool: true }, undefined, lock)
     } finally {
       this.release(threadId, lock)
     }
@@ -690,6 +691,7 @@ export class AgentService {
         threadId,
         input,
         fromCheckpointId,
+        recoverUnknownTool: opts.recoverUnknownTool,
         model: resolved,
         systemPrompt: runtime.capabilities.navoTools
           ? systemPrompt(page, mem ? mem.prompt : null, project ?? undefined, workspaceRoot, runtime.capabilities.browserSubagent === true)

@@ -13,7 +13,7 @@ import type { AssistantMessage, ImageContent, Message, TextContent, ToolResultMe
 import type { ChatEvent, PendingInterrupt, ThreadState, UIMessage } from '@shared/types'
 import type { RunRequest, RunResult, RuntimeModel, ToolCallRequest, UsageEvent } from '../agent-runtime/contracts'
 import { piModelAdapter } from './model'
-import { cancelPiPending } from './cancel'
+import { cancelPiPending, recoverPiInterruption } from './cancel'
 
 interface Pending {
   assistant: AssistantMessage
@@ -112,7 +112,15 @@ export class PiRunner {
       state.inFlight = null
       this.deps.write(req.threadId, state)
     }
-    if (state.inFlight) throw new Error('A Pi tool outcome is unknown after interruption; it will not be executed again automatically')
+    if (state.inFlight) {
+      if (!req.recoverUnknownTool || req.input.kind !== 'message')
+        throw new Error('A Pi tool outcome is unknown after interruption; it will not be executed again automatically')
+      const messages = recoverPiInterruption(state)
+      // Persist closure of the entire interrupted batch before accepting new work.
+      // The old calls remain error results and never reach executePending again.
+      this.deps.write(req.threadId, state)
+      for (const message of messages) this.deps.emit({ type: 'message', threadId: req.threadId, message })
+    }
     // The first system message belongs to Navo; later Pi tool-change messages stay intact.
     const system = state.messages.findIndex((message) => message.role === 'system')
     const prompt = { role: 'system' as const, content: req.systemPrompt, timestamp: Date.now() }

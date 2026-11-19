@@ -46,6 +46,8 @@ export interface RunRequest {
     | { kind: 'resume'; decisions: Decision[] }
   /** Fork from this checkpoint instead of the latest one (regenerate / edit & resend) */
   fromCheckpointId?: string
+  /** Explicit user-confirmed recovery after a tool was interrupted with an unknown outcome. */
+  recoverUnknownTool?: boolean
   model: RuntimeModel
   systemPrompt: string
   tools: ToolDescriptor[]
