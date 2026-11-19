@@ -122,6 +122,10 @@ export function ProjectDetailPage() {
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium" title={project.name}>
           {project.name}
         </h1>
+        <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
+          <Trash2 />
+          {t('删除项目')}
+        </Button>
         <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => void createThread()}>
           <Plus />
           {t('新建对话')}

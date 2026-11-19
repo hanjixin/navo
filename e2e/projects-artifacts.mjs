@@ -361,9 +361,9 @@ try {
   await reload()
   await expect(win.getByRole('button', { name: '预览 周报-P2.md', exact: true })).toBeVisible()
 
-  // Deleting from current project details returns to the index and preserves conversation/files.
-  await route(`/projects/${alpha.id}?tab=settings`)
-  await win.getByRole('button', { name: '删除项目', exact: true }).click()
+  // The project header exposes deletion without opening settings, preserving conversation/files.
+  await route(`/projects/${alpha.id}`)
+  await win.getByTestId('project-home').locator('header').getByRole('button', { name: '删除项目', exact: true }).click()
   await expect(win.getByRole('dialog')).toContainText('对话和产物会保留')
   await win.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click()
   await expectPath('/projects')
