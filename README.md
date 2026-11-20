@@ -173,7 +173,7 @@ ad-hoc 签名不能在代码变化后保证旧授权继续有效。重建后若�
 
 开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在推送 `main`、提交 PR 或手动运行时执行类型检查、Lint、格式检查、单元测试和构建，并保留 macOS、Windows 和 Linux 的自动化测试。
 
-检查通过后，CI 并行打包 macOS（Apple 芯片和 Intel 的 `.dmg`）、Windows x64（NSIS `.exe`）和 Linux x64（`.AppImage`）。在 GitHub 的 **Actions → CI → 对应运行 → Artifacts** 下载测试安装包，保留 14 天。CI 包不使用发布证书或 Apple 公证。
+检查通过后，CI 并行打包 macOS（Apple 芯片和 Intel 的 `.dmg`）、Windows x64（NSIS `.exe`）和 Linux x64（`.AppImage`）。在 GitHub 的 **Actions → CI → 对应运行 → Artifacts** 下载测试安装包，保留 14 天。macOS 测试包使用临时签名，不经 Apple 公证。
 
 E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。
 
