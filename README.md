@@ -171,7 +171,9 @@ ad-hoc 签名不能在代码变化后保证旧授权继续有效。重建后若�
 
 `pnpm test:desktop` 使用隔离配置和 helper 的 `--fake` 模式验证授权与工具链路，不操作真实桌面。Windows CI 配置了原生 helper 构建、协议回归和 Electron 桌面 E2E；自动化结果不等同于 Windows 实机、多屏、不同 DPI、UAC 或各应用 UI Automation 兼容性验证，发布前仍需在 Windows 实机完成这些验证。`pnpm eval:desktop` 显示本机测试说明；macOS 授予系统权限后运行 `node scripts/desktop-eval.mjs --run`，在 TextEdit 新建文档并输入中文，验证元素树、截图和坐标。加 `--stop-test` 可手动验证 Esc 急停。测试文档会保留为未保存状态。
 
-开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在每个 PR 上运行类型检查、Lint、格式检查、单元测试、构建，并在 macOS 上跑端到端测试和打包冒烟测试，在 Windows 上跑桌面 helper 与 Electron E2E；推送 `v*` 标签触发三平台发布。
+开发环境、脚本、目录结构与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI（`.github/workflows/ci.yml`）在推送 `main`、提交 PR 或手动运行时执行类型检查、Lint、格式检查、单元测试和构建，并保留 macOS、Windows 和 Linux 的自动化测试。
+
+检查通过后，CI 并行打包 macOS（Apple 芯片和 Intel 的 `.dmg`）、Windows x64（NSIS `.exe`）和 Linux x64（`.AppImage`）。在 GitHub 的 **Actions → CI → 对应运行 → Artifacts** 下载测试安装包，保留 14 天。CI 包不使用发布证书或 Apple 公证。
 
 E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。
 
