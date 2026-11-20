@@ -95,6 +95,7 @@ try {
 
   const switched = await tool('browser_switch', { target: 'mine' })
   ok(switched.startsWith('已切换到你的浏览器'), `switched to the user's browser (${switched.split('\n')[0]})`)
+  ok(switched.includes('只可操作 Navo 打开或你通过扩展交给 Navo 的标签页'), 'the switch result explains which tabs are accessible')
 
   const nav = await tool('browser_navigate', { url: site })
   ok(/\[e\d+\] textbox "Name"/.test(nav), 'navigate + snapshot in the user browser')

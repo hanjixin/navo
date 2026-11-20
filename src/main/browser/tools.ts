@@ -311,7 +311,8 @@ export function createBrowserTools(ctx: ToolCtx) {
       },
       {
         name: 'browser_tabs',
-        description: '管理浏览器标签页：list / new / switch / close。new 和 switch 会让本对话后续操作该标签页。',
+        description:
+          '管理当前浏览器的标签页：list / new / switch / close。用户的 Chrome / Edge 中，list 只返回 Navo 打开或用户通过扩展交给 Navo 的标签页，不能用于统计浏览器的总标签页数。new 和 switch 会选定本对话后续操作的标签页。',
         schema: z.object({ action: z.enum(['list', 'new', 'switch', 'close']), tabId: z.number().optional(), url: z.string().optional() }),
       },
     ),

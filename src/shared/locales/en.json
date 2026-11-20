@@ -1376,6 +1376,7 @@
   "使用我的浏览器": "Use my browser",
   "让 Agent 在你自己的 Chrome / Edge 里操作，用上已登录的账号和插件。需要先导入 Navo 浏览器扩展": "Let the agent work in your own Chrome / Edge, with the accounts you are signed in to and your extensions. Requires the Navo browser extension",
   "浏览器扩展": "Browser extension",
+  "要操作已打开的网页，请在该标签页点击 Navo 扩展，选择「把这个标签页交给 Navo」。": "To work on an existing page, open the Navo extension on that tab and choose ‘Hand this tab over to Navo’.",
   "重新导入": "Import again",
   "导入扩展": "Import extension",
   "导出 Navo 浏览器扩展": "Export the Navo browser extension",

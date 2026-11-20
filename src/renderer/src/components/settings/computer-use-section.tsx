@@ -165,9 +165,12 @@ export function ComputerUseSection({ settings, patch }: { settings: Settings; pa
           <Row
             title={t('浏览器扩展')}
             description={
-              <span data-testid="extension-state" className={cn(b?.paired && 'text-success')}>
-                {state}
-              </span>
+              <>
+                <span data-testid="extension-state" className={cn(b?.paired && 'text-success')}>
+                  {state}
+                </span>
+                {b?.paired ? <p className="mt-1">{t('要操作已打开的网页，请在该标签页点击 Navo 扩展，选择「把这个标签页交给 Navo」。')}</p> : null}
+              </>
             }
           >
             <Button size="sm" onClick={openExtensionGuide}>

@@ -17,7 +17,7 @@ export function createSwitchTool(ctx: ToolCtx) {
       try {
         const d = await targets.useMine(threadId)
         await d.prepare()
-        return `已切换到你的浏览器（${bridge.link()?.browser ?? '浏览器'}）：\n${await fullSnapshot(d)}`
+        return `已切换到你的浏览器（${bridge.link()?.browser ?? '浏览器'}）。后续请使用 browser_*。只可操作 Navo 打开或你通过扩展交给 Navo 的标签页。\n\n${await fullSnapshot(d)}`
       } catch (err) {
         if (!(err instanceof NeedExtension)) throw err
         emit('computerUse.guide', undefined)
@@ -27,7 +27,7 @@ export function createSwitchTool(ctx: ToolCtx) {
     {
       name: 'browser_switch',
       description:
-        '切换本对话使用的浏览器：builtin 为 Navo 内置浏览器（默认）；mine 为用户自己的浏览器（Chrome / Edge 等，已登录的账号和插件都在）。切换后 browser_* 工具都作用在该浏览器上。',
+        '切换本对话使用的浏览器。用户要求操作自己的 Chrome / Edge 时，传 target: "mine"，通过已连接的 Navo 扩展切换；target: "builtin" 切回内置浏览器。切换后继续使用 browser_*，只可操作 Navo 打开或用户通过扩展交给 Navo 的标签页。',
       schema: z.object({ target: z.enum(['builtin', 'mine']) }),
     },
   )
