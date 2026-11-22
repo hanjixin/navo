@@ -1,6 +1,12 @@
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { z } from 'zod'
 import { createRuntimeFilesystem, type RuntimeFilesystemConfig } from './filesystem'
+
+const execCommand = promisify(exec)
+const COMMAND_TIMEOUT = 15 * 60_000
+const COMMAND_OUTPUT_LIMIT = 16 * 1024 * 1024
 
 /** File tools for engines that do not provide DeepAgents' filesystem middleware. */
 export function runtimeFileTools(config: RuntimeFilesystemConfig): StructuredToolInterface[] {
@@ -23,7 +29,46 @@ export function runtimeFileTools(config: RuntimeFilesystemConfig): StructuredToo
     if (value?.error) throw new Error(value.error)
     return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
   }
+  const workspacePath = (value = '/workspace/') => {
+    const virtualPath = pathOf(value)
+    if (!virtualPath.startsWith('/workspace/')) throw new Error('Commands must run from /workspace/')
+    return `${config.paths.workspace}/${virtualPath.slice('/workspace/'.length)}`
+  }
+  const runCommand = async ({ command, cwd, timeout_ms }: { command: string; cwd?: string; timeout_ms?: number }) => {
+    const timeout = timeout_ms ?? COMMAND_TIMEOUT
+    if (timeout < 1000 || timeout > COMMAND_TIMEOUT) throw new Error(`timeout_ms must be between 1000 and ${COMMAND_TIMEOUT}`)
+    try {
+      const { stdout, stderr } = await execCommand(command, {
+        cwd: workspacePath(cwd),
+        env: { ...process.env },
+        timeout,
+        maxBuffer: COMMAND_OUTPUT_LIMIT,
+        windowsHide: true,
+      })
+      return JSON.stringify({ ok: true, exitCode: 0, stdout, stderr })
+    } catch (error) {
+      const cause = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string; signal?: string; killed?: boolean }
+      return JSON.stringify({
+        ok: false,
+        exitCode: typeof cause.code === 'number' ? cause.code : null,
+        signal: cause.signal ?? null,
+        killed: cause.killed === true,
+        stdout: cause.stdout ?? '',
+        stderr: cause.stderr ?? cause.message ?? String(error),
+      })
+    }
+  }
   return [
+    tool(runCommand, {
+      name: 'run_command',
+      description:
+        '在项目工作目录 /workspace/ 中执行本机 Shell 命令。可使用网络、本机 Docker 和其他已安装命令处理二进制文件；结果包含退出码、标准输出和错误输出。命令执行前会按 Navo 审批规则请求确认。',
+      schema: z.object({
+        command: z.string().min(1).max(32_000),
+        cwd: z.string().optional().describe('工作目录，只能是 /workspace/ 或其子目录'),
+        timeout_ms: z.number().int().min(1000).max(COMMAND_TIMEOUT).optional(),
+      }),
+    }),
     tool(async ({ file_path, offset, limit }) => result(backend.read(pathOf(file_path), offset, limit)), {
       name: 'read_file',
       description: '读取虚拟路径下的文本文件：/workspace/ 工作文件、/uploads/ 上传正文、/skills/ 和 /ext/ 下的 Skill。支持 offset / limit 分段读取。',

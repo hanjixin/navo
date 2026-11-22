@@ -45,6 +45,8 @@ function navoTools(threadId?: string): ToolEntry[] {
 
 /** Destructive management tools always pause for approval (unless allowed for the conversation). */
 export const NAVO_DESTRUCTIVE = NAVO_TOOLS.filter((d) => d.destructive).map((d) => d.name)
+/** Local shell commands can change the workspace, network state, or external services. */
+export const RUNTIME_DESTRUCTIVE = ['run_command']
 
 /** All tool implementations for one run, bound to that conversation's tab and file mounts. */
 export function collectTools(ctx: ToolCtx, supportsVision = false, workspaceRoot?: string, filesystem?: RuntimeFilesystemConfig): ToolEntry[] {
@@ -177,6 +179,7 @@ ${mem ? `\n${mem}\n` : ''}`
 }
 ## 文件
 ${workspaceRoot ? `- 本轮本地工作目录：${workspaceRoot}。该目录挂载为 /workspace/，用文件工具通过 /workspace/ 读取现有文件和写入产物。\n` : ''}- /workspace/ 用于保存需要长期保留的产出文件；其他路径为会话临时文件。
+- run_command 可以从 /workspace/ 执行本机命令，命令结果包含退出码和输出，可用于 Docker、网络下载、编译和二进制文件处理。执行前遵循 Navo 审批规则。
 - /skills/ 与 /ext/ 下是可用的 Skill（/ext/ 为用户其他 Agent 共享的目录），按需读取其 SKILL.md 并遵循。两处都是只读的，不能用 write_file / edit_file 改。
 - Skill 会越用越好：按 Skill 做的结果被用户纠正，或某一步行不通、换了做法才成功时，用 skill_note 把这条经验或修正记进那个 Skill（不要只是这一次绕过去）。小修正会直接生效，大改动会变成给用户的建议。
 - 用户让你「写一个 Skill」时用 navo_save_skill。你自己觉得某个做法值得沉淀时也可以调用它，但会先作为建议等用户确认。

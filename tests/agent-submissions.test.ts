@@ -59,7 +59,13 @@ vi.mock('../src/main/outputs/outputs-service', () => ({ outputs: {} }))
 vi.mock('../src/main/connectors/builtin', () => ({ BUILTIN_SEND_TOOLS: [] }))
 vi.mock('../src/main/connectors/connector-service', () => ({ connectors: { writeTools: () => [] } }))
 vi.mock('../src/main/mcp-server/tools', () => ({ isSpawnedConversation: () => false }))
-vi.mock('../src/main/agent/tool-registry', () => ({ collectTools: () => [], describeTools: () => [], NAVO_DESTRUCTIVE: [], systemPrompt: () => '' }))
+vi.mock('../src/main/agent/tool-registry', () => ({
+  collectTools: () => [],
+  describeTools: () => [],
+  NAVO_DESTRUCTIVE: [],
+  RUNTIME_DESTRUCTIVE: [],
+  systemPrompt: () => '',
+}))
 vi.mock('../src/main/external-browser/instance', () => ({ targets: { get: () => 'builtin' } }))
 vi.mock('../src/main/computer-use', () => ({ computerUse: { beginRun: vi.fn(), endRun: vi.fn(), endExecution: vi.fn(), stopRun: vi.fn() } }))
 vi.mock('../src/main/projects/project-service', () => ({ projects: { exists: () => true, get: () => null } }))

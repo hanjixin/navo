@@ -28,7 +28,7 @@ import type { AgentRuntime, RuntimeCallbacks } from '../agent-runtime/types'
 import type { AgentRuntimeProfile } from '@shared/agent-runtime'
 import { runtimeRegistry } from '../agent-runtime/registry'
 import { isSpawnedConversation } from '../mcp-server/tools'
-import { collectTools, describeTools, NAVO_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
+import { collectTools, describeTools, NAVO_DESTRUCTIVE, RUNTIME_DESTRUCTIVE, systemPrompt, type ToolEntry } from './tool-registry'
 import { t } from '@shared/i18n'
 import { finishToolAudit, startToolAudit } from './tool-audit'
 import { targets } from '../external-browser/instance'
@@ -708,7 +708,9 @@ export class AgentService {
         interruptOn:
           opts.headless || !runtime.capabilities.approvals
             ? []
-            : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter((t) => !allowed.has(t)),
+            : [...new Set([...settings.approvalTools, ...NAVO_DESTRUCTIVE, ...RUNTIME_DESTRUCTIVE, ...BUILTIN_SEND_TOOLS, ...connectors.writeTools()])].filter(
+                (t) => !allowed.has(t),
+              ),
         browserSubagent: runtime.capabilities.browserSubagent === true && settings.browserSubagent,
         ...fileConfig,
         devMode: settings.devMode,
@@ -836,7 +838,8 @@ export class AgentService {
       req.name === 'edit_file' ||
       req.name === 'grep' ||
       req.name === 'ls' ||
-      req.name === 'export_file'
+      req.name === 'export_file' ||
+      req.name === 'run_command'
     if (workspaceTool && !run.capabilities.workspaceTools) throw new Error(t('当前运行时没有权限访问项目工作区'))
     const auditId = startToolAudit(db(), {
       threadId: req.threadId,

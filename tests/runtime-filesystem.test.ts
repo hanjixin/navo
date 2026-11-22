@@ -66,6 +66,14 @@ describe('shared runtime file mounts', () => {
       await expect(invoke('read_file', { file_path: path })).rejects.toThrow()
     expect(readFileSync(join(config.paths.skills, 'local', 'SKILL.md'), 'utf8')).toBe('local skill marker')
   })
+  it('runs approved workspace commands with binary-safe shell output', async () => {
+    const { config, invoke } = fixture()
+    const result = JSON.parse(await invoke('run_command', { command: 'printf binary > output.bin && printf done' }))
+    expect(result).toMatchObject({ ok: true, exitCode: 0, stdout: 'done' })
+    expect(readFileSync(join(config.paths.workspace, 'output.bin'))).toEqual(Buffer.from('binary'))
+    const failed = JSON.parse(await invoke('run_command', { command: 'printf failed >&2; exit 7' }))
+    expect(failed).toMatchObject({ ok: false, exitCode: 7, stderr: 'failed' })
+  })
   it('writes and edits artifacts in the workspace and attributes mounted mutations', async () => {
     const { config, invoke } = fixture()
     await invoke('write_file', { file_path: '/workspace/output.txt', content: 'first' })
