@@ -20,12 +20,12 @@ Navo 在业务服务与 Agent 引擎之间增加统一 runtime 层。内置 Deep
 | 文本对话与会话续接             | 支持            | 支持         | 支持        | 支持         | 支持         |
 | 增量文本输出                   | 支持            | 支持         | 支持        | 完整消息事件 | 支持         |
 | Navo 工具、浏览器、桌面、插件  | 支持            | 支持         | 支持        | 不接入       | 支持         |
-| 引擎自身工具                   | 支持            | 关闭         | 关闭        | SDK 原生工具 | 只读沙箱工具 |
+| 引擎自身工具                   | 支持            | 关闭         | 关闭        | SDK 原生工具 | 完整本机权限 |
 | Navo 审批与授权                | 支持            | 支持         | 支持        | 不接入       | 支持         |
 | 直接图片输入                   | 支持            | 按 Navo 模型 | 不支持      | 不支持       | 不支持       |
 | 历史重新生成 / checkpoint 分支 | 支持            | 不支持       | 不支持      | 不支持       | 不支持       |
 
-Claude 的内建工具、Chrome 集成、slash commands 和 Hooks 被关闭，只加载本次 Navo SDK MCP 服务器。Codex 保留原生只读沙箱，其他本机 MCP、Hooks、插件、原生浏览器、桌面、memory 等集成在本次运行中禁用。Navo MCP 工具独立接受应用的审批和权限校验，不把“原生只读”误认为所有 Navo 工具也只能读取。DSH 原生交互审批继续明确拒绝。
+Claude 的内建工具、Chrome 集成、slash commands 和 Hooks 被关闭，只加载本次 Navo SDK MCP 服务器。Codex 使用完整本机权限运行原生命令，可访问项目目录、网络和本机 Docker 等服务。其他本机 MCP、Hooks、插件、原生浏览器、桌面、memory 等集成在本次运行中禁用。Navo MCP 工具独立接受应用的审批和权限校验，与 Codex 原生命令权限分开。DSH 原生交互审批继续明确拒绝。
 
 Pi、Claude、Codex 的 `read_file`、`write_file`、`edit_file`、`ls`、`grep` 通过 Navo workspace backend 执行，写入会登记 Artifacts。普通文件附件沿用 Navo 的解析快照；Claude/Codex 目前仍不接受直接图片输入。Codex 原生工具写出的文件不会自动登记为 Navo Artifacts。
 

@@ -1684,7 +1684,7 @@
   "使用本机模型配置，通过 Navo 工具完成任务。": "Uses local model configuration and Navo tools.",
   "暂不支持直接图片输入。": "Direct image input is not supported yet.",
   "Claude 使用本机 CLI 模型与登录，通过本次运行专属的 MCP 桥接入 Navo 工具和审批；不加载其他本机 MCP、原生工具或 Hooks。": "Claude uses your local CLI model and login. A bridge dedicated to this run provides Navo tools and approvals; other local MCP servers, native tools, and hooks are not loaded.",
-  "Codex 使用本机 CLI 模型与登录；Navo 工具按 Navo 的审批规则执行，原生命令仍受只读沙箱限制。其他本机 MCP、浏览器和桌面集成不加载。": "Codex uses your local CLI model and login. Navo tools follow Navo approval rules; native commands remain in a read-only sandbox. Other local MCP servers, browser, and desktop integrations are not loaded.",
+  "Codex 使用本机 CLI 模型与登录；原生命令可访问项目目录、网络和本机 Docker 等服务。Navo 工具仍按 Navo 的审批规则执行，其他本机 MCP、浏览器和桌面集成不加载。": "Codex uses your local CLI model and login. Native commands can access the project directory, network, and local services such as Docker. Navo tools still follow Navo approval rules. Other local MCP servers, browser, and desktop integrations are not loaded.",
   "发现 Skill": "Discover skills",
   "从公开 Skill 目录搜索并安装可复用的工作流程。安装只复制 Skill 文件，不会执行仓库脚本。": "Search and install reusable workflows from the public Skill directory. Installation only copies Skill files and never runs repository scripts.",
   "安装并启用": "Install and enable",

@@ -152,7 +152,9 @@ function RuntimeEditor({ info, reload }: { info: AgentRuntimeInfo; reload: () =>
               {draft.kind === 'claude'
                 ? t('Claude 使用本机 CLI 模型与登录，通过本次运行专属的 MCP 桥接入 Navo 工具和审批；不加载其他本机 MCP、原生工具或 Hooks。')
                 : draft.kind === 'codex'
-                  ? t('Codex 使用本机 CLI 模型与登录；Navo 工具按 Navo 的审批规则执行，原生命令仍受只读沙箱限制。其他本机 MCP、浏览器和桌面集成不加载。')
+                  ? t(
+                      'Codex 使用本机 CLI 模型与登录；原生命令可访问项目目录、网络和本机 Docker 等服务。Navo 工具仍按 Navo 的审批规则执行，其他本机 MCP、浏览器和桌面集成不加载。',
+                    )
                   : t('外部运行时使用自己的模型与认证配置；第一版不接入 Navo 浏览器、桌面、插件或人工审批。')}
             </p>
             <label className="flex items-center justify-between text-sm">

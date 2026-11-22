@@ -164,13 +164,14 @@ reader.on('line', (line) => {
   if (message.method === 'config/read') return send({ id: message.id, result: { config: { mcp_servers: {} } } })
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     const servers = Object.entries(message.params.config.mcp_servers).filter(([, config]) => config.enabled === true)
-    if (servers.length !== 1 || message.params.sandbox !== 'read-only') throw new Error('Invalid Codex bridge configuration')
+    if (servers.length !== 1 || message.params.sandbox !== 'danger-full-access') throw new Error('Invalid Codex bridge configuration')
     ;[mcpServerName, mcpServer] = servers[0]
     resumed = message.method === 'thread/resume'
     sessionId = resumed ? message.params.threadId : randomUUID()
     return send({ id: message.id, result: { thread: { id: sessionId } } })
   }
   if (message.method === 'turn/start') {
+    if (message.params.sandboxPolicy?.type !== 'dangerFullAccess') throw new Error('Invalid Codex full-access turn policy')
     turnId = randomUUID()
     send({ id: message.id, result: { turn: { id: turnId } } })
     void run(message.params.input[0].text).catch(fail)

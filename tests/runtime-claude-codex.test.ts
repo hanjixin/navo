@@ -53,12 +53,12 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (message.method === 'initialized') return
   if (message.method === 'config/read') return send({ id: message.id, result: { config: { mcp_servers: {} } } })
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
-    if (message.params.sandbox !== 'read-only' || message.params.approvalPolicy !== 'never') die('unsafe thread permissions')
+    if (message.params.sandbox !== 'danger-full-access' || message.params.approvalPolicy !== 'never') die('unsafe thread permissions')
     if (scenario === 'resume' && (message.method !== 'thread/resume' || message.params.threadId !== 'saved-thread')) die('missing native thread resume')
     return send({ id: message.id, result: { thread: { id: 'codex-thread' } } })
   }
   if (message.method === 'turn/start') {
-    if (message.params.sandboxPolicy.type !== 'readOnly' || message.params.sandboxPolicy.networkAccess !== false || message.params.approvalPolicy !== 'never') die('unsafe turn permissions')
+    if (message.params.sandboxPolicy.type !== 'dangerFullAccess' || message.params.approvalPolicy !== 'never') die('unsafe turn permissions')
     if (message.params.input[0].text !== '--dangerously-skip-permissions\n\nfile context') die('prompt changed')
     if (scenario === 'image' && message.params.input[1]?.type !== 'image') die('Codex image block missing')
     send({ id: message.id, result: { turn: { id: 'turn' } } })

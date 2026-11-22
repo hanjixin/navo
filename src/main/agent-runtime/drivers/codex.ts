@@ -6,6 +6,9 @@ import { createRuntimeMcpBridge } from '../mcp-tool-bridge'
 import { normalizeRuntimeText, RuntimeTextStream } from '../message-normalizer'
 import { JsonLineProcess, record } from '../process'
 
+const CODEX_SANDBOX = 'danger-full-access' as const
+const CODEX_SANDBOX_POLICY = { type: 'dangerFullAccess' } as const
+
 const reservedCodexFlags = new Set([
   '-c',
   '--config',
@@ -354,7 +357,7 @@ export class CodexRuntimeDriver implements ExternalRuntimeDriver {
       const common = {
         cwd: request.paths.workspace,
         approvalPolicy: 'never',
-        sandbox: 'read-only',
+        sandbox: CODEX_SANDBOX,
         ...(profile.model ? { model: profile.model } : {}),
         ...(profile.provider ? { modelProvider: profile.provider } : {}),
         developerInstructions: request.systemPrompt,
@@ -375,7 +378,7 @@ export class CodexRuntimeDriver implements ExternalRuntimeDriver {
             threadId,
             cwd: request.paths.workspace,
             approvalPolicy: 'never',
-            sandboxPolicy: { type: 'readOnly', networkAccess: false },
+            sandboxPolicy: CODEX_SANDBOX_POLICY,
             input: [
               { type: 'text', text: [request.input.text, request.input.context].filter(Boolean).join('\n\n'), text_elements: [] },
               ...request.input.images.map((image_url) => ({ type: 'image', image_url })),
