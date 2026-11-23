@@ -87,7 +87,9 @@ class OutputsService {
     let contentHash: string | null = null
     try {
       const abs = outputAbsolutePath({ path, workspace_root: workspaceRoot, thread_id: threadId } as Row, paths.workspace)
-      if (statSync(abs).isFile()) contentHash = createHash('sha256').update(readFileSync(abs)).digest('hex')
+      const stat = statSync(abs)
+      // Packaging can produce multi-gigabyte archives. Index large files from metadata.
+      if (stat.isFile() && stat.size <= 20 * 1024 * 1024) contentHash = createHash('sha256').update(readFileSync(abs)).digest('hex')
     } catch {
       /* provenance is best effort */
     }

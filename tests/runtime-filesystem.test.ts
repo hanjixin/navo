@@ -66,13 +66,22 @@ describe('shared runtime file mounts', () => {
       await expect(invoke('read_file', { file_path: path })).rejects.toThrow()
     expect(readFileSync(join(config.paths.skills, 'local', 'SKILL.md'), 'utf8')).toBe('local skill marker')
   })
-  it('runs approved workspace commands with binary-safe shell output', async () => {
-    const { config, invoke } = fixture()
-    const result = JSON.parse(await invoke('run_command', { command: 'printf binary > output.bin && printf done' }))
-    expect(result).toMatchObject({ ok: true, exitCode: 0, stdout: 'done' })
-    expect(readFileSync(join(config.paths.workspace, 'output.bin'))).toEqual(Buffer.from('binary'))
-    const failed = JSON.parse(await invoke('run_command', { command: 'printf failed >&2; exit 7' }))
-    expect(failed).toMatchObject({ ok: false, exitCode: 7, stderr: 'failed' })
+  it('registers declared binary outputs that changed and preserves the real exit status', async () => {
+    const { config } = fixture()
+    const command = runtimeFileTools(config).find((tool) => tool.name === 'run_command')!
+    const script = join(config.paths.workspace, 'fixture.cjs')
+    writeFileSync(script, "require('node:fs').writeFileSync('output.bin', Buffer.from([0, 255])); console.log('done');")
+    const result = (await command.invoke({
+      command: `"${process.execPath}" fixture.cjs`,
+      output_paths: ['/workspace/output.bin', '/workspace/project.txt', '/workspace/missing.bin'],
+    })) as { status: string; content: string; outputPaths: string[] }
+    expect(result).toMatchObject({ status: 'success', outputPaths: ['output.bin'] })
+    expect(JSON.parse(result.content)).toMatchObject({ ok: true, exitCode: 0, stdout: 'done\n', skippedOutputs: ['project.txt', 'missing.bin'] })
+    expect(readFileSync(join(config.paths.workspace, 'output.bin'))).toEqual(Buffer.from([0, 255]))
+    writeFileSync(script, "process.stderr.write('failed'); process.exitCode = 7;")
+    const failed = await command.invoke({ command: `"${process.execPath}" fixture.cjs` })
+    expect(failed).toMatchObject({ status: 'error', outputPaths: [] })
+    expect(JSON.parse(failed.content)).toMatchObject({ ok: false, exitCode: 7, stderr: 'failed' })
   })
   it('writes and edits artifacts in the workspace and attributes mounted mutations', async () => {
     const { config, invoke } = fixture()

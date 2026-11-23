@@ -107,6 +107,13 @@ async function run(text) {
   const tools = await mcp('tools/list')
   if (!['memory_search', 'browser_navigate', 'write_file'].every((name) => tools.tools.some((item) => item.name === name)))
     throw new Error('Required Navo tool not advertised')
+  if (scenario === 'command') {
+    const result = await tool('run_command', {
+      command: `echo ${engine} > ${marker}.bin`,
+      output_paths: [`/workspace/${marker}.bin`],
+    })
+    return emitText(`${result.isError ? 'DENIED' : 'DONE'}:${engine}:${marker}`)
+  }
   if (scenario === 'upload') {
     const uploadPath = /path="(\/uploads\/[^"\n]+)"/.exec(text)?.[1]
     if (!uploadPath || !text.includes('truncated="true"') || text.includes('UPLOAD-TAIL-7F29'))

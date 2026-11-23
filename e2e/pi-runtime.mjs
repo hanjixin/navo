@@ -1,6 +1,6 @@
 // Built-in Pi Core smoke test using the existing offline OpenAI-compatible mock.
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, expect } from 'playwright/test'
@@ -10,8 +10,11 @@ import { startMock } from './mock-llm.mjs'
 const mock = startMock(39061)
 const userData = mkdtempSync(join(tmpdir(), 'navo-pi-core-'))
 let app
+const commandBin = join(userData, 'test-bin')
+mkdirSync(commandBin)
+writeFileSync(join(commandBin, 'navo-command-path-marker'), '#!/bin/sh\nprintf navo-path-marker\n', { mode: 0o755 })
 try {
-  app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: userData, AB_MEMORY_IDLE_MS: '600000' } })
+  app = await electron.launch({ args: ['.'], env: { ...process.env, AB_USER_DATA: userData, AB_MEMORY_IDLE_MS: '600000', AB_EXTRA_PATH: commandBin } })
   const page = await mainWindow(app)
   const api = (method, ...args) => page.evaluate(([method, args]) => window.api.invoke(method, ...args), [method, args])
   await page.evaluate(() => {
@@ -73,6 +76,75 @@ try {
   const state = await api('threads.state', thread.id)
   assert.ok(state.messages.some((message) => message.role === 'assistant' && message.content.includes('好的')))
   assert.ok((await page.evaluate(() => window.__piEvents)).some((event) => event.type === 'token'))
+
+  if (process.platform !== 'win32') {
+    const workspace = join(userData, 'workspace')
+    writeFileSync(join(workspace, 'existing.txt'), 'pre-existing file')
+    const ask = async (scenario) => {
+      const { id } = await api('threads.create', model.id, null, 'pi')
+      await api('chat.send', id, `[local-command:${scenario}]`)
+      await expect.poll(async () => (await api('threads.state', id)).interrupt?.actionRequests[0]?.name, { timeout: 15_000 }).toBe('run_command')
+      await expect.poll(async () => (await api('threads.state', id)).running).toBe(false)
+      return id
+    }
+    const complete = async (id) => {
+      await expect
+        .poll(async () =>
+          (await api('threads.state', id)).messages.some((message) => message.role === 'assistant' && message.content === 'Command fixture complete'),
+        )
+        .toBe(true)
+      await expect.poll(async () => (await api('threads.state', id)).running).toBe(false)
+      return (await api('threads.state', id)).messages.findLast((message) => message.role === 'tool' && message.toolName === 'run_command')
+    }
+    const rejected = await ask('binary')
+    await api('chat.resume', rejected, [{ type: 'reject' }])
+    assert.equal((await complete(rejected)).status, 'error')
+    assert.equal(existsSync(join(workspace, 'command.bin')), false)
+
+    const approved = await ask('binary')
+    assert.equal(existsSync(join(workspace, 'command.bin')), false)
+    await api('chat.resume', approved, [{ type: 'approve' }])
+    assert.equal((await complete(approved)).status, 'success')
+    assert.deepEqual(readFileSync(join(workspace, 'command.bin')), Buffer.from([0, 255]))
+    assert.deepEqual(
+      (await api('artifacts.query', { threadId: approved })).items.map((item) => item.name),
+      ['command.bin'],
+    )
+
+    const failure = await ask('fail')
+    await api('chat.resume', failure, [{ type: 'approve' }])
+    const failed = await complete(failure)
+    assert.equal(failed.status, 'error')
+    assert.equal(JSON.parse(failed.content).exitCode, 7)
+    assert.equal((await api('tools.audit', failure)).find((record) => record.toolName === 'run_command').status, 'error')
+
+    const pathTest = await ask('path')
+    await api('chat.resume', pathTest, [{ type: 'approve' }])
+    assert.equal(JSON.parse((await complete(pathTest)).content).stdout, 'navo-path-marker')
+
+    if (process.env.NAVO_PI_TEST_DOCKER === '1') {
+      const docker = await ask('docker')
+      await api('chat.resume', docker, [{ type: 'approve' }])
+      const result = await complete(docker)
+      assert.equal(result.status, 'success', result.content)
+      assert.ok(readFileSync(join(workspace, 'navo-docker-test.tar')).length > 512)
+      assert.deepEqual(
+        (await api('artifacts.query', { threadId: docker })).items.map((item) => item.name),
+        ['navo-docker-test.tar'],
+      )
+      console.log('PASS Pi local Docker: saved the pre-existing hello-world image to a TAR artifact')
+    }
+
+    const cancelled = await ask('cancel')
+    await api('chat.resume', cancelled, [{ type: 'approve' }])
+    await expect.poll(() => existsSync(join(workspace, 'command-started'))).toBe(true)
+    await api('chat.stop', cancelled)
+    await expect.poll(async () => (await api('threads.state', cancelled)).running).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 3200))
+    assert.equal(existsSync(join(workspace, 'command-late')), false)
+    await expect.poll(async () => (await api('tools.audit', cancelled)).find((record) => record.toolName === 'run_command')?.status).toBe('cancelled')
+    console.log('PASS Pi local command: approval, rejection, cancellation, PATH, exit status and binary Artifacts')
+  }
 
   await api('settings.set', { approvalTools: ['browser_navigate'] })
   const approvalThread = await api('threads.create', model.id, null, 'pi')

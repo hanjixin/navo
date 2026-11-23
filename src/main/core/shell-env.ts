@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process'
+import { delimiter } from 'node:path'
 
 let cached: string | null = null
 
 /** GUI apps on macOS don't inherit the login shell PATH; resolve it once so stdio MCP servers (npx, uvx…) are found. */
 export function shellPath(): string {
   // AB_EXTRA_PATH lets tests (and power users) put extra tool directories first
-  const extra = process.env.AB_EXTRA_PATH ? `${process.env.AB_EXTRA_PATH}:` : ''
+  const extra = process.env.AB_EXTRA_PATH ? `${process.env.AB_EXTRA_PATH}${delimiter}` : ''
   return extra + loginPath()
 }
 

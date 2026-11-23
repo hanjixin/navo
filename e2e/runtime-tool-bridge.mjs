@@ -98,6 +98,20 @@ try {
       assert.equal(artifacts.items[0].name, 'approved.txt')
       console.log(`PASS ${engine}: real memory/browser/write_file, approval-before-effect, Artifacts, no Navo model`)
 
+      const command = await submit('command-output', 'command')
+      await expect.poll(async () => (await state(command.threadId)).interrupt?.actionRequests[0]?.name).toBe('run_command')
+      await expect.poll(async () => (await state(command.threadId)).running).toBe(false)
+      const commandFile = join(profile, 'workspace', 'command-output.bin')
+      assert.equal(existsSync(commandFile), false)
+      await api('chat.resume', command.threadId, [{ type: 'approve' }], [], (await state(command.threadId)).interrupt.id)
+      await finished(command.threadId, 'command-output')
+      assert.equal(readFileSync(commandFile, 'utf8').trim(), engine)
+      assert.deepEqual(
+        (await api('artifacts.query', { threadId: command.threadId })).items.map((item) => item.name),
+        ['command-output.bin'],
+      )
+      console.log(`PASS ${engine}: approved command reaches the real shell and registers its output`)
+
       // Long uploads remain outside the inline preview and are read through the real virtual filesystem.
       await api('settings.set', { approvalTools: [] })
       const uploadSource = join(profile, 'long-upload.txt')

@@ -43,6 +43,7 @@ const LABELS: Record<string, string> = {
   ls: t('列出目录'),
   glob: t('查找文件'),
   grep: t('搜索内容'),
+  run_command: t('执行命令'),
   codex_run_command: t('执行命令'),
   codex_file_change: t('修改文件'),
   codex_mcp_tool: t('调用 MCP 工具'),
@@ -87,7 +88,7 @@ export function toolMeta(rawName: string): { label: string; icon: LucideIcon } {
   if (name.startsWith('mcp__')) return { label: name.split('__').slice(1).join(' · '), icon: Server }
   if (name.startsWith('navo_')) return { label: `Navo · ${LABELS[name] ?? name.replace(/^navo_/, '')}`, icon: name === 'navo_send_message' ? Send : Settings2 }
   const label = LABELS[name] ?? name
-  if (name === 'codex_run_command') return { label, icon: Terminal }
+  if (name === 'codex_run_command' || name === 'run_command') return { label, icon: Terminal }
   if (name === 'codex_file_change') return { label, icon: FilePen }
   if (name === 'codex_web_search') return { label, icon: Globe }
   if (name === 'codex_mcp_tool') return { label, icon: Server }
@@ -106,7 +107,7 @@ export function toolMeta(rawName: string): { label: string; icon: LucideIcon } {
 export function toolPresentation(call: ToolCall): { label: string; icon: LucideIcon; summary: string; command?: string; cwd?: string; paths?: string[] } {
   const activity = call.activity
   const metadata = toolMeta(call.name)
-  const kind = activity?.kind ?? ((LEGACY_NAMES[call.name] ?? call.name) === 'codex_run_command' ? 'command' : undefined)
+  const kind = activity?.kind ?? (['codex_run_command', 'run_command'].includes(LEGACY_NAMES[call.name] ?? call.name) ? 'command' : undefined)
   const command = activity?.command ?? (kind === 'command' && typeof call.args.command === 'string' ? call.args.command : undefined)
   const cwd = activity?.cwd ?? (kind === 'command' && typeof call.args.cwd === 'string' ? call.args.cwd : undefined)
   const label =

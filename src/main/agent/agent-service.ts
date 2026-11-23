@@ -20,6 +20,7 @@ import { skills } from '../skills/skill-service'
 import type { RunRequest, RunResult, ToolCallRequest } from '../agent-runtime/contracts'
 import { usage } from '../usage/usage-service'
 import { outputs } from '../outputs/outputs-service'
+import { RUN_COMMAND } from '../agent-runtime/file-tools'
 import { resolveRunWorkspaceRoot } from '../projects/workspace-directory'
 import { acceptWorkspaceWrite } from '../outputs/workspace-write'
 import { BUILTIN_SEND_TOOLS } from '../connectors/builtin'
@@ -64,6 +65,7 @@ export type { RunResult }
 type Listener = (e: ChatEvent) => void
 
 interface ActiveRun {
+  commandAbort: AbortController
   runtime: AgentRuntime
   capabilities: AgentRuntime['capabilities']
   workspaceRoot: string
@@ -233,6 +235,7 @@ export class AgentService {
   }
 
   shutdown(): void {
+    for (const run of this.runs.values()) run.commandAbort.abort()
     this.registry.shutdown()
   }
 
@@ -365,6 +368,7 @@ export class AgentService {
   stop(threadId: string): void {
     const lock = this.locks.get(threadId)
     if (lock) lock.cancelled = true
+    this.runs.get(threadId)?.commandAbort.abort()
     const execution = submissions.execution(threadId)
     const interruptId = submissions.approvals().find((item) => item.threadId === threadId)?.interrupt.id
     if (execution && (execution.phase === 'running' || execution.phase === 'waiting_approval')) {
@@ -633,7 +637,8 @@ export class AgentService {
       this.send({ type: 'run_end', threadId, runId })
       return result
     }
-    const runState = {
+    const runState: ActiveRun = {
+      commandAbort: new AbortController(),
       runtime,
       capabilities: runtime.capabilities,
       workspaceRoot: paths.workspace,
@@ -670,7 +675,13 @@ export class AgentService {
         mounts: runtime.capabilities.navoTools ? skills.mounts(thread.projectId).map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
       }
       const entries = runtime.capabilities.navoTools
-        ? collectTools(ctx, resolved.supportsVision, workspaceRoot, runtime.capabilities.workspaceTools ? fileConfig : undefined)
+        ? collectTools(
+            ctx,
+            resolved.supportsVision,
+            workspaceRoot,
+            runtime.capabilities.workspaceTools ? fileConfig : undefined,
+            runState.commandAbort.signal,
+          ).filter((entry) => entry.tool.name !== RUN_COMMAND || (!opts.headless && runtime.capabilities.approvals))
         : []
       runState.tools = new Map(entries.map((e) => [e.tool.name, e]))
       const allowed = new Set(this.allowList(threadId))
@@ -726,6 +737,7 @@ export class AgentService {
       this.send({ type: 'error', threadId, error })
       result = { finalText: '', interrupted: false, error }
     } finally {
+      runState.commandAbort.abort()
       const cleaned = await Promise.allSettled([sessions.end(threadId), computerUse.endRun(threadId)])
       for (const cleanup of cleaned) if (cleanup.status === 'rejected') log.warn(`[agent] cleanup failed: ${String(cleanup.reason)}`)
       this.runs.delete(threadId)
@@ -839,7 +851,7 @@ export class AgentService {
       req.name === 'grep' ||
       req.name === 'ls' ||
       req.name === 'export_file' ||
-      req.name === 'run_command'
+      req.name === RUN_COMMAND
     if (workspaceTool && !run.capabilities.workspaceTools) throw new Error(t('当前运行时没有权限访问项目工作区'))
     const auditId = startToolAudit(db(), {
       threadId: req.threadId,
@@ -854,26 +866,34 @@ export class AgentService {
     let out: unknown
     try {
       out = await entry.tool.invoke(req.args)
+      if (this.runs.get(req.threadId) !== run || this.locks.get(req.threadId)?.cancelled) throw new Error(t('运行已结束'))
+      const result = out as { status?: string; isError?: boolean; content?: unknown; outputPaths?: string[] } | null
+      if (result?.status === 'error' || result?.isError === true)
+        throw new Error(typeof result.content === 'string' ? result.content : JSON.stringify(result.content ?? out))
+      const provenance = { runId: run.runId, executionId: run.executionId, messageId: run.executionId }
+      if ((req.name === 'write_file' || req.name === 'edit_file') && !(out as { error?: unknown })?.error) {
+        const filePath = String(req.args.file_path ?? '')
+        outputs.recordWorkspaceWrite(
+          req.threadId,
+          filePath.startsWith('/workspace/') ? filePath.slice('/workspace'.length) : filePath,
+          run.workspaceRoot,
+          provenance,
+        )
+      }
+      if (req.name === RUN_COMMAND) {
+        for (const path of result?.outputPaths ?? []) {
+          try {
+            outputs.recordWorkspaceWrite(req.threadId, path, run.workspaceRoot, provenance)
+          } catch (error) {
+            // The command has already executed. A failed index update must not suggest rerunning it.
+            log.warn(`[agent] command artifact could not be indexed: ${String(error)}`)
+          }
+        }
+      }
       finishToolAudit(db(), auditId, 'success', null)
     } catch (error) {
-      finishToolAudit(db(), auditId, 'error', error instanceof Error ? error.message : String(error))
+      finishToolAudit(db(), auditId, run.commandAbort.signal.aborted ? 'cancelled' : 'error', error instanceof Error ? error.message : String(error))
       throw error
-    }
-    if (this.runs.get(req.threadId) !== run || this.locks.get(req.threadId)?.cancelled) throw new Error(t('运行已结束'))
-    const toolFailed = !!out && typeof out === 'object' && ((out as { status?: string }).status === 'error' || (out as { isError?: boolean }).isError === true)
-    if (toolFailed)
-      throw new Error(
-        typeof (out as { content?: unknown }).content === 'string'
-          ? String((out as { content: string }).content)
-          : JSON.stringify((out as { content?: unknown }).content ?? out),
-      )
-    if ((req.name === 'write_file' || req.name === 'edit_file') && !toolFailed && !(out as { error?: unknown })?.error) {
-      const filePath = String(req.args.file_path ?? '')
-      outputs.recordWorkspaceWrite(req.threadId, filePath.startsWith('/workspace/') ? filePath.slice('/workspace'.length) : filePath, run.workspaceRoot, {
-        runId: run.runId,
-        executionId: run.executionId,
-        messageId: run.executionId,
-      })
     }
     // MCP tools may return message objects / content blocks; keep them plain for the RPC
     const content = (out as { content?: unknown })?.content ?? out

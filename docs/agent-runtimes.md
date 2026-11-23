@@ -27,7 +27,7 @@ Navo 在业务服务与 Agent 引擎之间增加统一 runtime 层。内置 Deep
 
 Claude 的内建工具、Chrome 集成、slash commands 和 Hooks 被关闭，只加载本次 Navo SDK MCP 服务器。Codex 使用完整本机权限运行原生命令，可访问项目目录、网络和本机 Docker 等服务。其他本机 MCP、Hooks、插件、原生浏览器、桌面、memory 等集成在本次运行中禁用。Navo MCP 工具独立接受应用的审批和权限校验，与 Codex 原生命令权限分开。DSH 原生交互审批继续明确拒绝。
 
-Pi、Claude、Codex 的 `read_file`、`write_file`、`edit_file`、`ls`、`grep` 通过 Navo workspace backend 执行，写入会登记 Artifacts。`run_command` 从项目工作目录执行本机命令，支持网络、Docker 和二进制文件处理，并默认请求 Navo 审批。普通文件附件沿用 Navo 的解析快照；Claude/Codex 目前仍不接受直接图片输入。Codex 原生工具写出的文件不会自动登记为 Navo Artifacts。
+Pi、Claude、Codex 的 `read_file`、`write_file`、`edit_file`、`ls`、`grep` 通过 Navo workspace backend 执行，写入会登记 Artifacts。`run_command` 从项目工作目录执行本机命令，支持网络、Docker 和二进制文件处理，并默认请求 Navo 审批。通过 `output_paths` 声明本次命令生成或修改的工作区文件，命令成功后登记为产物。普通文件附件沿用 Navo 的解析快照；Claude/Codex 目前仍不接受直接图片输入。Codex 原生工具写出的文件不会自动登记为 Navo Artifacts。
 
 ### MCP 与审批生命周期
 

@@ -114,6 +114,19 @@ export function startMock(port = 38999) {
       done()
     }
 
+    const commandFixture = /\[local-command:([a-z-]+)\]/.exec(userText)?.[1]
+    if (commandFixture) {
+      if (toolMsgs.length) return say(['Command fixture complete'])
+      const command = {
+        binary: { command: "printf '\\000\\377' > command.bin", output_paths: ['/workspace/command.bin', '/workspace/existing.txt'] },
+        cancel: { command: 'touch command-started; sleep 3; touch command-late', output_paths: ['/workspace/command-late'] },
+        fail: { command: 'printf command-failed >&2; exit 7' },
+        path: { command: 'navo-command-path-marker' },
+        docker: { command: 'docker image save -o navo-docker-test.tar hello-world:latest', output_paths: ['/workspace/navo-docker-test.tar'] },
+      }[commandFixture]
+      if (command) return call('run_command', command)
+    }
+
     // Navo's page monitor: "低于 N" compares the first ¥price on the page; "新公告" looks for added notices
     if (system.includes('你是 Navo 的网页监控员')) {
       const section = (name) => new RegExp(`## ${name}\\n([\\s\\S]*?)(?=\\n## |$)`).exec(userText)?.[1].trim() ?? ''
