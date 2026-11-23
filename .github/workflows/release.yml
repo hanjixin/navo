@@ -105,8 +105,12 @@ jobs:
           WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CERT_PFX_BASE64 || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CERT_PASSWORD || '' }}
         run: |
+          # Empty certificate variables are parsed as filesystem paths by electron-builder.
+          for key in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            if [[ -z "${!key}" ]]; then unset "$key"; fi
+          done
           options=("--$PLATFORM" "$TARGET" "--$ARCH" --publish never "-c.extraMetadata.version=$RELEASE_VERSION")
-          if [[ "$PLATFORM" == mac && -z "$CSC_LINK" ]]; then
+          if [[ "$PLATFORM" == mac && -z "${CSC_LINK:-}" ]]; then
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             options+=(-c.mac.identity=- -c.mac.notarize=false)
           fi
