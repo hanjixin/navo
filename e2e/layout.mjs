@@ -93,7 +93,9 @@ try {
 
   // long titles truncate instead of stretching the conversation list
   const api0 = (m, ...a) => page.evaluate(([m, a]) => window.api.invoke(m, ...a), [m, a])
-  const lt = await api0('threads.create', null)
+  const provider = await api0('providers.save', { type: 'openai-compatible', name: 'Layout fixture', baseURL: 'http://127.0.0.1:9/v1' })
+  const model = await api0('models.save', { providerId: provider.id, model: 'fixture', displayName: 'Layout fixture', enabled: true })
+  const lt = await api0('threads.create', model.id)
   await api0('threads.rename', lt.id, 'https://www.example.com/a/very/long/url/without/any/spaces/that/cannot/wrap/anywhere/at/all/' + 'x'.repeat(80))
   await page.evaluate(() => (location.hash = '#/chat'))
   await page.waitForTimeout(600)

@@ -23,7 +23,8 @@ const ok = (c, msg) => {
 }
 try {
   ok(await app.evaluate(({ app }) => app.isPackaged), 'running the packaged build')
-  const p = await api('providers.save', { type: 'openai-compatible', name: 'mock', baseURL: mock.url, apiKey: 'x' })
+  // The loopback fixture needs no credential, including on Linux CI without a keyring.
+  const p = await api('providers.save', { type: 'openai-compatible', name: 'mock', baseURL: mock.url })
   const m = await api('models.save', { providerId: p.id, model: 'mock-1', displayName: 'Mock', supportsTools: true, supportsVision: false })
   ok(!!m.id, 'SQLite (native better-sqlite3) works')
   await page.evaluate(() => {

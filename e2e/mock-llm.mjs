@@ -114,6 +114,8 @@ export function startMock(port = 38999) {
       done()
     }
 
+    if (userText === 'Reply with the single word: pong') return say(['pong'])
+
     const commandFixture = /\[local-command:([a-z-]+)\]/.exec(userText)?.[1]
     if (commandFixture) {
       if (toolMsgs.length) return say(['Command fixture complete'])

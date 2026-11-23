@@ -147,14 +147,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install chromium
+      # packaged.mjs prints Chinese text to a PDF before parsing it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: pnpm dist -- --linux dir
       - run: xvfb-run -a node e2e/packaged.mjs release/linux-unpacked/navo
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: linux-packaged-logs
-          path: ~/.config/navo/logs
+          path: /tmp/ab-pkg-*/
           if-no-files-found: ignore
 
   desktop-windows:

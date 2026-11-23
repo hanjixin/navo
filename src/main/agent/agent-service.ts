@@ -845,13 +845,7 @@ export class AgentService {
     if (!entry) throw new Error(t('工具不存在: {{v0}}', { v0: req.name }))
     if (entry.source !== 'navo' && !run.capabilities.navoTools) throw new Error(t('当前运行时没有权限调用 Navo 工具'))
     const workspaceTool =
-      req.name === 'read_file' ||
-      req.name === 'write_file' ||
-      req.name === 'edit_file' ||
-      req.name === 'grep' ||
-      req.name === 'ls' ||
-      req.name === 'export_file' ||
-      req.name === RUN_COMMAND
+      req.name === 'read_file' || req.name === 'write_file' || req.name === 'edit_file' || req.name === 'grep' || req.name === 'ls' || req.name === RUN_COMMAND
     if (workspaceTool && !run.capabilities.workspaceTools) throw new Error(t('当前运行时没有权限访问项目工作区'))
     const auditId = startToolAudit(db(), {
       threadId: req.threadId,
