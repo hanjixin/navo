@@ -7,12 +7,12 @@ import type { RuntimeModel } from '../agent-runtime/contracts'
 
 export type ResolvedModel = RuntimeModel
 
-export function buildChatModel(r: ResolvedModel, callbacks?: Callbacks): BaseChatModel {
+export function buildChatModel(r: ResolvedModel, callbacks?: Callbacks, streaming = true): BaseChatModel {
   const common = {
     model: r.model,
     temperature: r.temperature ?? undefined,
     maxTokens: r.maxTokens ?? undefined,
-    streaming: true,
+    streaming,
     callbacks,
   }
   if (r.providerType === 'anthropic') {

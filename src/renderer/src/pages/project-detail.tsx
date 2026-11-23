@@ -281,7 +281,7 @@ export function ProjectDetailPage() {
               </div>
             </section>
           )}
-          <div className="shrink-0 px-4 pt-4 pb-5 @3xl:px-6 @3xl:pb-6" data-testid="project-composer">
+          <div className="shrink-0 px-4 pt-4 pb-3 @3xl:px-6 @3xl:pb-6" data-testid="project-composer">
             <div className="mx-auto w-full max-w-3xl">
               {noModels ? (
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3">

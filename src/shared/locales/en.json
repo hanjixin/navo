@@ -1750,6 +1750,6 @@
   "工具审计": "Tool audit",
   "加载工具审计…": "Loading tool audit…",
   "这次运行没有工具调用": "This run has no tool calls",
-  "录制宏": "Recorded macro",
-  "连接器": "Connector"
+  "录制宏": "Macros",
+  "连接器": "Connectors"
 }

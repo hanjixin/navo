@@ -154,5 +154,5 @@ export const usage = new UsageService()
 export function trackedModel(modelId: string | null | undefined, purpose: UsagePurpose, threadId?: string | null): BaseChatModel {
   if (!usage.allows(purpose)) throw new Error(t('今日模型用量已达预算，后台调用已暂停'))
   const r = resolveModel(modelId)
-  return buildChatModel(r, [new UsageHandler((u) => usage.record({ modelId: r.id, model: r.model, purpose, threadId, usage: u }))])
+  return buildChatModel(r, [new UsageHandler((u) => usage.record({ modelId: r.id, model: r.model, purpose, threadId, usage: u }))], false)
 }
