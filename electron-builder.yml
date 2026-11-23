@@ -58,4 +58,4 @@ win:
   target: nsis
 linux:
   target: AppImage
-# publishing is configured by .github/workflows/release.yml (-c.publish.*), so local `pnpm dist` never uploads
+# GitHub Releases are published by the workflow after all installers succeed; local `pnpm dist` never uploads

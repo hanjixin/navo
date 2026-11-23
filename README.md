@@ -186,7 +186,7 @@ E2E 使用 `AB_USER_DATA` 指定的临时配置目录，不影响本机数据。
 
 ## 发布
 
-`pnpm dist` 在本机打包；推送 `v*` 标签由 `.github/workflows/release.yml` 在三个平台构建并创建 GitHub 草稿发布。
+`pnpm dist` 在本机打包；推送版本标签（如 `v0.1.1` 或 `v0.1.1-rc.1`）由 `.github/workflows/release.yml` 检查代码，并分别构建 macOS Apple 芯片、macOS Intel、Windows x64 和 Linux x64 安装包。四份安装包全部成功上传后才公开 GitHub Release，并附 `SHA256SUMS.txt` 校验值。带 `-rc.1` 等后缀的版本发布为预发布版。安装包版本取自标签，Actions 中也可以选择已有版本标签手动重跑。
 
 macOS 要让别人能正常打开，需要签名和公证：
 
