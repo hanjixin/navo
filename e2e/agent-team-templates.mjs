@@ -25,11 +25,14 @@ try {
 
   await open.click()
   await dialog.getByRole('article').filter({ hasText: '技术简报助手' }).getByRole('button', { name: '一键添加' }).click()
-  await dialog.waitFor({ state: 'hidden' })
+  await dialog.getByRole('button', { name: /已添加/ }).waitFor()
+  assert.equal(await dialog.isVisible(), true, 'individual installation keeps the picker open for adding more agents')
   const list = () => page.evaluate(() => window.api.invoke('agents.list'))
   const first = (await list()).find((agent) => agent.templateId === 'tech-brief')
   await page.evaluate((profile) => window.api.invoke('agents.save', { ...profile, instructions: 'Custom instructions' }), first)
 
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
   await open.click()
   await dialog.getByRole('button', { name: '添加团队助手（1）' }).click()
   await dialog.waitFor({ state: 'hidden' })

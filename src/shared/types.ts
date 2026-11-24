@@ -257,6 +257,8 @@ export interface UIMessage {
   runtimeWarning?: 'unexecuted_tool_markup' | 'runtime_disconnected' | 'tool_outcome_unknown'
   /** subagent namespace, empty for main agent */
   ns?: string
+  /** Display name of the project workgroup member that produced this message. */
+  agentName?: string
   /** Model reasoning / thinking text (Anthropic thinking, OpenAI reasoning summaries, DeepSeek) */
   reasoning?: string
   /** files attached to a user message */
@@ -287,7 +289,7 @@ export type Decision =
 
 export type ChatEvent =
   | { type: 'run_start'; threadId: string; runId: string }
-  | { type: 'token'; threadId: string; messageId: string; text: string; ns?: string; reasoning?: boolean }
+  | { type: 'token'; threadId: string; messageId: string; text: string; ns?: string; agentName?: string; reasoning?: boolean }
   | { type: 'message'; threadId: string; message: UIMessage }
   | { type: 'todos'; threadId: string; todos: Todo[] }
   | { type: 'interrupt'; threadId: string; interrupt: PendingInterrupt }

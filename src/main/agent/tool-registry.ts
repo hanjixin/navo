@@ -131,6 +131,7 @@ export function systemPrompt(
   workspaceRoot?: string,
   browserSubagent = true,
   agent?: AgentProfile,
+  workgroup?: { name: string; description: string }[],
 ): string {
   const s = getSettings()
   const pluginList = plugins.describe(agent?.infrastructure.pluginIds)
@@ -140,6 +141,7 @@ export function systemPrompt(
 ${page ? `${page.mine ? '本对话使用用户自己浏览器中的标签页' : '本对话使用的浏览器标签页'}: ${page.title} (${page.url})` : ''}
 ${project ? `\n## 当前项目\n项目名称：${project.name}\n${project.description ? `项目描述：${project.description}\n` : ''}本项目用于组织当前对话及其产物。` : ''}
 ${agent ? `\n## 当前智能体\n名称：${agent.name}\n${agent.description ? `职责：${agent.description}\n` : ''}${agent.instructions ? `执行指令：\n${agent.instructions}` : ''}` : ''}
+${workgroup?.length ? `\n## 项目工作组\n你是本项目的协调员。成员：\n${workgroup.map((member) => `- ${member.name}：${member.description}`).join('\n')}\n遇到适合成员职责、可以独立完成的子任务时，使用 task 工具委派给对应成员。可以并行发出多个 task。委派时给出明确目标、约束和交付格式；收到结果后由你校验、合并并给用户最终答复。不要声称成员完成了并未返回的工作。` : ''}
 
 ## 浏览器操作准则
 - 网页导航、读取和操作使用 Navo 的 browser_* 工具。不要用 node_repl、Shell 或环境变量探测来查找浏览器连接或绕过标签页授权。

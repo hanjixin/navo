@@ -296,6 +296,7 @@ export function registerHandlers(): void {
     'outputs.saveAs': (id) => outputs.saveAs(id),
     'outputs.reveal': (id) => outputs.reveal(id),
     'outputs.open': (id) => outputs.open(id),
+    'outputs.openReference': (threadId, path) => outputs.openReference(threadId, path),
     'artifacts.get': (id) => outputs.artifact(id),
     'artifacts.list': (projectId) => outputs.artifacts(projectId),
     'artifacts.query': (query) => outputs.query(query),

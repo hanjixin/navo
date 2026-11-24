@@ -9,6 +9,7 @@ import { MessageList } from '@/components/chat/message-list'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
 import { call, on } from '@/lib/ipc'
+import { sameFileReference } from '@shared/file-link'
 import { errorMessage } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useDraft } from '@/hooks/use-draft'
@@ -40,6 +41,18 @@ export function QuickPage() {
       .catch(() => undefined)
     setClip(null)
   }, [draft.scope])
+
+  const openFile = async (path: string) => {
+    if (!activeId) return
+    try {
+      const files = await call('outputs.list', activeId)
+      const file = files.find((item) => sameFileReference(item.path, path))
+      if (file) await call('outputs.open', file.id)
+      else await call('outputs.openReference', activeId, path)
+    } catch (error) {
+      toast.error(t('打开文件失败'), { description: errorMessage(error) })
+    }
+  }
 
   useEffect(() => {
     document.documentElement.classList.add('quick')
@@ -143,7 +156,7 @@ export function QuickPage() {
 
       {hasMessages ? (
         <div className="selectable min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <MessageList messages={view!.messages} running={view!.running} />
+          <MessageList messages={view!.messages} running={view!.running} onFileOpen={openFile} />
           <div ref={bottom} />
         </div>
       ) : (

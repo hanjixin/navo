@@ -48,9 +48,13 @@ export function ProjectDetailPage() {
   const project = detail.data && detail.data.projectId === projectId ? detail.data.project : undefined
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [savingProjectAgents, setSavingProjectAgents] = useState(false)
   const draft = useDraft(mainDraftScope(projectId))
   const modelId = draft.data?.modelId ?? null
   const runtimeId = draft.data?.runtimeId ?? 'builtin'
+  const projectAssistant = project?.agents.find((item) => item.role === 'coordinator')?.agent ?? null
+  const effectiveRuntimeId = projectAssistant?.runtimeId ?? runtimeId
+  const effectiveModelId = projectAssistant?.modelId ?? modelId
   const { activeModels: models, load: loadModels } = useModels()
   const projectMemory = useAsync(() => call('memory.projectEnabled', projectId ?? null), [projectId, revision])
   const projectSkills = useAsync(async () => {
@@ -68,13 +72,18 @@ export function ProjectDetailPage() {
     )
   }, [projectId, revision])
   const allAgents = useAsync(() => call('agents.list'), [revision])
+  const builtinAgents = (allAgents.data ?? []).filter((agent) => agent.runtimeId === 'builtin')
   const saveProjectAgents = async (defaultAgentId: string | null, agentIds: string[]) => {
+    if (savingProjectAgents) return
+    setSavingProjectAgents(true)
     try {
       if (!projectId) return
       await call('projects.setAgents', projectId, defaultAgentId, agentIds)
       detail.reload()
     } catch (error) {
       toast.error(t('操作失败'), { description: errorMessage(error) })
+    } finally {
+      setSavingProjectAgents(false)
     }
   }
   const summary = useAsync(async () => {
@@ -89,7 +98,7 @@ export function ProjectDetailPage() {
         .slice(0, 5),
     }
   }, [projectId, project?.updatedAt, revision])
-  const noModels = (runtimeId === 'builtin' || runtimeId === 'pi') && models !== undefined && models.length === 0
+  const noModels = (effectiveRuntimeId === 'builtin' || effectiveRuntimeId === 'pi') && models !== undefined && models.length === 0
   useEffect(() => {
     void loadModels()
   }, [loadModels])
@@ -175,8 +184,8 @@ export function ProjectDetailPage() {
             <Cpu className="size-3.5" />
             {t('当前配置')}
           </div>
-          <div className="mt-2 truncate text-sm font-medium">{runtimeLabel(runtimeId)}</div>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{modelId ?? t('模型由发送时选择')}</p>
+          <div className="mt-2 truncate text-sm font-medium">{projectAssistant?.name ?? runtimeLabel(effectiveRuntimeId)}</div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{effectiveModelId ?? t('模型由发送时选择')}</p>
         </div>
       </section>
       <div className="flex shrink-0 gap-1 border-b border-border px-5 pb-2 @3xl:px-7" role="tablist" aria-label={t('项目')}>
@@ -218,12 +227,17 @@ export function ProjectDetailPage() {
                 <Bot className="mt-0.5 size-4 shrink-0 text-brand" />
                 <div className="min-w-0 flex-1">
                   <h2 className="font-medium">{t('项目助手')}</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">{t('新建项目会话会继承默认智能体；已有会话保留创建时的配置。')}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {projectAssistant?.runtimeId === 'builtin'
+                      ? t('默认助手作为协调员，会按任务需要委派给工作组成员；已有会话保留创建时的配置。')
+                      : t('工作组委派仅支持内置运行时；当前项目会话使用所选默认助手。')}
+                  </p>
                 </div>
               </div>
               <div className="mt-3 grid gap-3">
                 <Select
                   value={project.defaultAgentId ?? 'none'}
+                  disabled={savingProjectAgents}
                   onChange={(value) => {
                     const next = value === 'none' ? null : value
                     const ids = [...new Set([...(project.agents ?? []).map((item) => item.agent.id), ...(next ? [next] : [])])]
@@ -240,7 +254,7 @@ export function ProjectDetailPage() {
                     {t('工作组成员')}
                   </div>
                   <div className="grid gap-1">
-                    {(allAgents.data ?? []).map((agent) => {
+                    {builtinAgents.map((agent) => {
                       const members = new Set((project.agents ?? []).map((item) => item.agent.id))
                       const selected = members.has(agent.id)
                       const coordinator = project.defaultAgentId === agent.id
@@ -248,11 +262,15 @@ export function ProjectDetailPage() {
                         <label key={agent.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent">
                           <Switch
                             checked={selected}
+                            disabled={savingProjectAgents}
                             onCheckedChange={(enabled) => {
                               const next = new Set(members)
                               if (enabled) next.add(agent.id)
                               else next.delete(agent.id)
-                              const nextDefault = coordinator && !enabled ? ([...next][0] ?? null) : (project.defaultAgentId ?? null)
+                              const nextDefault =
+                                coordinator && !enabled
+                                  ? (builtinAgents.find((candidate) => next.has(candidate.id))?.id ?? null)
+                                  : (project.defaultAgentId ?? null)
                               void saveProjectAgents(nextDefault, [...next])
                             }}
                             aria-label={agent.name}
@@ -262,11 +280,16 @@ export function ProjectDetailPage() {
                         </label>
                       )
                     })}
-                    {!allAgents.loading && !(allAgents.data ?? []).length ? (
+                    {!allAgents.loading && !builtinAgents.length ? (
                       <p className="px-2 py-2 text-xs text-muted-foreground">{t('还没有智能体，请先创建一个')}</p>
                     ) : null}
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {projectAssistant?.runtimeId === 'builtin'
+                    ? t('协调员可以使用 task 调度多个成员；成员只获得自己绑定的模型、Skill、MCP 和连接器。')
+                    : t('选择使用内置运行时的默认助手后才能启用工作组委派。')}
+                </p>
               </div>
             </div>
             <div className="mt-5 flex items-center justify-between rounded-lg border border-border p-3">
@@ -374,16 +397,23 @@ export function ProjectDetailPage() {
                 </div>
                 <Composer
                   draftScope={draft.scope}
-                  runtimeId={runtimeId}
+                  runtimeId={effectiveRuntimeId}
+                  runtimeLocked={!!projectAssistant}
+                  modelLocked={!!projectAssistant}
+                  lockHint={projectAssistant ? t('由项目默认助手「{{v0}}」决定', { v0: projectAssistant.name }) : undefined}
                   onSend={async () => {
-                    const receipt = await submitDraft(draft.scope, { projectId, modelId, runtimeId })
+                    const receipt = await submitDraft(draft.scope, {
+                      projectId,
+                      modelId: effectiveModelId,
+                      runtimeId: effectiveRuntimeId,
+                    })
                     await useChat.getState().loadThreads()
                     useChat.getState().select(receipt.threadId)
                     navigate(threadPath({ id: receipt.threadId, projectId: projectId! }))
                   }}
                   onStop={() => {}}
                   running={false}
-                  modelId={modelId}
+                  modelId={effectiveModelId}
                   onModelChange={(modelId) => draft.patch({ modelId })}
                   disabled={draft.loading}
                   disabledReason={noModels ? t('没有已启用的模型，请前往模型页面启用') : t('加载中')}

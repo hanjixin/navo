@@ -43,6 +43,7 @@ import { useProjects } from '@/stores/projects'
 import { useFlowDialog } from '@/stores/flows'
 import { ThreadList } from '@/components/chat/thread-list'
 import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
+import { sameFileReference } from '@shared/file-link'
 import { t } from '@shared/i18n'
 
 const SUGGESTIONS = [
@@ -148,6 +149,7 @@ export function ChatPage() {
   const toggleThreads = useLayout((s) => s.toggleThreads)
   const { activeModels: models, load: loadModels } = useModels()
   const navigate = useNavigate()
+  const [, setChatParams] = useSearchParams()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const view = activeId ? views[activeId] : undefined
@@ -224,6 +226,26 @@ export function ChatPage() {
     const project = thread?.projectId ?? projectId
     navigate(project ? projectPath(project) : '/chat')
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea')?.focus())
+  }
+  const openConversationFile = async (path: string) => {
+    if (!activeId) return
+    try {
+      const files = await call('outputs.list', activeId)
+      const file = files.find((item) => sameFileReference(item.path, path))
+      if (!file) {
+        await call('outputs.openReference', activeId, path)
+        return
+      }
+      setChatParams(() => {
+        const next = currentSearchParams()
+        next.set('artifact', file.id)
+        next.delete('file')
+        next.delete('panel')
+        return next
+      })
+    } catch (error) {
+      toast.error(t('打开文件失败'), { description: errorMessage(error) })
+    }
   }
   const missingThread = !!activeId && threads !== undefined && !thread
   const missingProject = !!projectId && projects !== undefined && !projects.some((project) => project.id === projectId)
@@ -344,6 +366,7 @@ export function ChatPage() {
               <MessageList
                 messages={view.messages}
                 running={view.running}
+                onFileOpen={openConversationFile}
                 actions={
                   runtimeId !== 'builtin'
                     ? undefined

@@ -25,6 +25,19 @@ export interface ToolDescriptor {
   source: ToolSource
 }
 
+/** A project workgroup member that the coordinator may delegate to during a builtin run. */
+export interface WorkgroupMemberRun {
+  /** Safe subagent identifier used by the task tool. */
+  name: string
+  displayName: string
+  description: string
+  systemPrompt: string
+  model: RuntimeModel
+  tools: ToolDescriptor[]
+  /** Skill mounts available to this member only. */
+  skills: string[]
+}
+
 export interface RunRequest {
   executionId?: string
   runId: string
@@ -54,6 +67,8 @@ export interface RunRequest {
   /** Tool names that pause for human approval */
   interruptOn: string[]
   browserSubagent: boolean
+  /** Additional project workgroup members; empty outside projects or for external runtimes. */
+  workgroup?: WorkgroupMemberRun[]
   /** the run's memory section, also given to the browser-operator subagent */
   memoryPrompt?: string
   mounts: { id: string; root: string; allowed: string[] }[]

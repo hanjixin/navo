@@ -133,8 +133,10 @@ class AgentProfileService {
     if (description.length > 1000) throw new Error(t('智能体描述不能超过 1000 个字符'))
     if (instructions.length > 20_000) throw new Error(t('智能体指令不能超过 20000 个字符'))
     const runtime = runtimeRegistry.info(input.runtimeId)
+    if (!runtime.profile.enabled) throw new Error(t('运行时未启用'))
     const modelId = (runtime.capabilities.requiresNavoModel ?? runtime.capabilities.navoTools) ? (input.modelId ?? models.default()?.id ?? null) : null
     if (modelId && !models.get(modelId)) throw new Error(t('模型不存在'))
+    if (modelId && !models.get(modelId)?.enabled) throw new Error(t('模型未启用'))
     const infrastructure = normalizeInfrastructure(input.infrastructure)
     const valid = {
       skillIds: () => skills.list(),

@@ -15,6 +15,10 @@ export function ProjectEditor({ project, onClose, onSaved }: { project?: Project
   const [workingDirectory, setWorkingDirectory] = useState<string | null>(project?.workingDirectory ?? null)
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
+  const initial = useRef(
+    JSON.stringify({ name: project?.name ?? '', description: project?.description ?? '', workingDirectory: project?.workingDirectory ?? null }),
+  ).current
+  const dirty = JSON.stringify({ name, description, workingDirectory }) !== initial
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -51,13 +55,18 @@ export function ProjectEditor({ project, onClose, onSaved }: { project?: Project
       if (mounted.current) setBusy(false)
     }
   }
+  const requestClose = () => {
+    if (busy || picking) return
+    if (dirty && !window.confirm(t('放弃未保存的修改？'))) return
+    onClose()
+  }
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
       <DialogContent
         title={project ? t('编辑项目') : t('新建项目')}
         footer={
           <>
-            <Button variant="ghost" disabled={busy} onClick={onClose}>
+            <Button variant="ghost" disabled={busy} onClick={requestClose}>
               {t('取消')}
             </Button>
             <Button variant="primary" loading={busy} disabled={picking || !name.trim()} onClick={() => void submit()}>

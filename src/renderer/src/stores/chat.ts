@@ -267,10 +267,10 @@ export const useChat = create<ChatState>((set, get) => {
             if (i >= 0) {
               const m = v.messages[i]
               const next = [...v.messages]
-              next[i] = { ...m, [field]: (m[field] ?? '') + e.text, streaming: true }
+              next[i] = { ...m, [field]: (m[field] ?? '') + e.text, agentName: e.agentName ?? m.agentName, streaming: true }
               return { messages: next, lastActivityAt: Date.now() }
             }
-            const fresh: ChatMessage = { id: e.messageId, role: 'assistant', content: '', ns: e.ns, streaming: true }
+            const fresh: ChatMessage = { id: e.messageId, role: 'assistant', content: '', ns: e.ns, agentName: e.agentName, streaming: true }
             fresh[field] = e.text
             return { messages: [...v.messages, fresh], lastActivityAt: Date.now() }
           })

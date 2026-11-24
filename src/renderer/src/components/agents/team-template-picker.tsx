@@ -29,7 +29,7 @@ export function TeamTemplatePicker({ agents, resourceName, onAdded }: Props) {
       if ('team' in choice) await call('agents.addTemplateTeam', choice.team)
       else await call('agents.addTemplate', choice.template)
       await onAdded()
-      setOpen(false)
+      if ('team' in choice) setOpen(false)
       toast.success(t('已添加到我的智能体'))
     } catch (error) {
       toast.error(t('添加失败'), { description: errorMessage(error) })

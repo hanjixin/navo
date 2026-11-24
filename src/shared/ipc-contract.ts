@@ -301,6 +301,8 @@ export interface Api {
   'outputs.saveAs': (id: string) => string | null
   'outputs.reveal': (id: string) => void
   'outputs.open': (id: string) => void
+  /** Open an existing project workspace or home-directory file with the system's default app. */
+  'outputs.openReference': (threadId: string | null, path: string) => void
   'artifacts.get': (id: string) => Artifact | null
   'artifacts.list': (projectId?: string | null) => Artifact[]
   'artifacts.query': (query?: ArtifactsQuery) => ArtifactsPage

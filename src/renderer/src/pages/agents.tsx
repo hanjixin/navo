@@ -1,5 +1,5 @@
 import { Bot, MoreHorizontal, Pencil, Play, Plug, Plus, Puzzle, Server, Sparkles, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import type {
@@ -99,9 +99,14 @@ function ResourceGroup({
 function AgentEditor({ agent, resources, onClose }: { agent?: AgentProfile; resources: Resources; onClose: () => void }) {
   const save = useAgents((state) => state.save)
   const [draft, setDraft] = useState<AgentProfileInput>(() => (agent ? { ...agent, infrastructure: { ...agent.infrastructure } } : emptyDraft(resources)))
+  const initialDraft = useRef(JSON.stringify(draft)).current
+  const dirty = JSON.stringify(draft) !== initialDraft
   const [saving, setSaving] = useState(false)
   const runtime = resources.runtimes.find((item) => item.profile.id === draft.runtimeId)
   const needsModel = runtime?.capabilities.requiresNavoModel ?? runtime?.capabilities.navoTools ?? true
+  const runtimeUnavailable = !runtime?.profile.enabled
+  const selectedModel = resources.models.find((model) => model.id === draft.modelId)
+  const modelUnavailable = needsModel && (!selectedModel || !selectedModel.enabled)
   const setInfrastructure = <K extends keyof AgentInfrastructure>(key: K, value: AgentInfrastructure[K]) =>
     setDraft((current) => ({ ...current, infrastructure: { ...current.infrastructure, [key]: value } }))
   const submit = async () => {
@@ -116,19 +121,24 @@ function AgentEditor({ agent, resources, onClose }: { agent?: AgentProfile; reso
       setSaving(false)
     }
   }
+  const requestClose = () => {
+    if (saving) return
+    if (dirty && !window.confirm(t('放弃未保存的修改？'))) return
+    onClose()
+  }
   const connected = new Map(resources.connectors.map((item) => [item.def.id, item.state]))
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
       <DialogContent
         title={agent ? t('编辑智能体') : t('新建智能体')}
         description={t('为智能体固定执行方式，并只绑定它需要的基础设施。')}
         className="w-[min(760px,calc(100vw-48px))]"
         footer={
           <>
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={requestClose}>
               {t('取消')}
             </Button>
-            <Button variant="primary" loading={saving} disabled={!draft.name.trim()} onClick={submit}>
+            <Button variant="primary" loading={saving} disabled={!draft.name.trim() || runtimeUnavailable || modelUnavailable} onClick={submit}>
               {t('保存')}
             </Button>
           </>
@@ -162,7 +172,7 @@ function AgentEditor({ agent, resources, onClose }: { agent?: AgentProfile; reso
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t('运行时')}>
+            <Field label={t('运行时')} hint={runtimeUnavailable ? t('请选择已启用的运行时') : undefined}>
               <Select
                 value={draft.runtimeId}
                 onChange={(runtimeId) => {
@@ -173,20 +183,24 @@ function AgentEditor({ agent, resources, onClose }: { agent?: AgentProfile; reso
                       : null
                   setDraft({ ...draft, runtimeId, modelId })
                 }}
-                options={resources.runtimes.map((item) => ({
-                  value: item.profile.id,
-                  label: item.profile.name,
-                  hint: item.profile.enabled ? undefined : t('未启用'),
-                }))}
+                options={resources.runtimes
+                  .filter((item) => item.profile.enabled || item.profile.id === draft.runtimeId)
+                  .map((item) => ({
+                    value: item.profile.id,
+                    label: item.profile.name,
+                    hint: item.profile.enabled ? undefined : t('未启用'),
+                  }))}
               />
             </Field>
-            <Field label={t('模型')} hint={!needsModel ? t('由运行时自身配置') : undefined}>
+            <Field label={t('模型')} hint={!needsModel ? t('由运行时自身配置') : modelUnavailable ? t('请选择已启用的模型') : undefined}>
               <Select
                 value={draft.modelId ?? undefined}
                 placeholder={needsModel ? t('默认模型') : t('由运行时自身配置')}
                 disabled={!needsModel}
                 onChange={(modelId) => setDraft({ ...draft, modelId })}
-                options={resources.models.map((model) => ({ value: model.id, label: model.displayName, hint: model.enabled ? undefined : t('未启用') }))}
+                options={resources.models
+                  .filter((model) => model.enabled || model.id === draft.modelId)
+                  .map((model) => ({ value: model.id, label: model.displayName, hint: model.enabled ? undefined : t('未启用') }))}
               />
             </Field>
           </div>
@@ -253,6 +267,7 @@ export function AgentsPage() {
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<AgentProfile | 'new' | null>(null)
   const [deleting, setDeleting] = useState<AgentProfile | null>(null)
+  const [deletingAgent, setDeletingAgent] = useState(false)
   const [resources, setResources] = useState<Resources | null>(null)
   const [resourceError, setResourceError] = useState<string | null>(null)
   const loadResources = async () => {
@@ -416,9 +431,17 @@ export function AgentsPage() {
                 </Button>
                 <Button
                   variant="danger"
+                  loading={deletingAgent}
                   onClick={async () => {
-                    await remove(deleting.id)
-                    setDeleting(null)
+                    setDeletingAgent(true)
+                    try {
+                      await remove(deleting.id)
+                      setDeleting(null)
+                    } catch (error) {
+                      toast.error(t('操作失败'), { description: errorMessage(error) })
+                    } finally {
+                      setDeletingAgent(false)
+                    }
                   }}
                 >
                   {t('删除')}

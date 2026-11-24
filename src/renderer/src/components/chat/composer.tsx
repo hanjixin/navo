@@ -33,6 +33,9 @@ export function Composer({
   className,
   minHeight = 0,
   showModelManagementLink = true,
+  runtimeLocked = false,
+  modelLocked = false,
+  lockHint,
 }: {
   onSend: (text: string, fileIds: string[]) => Promise<void>
   draftScope: DraftScope
@@ -49,6 +52,9 @@ export function Composer({
   className?: string
   minHeight?: number
   showModelManagementLink?: boolean
+  runtimeLocked?: boolean
+  modelLocked?: boolean
+  lockHint?: string
 }) {
   const [localText, setLocalText] = useState('')
   const text = value ?? localText
@@ -319,10 +325,10 @@ export function Composer({
               </Button>
             </Tooltip>
             <div className="max-w-44 min-w-0" data-testid="composer-runtime">
-              {draftScope.threadId ? (
+              {draftScope.threadId || runtimeLocked ? (
                 <span
                   className="inline-block max-w-full truncate rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
-                  title={t('会话创建后不可切换运行时')}
+                  title={lockHint ?? t('会话创建后不可切换运行时')}
                 >
                   {runtime?.profile.name ?? (runtimeId === 'builtin' ? 'Navo' : runtimeId)}
                 </span>
@@ -346,13 +352,19 @@ export function Composer({
             ) : null}
             {!external && models.length ? (
               <div className="max-w-52 min-w-0 flex-1">
-                <Select
-                  value={current?.id ?? ''}
-                  placeholder={t('请选择已启用的模型')}
-                  onChange={onModelChange}
-                  className="h-7 border-transparent bg-transparent text-xs text-muted-foreground hover:bg-accent"
-                  options={models.map((m) => ({ value: m.id, label: m.displayName }))}
-                />
+                {modelLocked ? (
+                  <span className="inline-block max-w-full truncate rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground" title={lockHint}>
+                    {current?.displayName ?? modelId ?? t('默认模型')}
+                  </span>
+                ) : (
+                  <Select
+                    value={current?.id ?? ''}
+                    placeholder={t('请选择已启用的模型')}
+                    onChange={onModelChange}
+                    className="h-7 border-transparent bg-transparent text-xs text-muted-foreground hover:bg-accent"
+                    options={models.map((m) => ({ value: m.id, label: m.displayName }))}
+                  />
+                )}
               </div>
             ) : null}
           </>

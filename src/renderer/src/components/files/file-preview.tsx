@@ -139,7 +139,17 @@ export function FilePreview({ file: initial, onDeleted, compact }: { file: FileR
                 </figcaption>
               </figure>
             ) : null}
-            <Markdown text={md.replace(/<!-- (第 \d+ 页) -->/g, '\n\n*— $1 —*\n\n')} className="selectable" />
+            <Markdown
+              text={md.replace(/<!-- (第 \d+ 页) -->/g, '\n\n*— $1 —*\n\n')}
+              className="selectable"
+              onFileOpen={async (path) => {
+                try {
+                  await call('outputs.openReference', null, path)
+                } catch (error) {
+                  toast.error(t('打开文件失败'), { description: errorMessage(error) })
+                }
+              }}
+            />
           </TabsContent>
           <TabsContent value="source" className="min-h-0 flex-1 pt-4">
             <pre className="selectable h-full overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap">

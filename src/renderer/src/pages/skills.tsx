@@ -8,6 +8,8 @@ import {
   FolderPlus,
   History,
   Lock,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RotateCw,
   Save,
@@ -289,6 +291,7 @@ export function SkillsPage() {
   const [dirty, setDirty] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deletingSkill, setDeletingSkill] = useState(false)
   const [creating, setCreating] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [discoverOpen, setDiscoverOpen] = useState(false)
@@ -296,6 +299,7 @@ export function SkillsPage() {
   const [q, setQ] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [evolutionOpen, setEvolutionOpen] = useState(false)
+  const [showList, setShowList] = useState(true)
   // a skill changed by itself (or a suggestion was applied): refresh the list and the open file
   const [revision, setRevision] = useState(0)
   const { proposals, stats } = useSkillEvolution(() => {
@@ -437,15 +441,27 @@ export function SkillsPage() {
           </>
         }
         actions={
-          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            <Plus />
-            {t('新建 Skill')}
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={showList ? t('收起 Skill 列表') : t('展开 Skill 列表')}
+              title={showList ? t('收起 Skill 列表') : t('展开 Skill 列表')}
+              aria-pressed={showList}
+              onClick={() => setShowList((value) => !value)}
+            >
+              {showList ? <PanelLeftClose /> : <PanelLeftOpen />}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus />
+              {t('新建 Skill')}
+            </Button>
+          </>
         }
       />
       <ProposalCards proposals={proposals} />
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="flex w-64 shrink-0 flex-col @4xl:w-72">
+        <div className={cn('w-64 shrink-0 flex-col @4xl:w-72', showList ? 'flex' : 'hidden')}>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <AsyncView
               state={list}
@@ -567,10 +583,19 @@ export function SkillsPage() {
                           size="sm"
                           className="hover:text-danger"
                           onClick={async () => {
-                            await call('skills.delete', current.id)
-                            setSelected(null)
-                            list.reload()
+                            if (!window.confirm(t('确定删除 Skill「{{v0}}」吗？', { v0: current.name }))) return
+                            setDeletingSkill(true)
+                            try {
+                              await call('skills.delete', current.id)
+                              setSelected(null)
+                              list.reload()
+                            } catch (error) {
+                              toast.error(t('操作失败'), { description: errorMessage(error) })
+                            } finally {
+                              setDeletingSkill(false)
+                            }
                           }}
+                          loading={deletingSkill}
                         >
                           <Trash2 />
                           {t('删除')}

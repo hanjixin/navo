@@ -94,6 +94,35 @@ export function startMock(port = 38999) {
       chunk({}, 'tool_calls')
       done()
     }
+    const callMany = (calls) => {
+      const toolCalls = calls.map(({ name, args }, index) => ({
+        id: `call_${id}_${index}`,
+        type: 'function',
+        function: { name, arguments: JSON.stringify(args) },
+      }))
+      if (!stream)
+        return res.end(
+          JSON.stringify({
+            id,
+            object: 'chat.completion',
+            usage,
+            choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: toolCalls }, finish_reason: 'tool_calls' }],
+          }),
+        )
+      chunk({
+        role: 'assistant',
+        content: null,
+        tool_calls: toolCalls.map((call, index) => ({
+          index,
+          id: call.id,
+          type: 'function',
+          function: { name: call.function.name, arguments: '' },
+        })),
+      })
+      chunk({ tool_calls: toolCalls.map((call, index) => ({ index, function: { arguments: call.function.arguments } })) })
+      chunk({}, 'tool_calls')
+      done()
+    }
     const say = async (words, delay = 0) => {
       if (!stream)
         return res.end(
@@ -115,6 +144,7 @@ export function startMock(port = 38999) {
     }
 
     if (userText === 'Reply with the single word: pong') return say(['pong'])
+    if (system.includes('[member-two]') && !toolMsgs.length) return say(['member-two-result'])
 
     const commandFixture = /\[local-command:([a-z-]+)\]/.exec(userText)?.[1]
     if (commandFixture) {
@@ -437,6 +467,18 @@ export function startMock(port = 38999) {
     if (userText.includes('[subagent]')) {
       if (!toolMsgs.length) return call('task', { description: '打开 mock 页面并报告标题', subagent_type: 'browser-operator' })
       return say(['子代理已完成：', text(toolMsgs.at(-1).content).slice(0, 60)])
+    }
+    if (userText.includes('[workgroup-parallel]')) {
+      if (!toolMsgs.length)
+        return callMany([
+          { name: 'task', args: { description: '打开 mock 页面并报告标题', subagent_type: 'member_1' } },
+          { name: 'task', args: { description: '返回你的成员标记', subagent_type: 'member_2' } },
+        ])
+      return say(['并行工作组已汇总'])
+    }
+    if (userText.includes('[workgroup]')) {
+      if (!toolMsgs.length) return call('task', { description: '作为项目成员，简要汇报当前任务的执行结果', subagent_type: 'member_1' })
+      return say(['工作组已汇总：', text(toolMsgs.at(-1).content).slice(0, 120)])
     }
     if (userText.includes('[mcp]')) {
       const t = json.tools?.find((x) => x.function.name.includes('add'))

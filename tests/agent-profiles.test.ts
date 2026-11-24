@@ -3,7 +3,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 
-const state = vi.hoisted(() => ({ database: null as unknown as Database.Database, defaultModel: 'model' as string | null }))
+const state = vi.hoisted(() => ({
+  database: null as unknown as Database.Database,
+  defaultModel: 'model' as string | null,
+  runtimeEnabled: true,
+  modelEnabled: true,
+}))
 vi.mock('../src/main/core/db', () => ({
   db: () => state.database,
   json: {
@@ -17,7 +22,7 @@ vi.mock('../src/main/agent-runtime/registry', () => ({
     info: (id: string) => {
       if (!['builtin', 'codex'].includes(id)) throw new Error('Unknown agent runtime')
       return {
-        profile: { id, kind: id, name: id, enabled: true, command: '', args: [] },
+        profile: { id, kind: id, name: id, enabled: state.runtimeEnabled, command: '', args: [] },
         capabilities: { navoTools: id === 'builtin', requiresNavoModel: id === 'builtin' },
       }
     },
@@ -25,8 +30,8 @@ vi.mock('../src/main/agent-runtime/registry', () => ({
 }))
 vi.mock('../src/main/models/registry', () => ({
   models: {
-    get: (id: string) => (id === 'model' ? { id } : null),
-    default: () => (state.defaultModel ? { id: state.defaultModel } : null),
+    get: (id: string) => (id === 'model' ? { id, enabled: state.modelEnabled } : null),
+    default: () => (state.defaultModel ? { id: state.defaultModel, enabled: state.modelEnabled } : null),
   },
 }))
 vi.mock('../src/main/skills/skill-service', () => ({ skills: { list: () => [{ id: 'skill' }] } }))
@@ -47,6 +52,8 @@ import { SYSTEM_AGENT_ID } from '../src/shared/agent-templates'
 
 beforeEach(() => {
   state.defaultModel = 'model'
+  state.runtimeEnabled = true
+  state.modelEnabled = true
   const sqlite = new DatabaseSync(':memory:')
   sqlite.exec('PRAGMA foreign_keys=ON')
   const source = readFileSync('src/main/core/db-core.ts', 'utf8').split('/** Opens')[0]
@@ -91,6 +98,16 @@ describe('agent profiles', () => {
       '绑定的基础设施不存在',
     )
     expect(agentProfiles.list()).toHaveLength(2)
+  })
+
+  it('rejects disabled runtimes and models with actionable errors', () => {
+    const base = { runtimeId: 'builtin', infrastructure: { skillIds: [], mcpServerIds: [], connectorIds: [], pluginIds: [] } }
+    state.runtimeEnabled = false
+    expect(() => agentProfiles.save({ ...base, name: 'Disabled runtime' })).toThrow('运行时未启用')
+    state.runtimeEnabled = true
+    state.modelEnabled = false
+    expect(() => agentProfiles.save({ ...base, name: 'Disabled model' })).toThrow('模型未启用')
+    expect(agentProfiles.list().map((agent) => agent.id)).toEqual([SYSTEM_AGENT_ID])
   })
 
   it('starts with one editable permanent assistant and captures the default model at launch', () => {

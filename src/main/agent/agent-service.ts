@@ -17,7 +17,7 @@ import { sessions } from '../browser/agent-session'
 import { resolveModel } from '../models/registry'
 import type { ResolvedModel } from '../models/factory'
 import { skills } from '../skills/skill-service'
-import type { RunRequest, RunResult, ToolCallRequest } from '../agent-runtime/contracts'
+import type { RunRequest, RunResult, ToolCallRequest, WorkgroupMemberRun } from '../agent-runtime/contracts'
 import { usage } from '../usage/usage-service'
 import { outputs } from '../outputs/outputs-service'
 import { RUN_COMMAND } from '../agent-runtime/file-tools'
@@ -352,6 +352,7 @@ export class AgentService {
     learning.drop(id)
     kv.set(`thread.memory.${id}`, true)
     kv.set(`thread.workspace.${id}`, null)
+    db().prepare('DELETE FROM kv WHERE key=?').run(`workgroup.tasks.${id}`)
     emit('threads.changed')
     emit('projects.changed')
     emit('artifacts.changed')
@@ -742,6 +743,54 @@ export class AgentService {
         thread.projectId,
       )
       if (input.kind === 'message' && mem?.refs.length) input = { ...input, memories: mem.refs }
+      const projectMembers =
+        profile.kind === 'builtin' && project && agentProfile
+          ? project.agents.filter((binding) => binding.role === 'member' && binding.agent.id !== agentProfile?.id && binding.agent.runtimeId === 'builtin')
+          : []
+      const workgroupEntries: ToolEntry[] = []
+      const workgroup: WorkgroupMemberRun[] = projectMembers.slice(0, 12).map((binding, index) => {
+        const member = agentProfiles.snapshot(binding.agent.id)
+        const memberModel = this.model(profile, member.modelId)
+        const memberLocalSkills = skills.localAllowed(member.infrastructure.skillIds) ?? []
+        const memberMounts = skills.mounts(thread.projectId, member.infrastructure.skillIds).map((mount) => ({
+          id: mount.id,
+          root: mount.root,
+          allowed: [...mount.allowed],
+        }))
+        const memberConfig = {
+          paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
+          localSkills: memberLocalSkills,
+          mounts: memberMounts,
+        }
+        const memberTools = collectTools(
+          ctx,
+          memberModel.supportsVision,
+          workspaceRoot,
+          memberConfig,
+          runState.commandAbort.signal,
+          member.infrastructure,
+        ).filter((entry) => entry.tool.name !== 'navo_send_message' && (entry.tool.name !== RUN_COMMAND || (!opts.headless && runtime.capabilities.approvals)))
+        workgroupEntries.push(...memberTools)
+        return {
+          name: `member_${index + 1}`,
+          displayName: member.name,
+          description: `${member.name}：${member.description || member.instructions || '项目工作组成员'}`,
+          systemPrompt: [
+            `你是项目工作组中的「${member.name}」。协调员会给你一个明确的子任务；独立完成并返回可供汇总的事实、结论和文件路径。`,
+            project ? `项目：${project.name}\n${project.description ?? ''}` : '',
+            member.description ? `职责：${member.description}` : '',
+            member.instructions ? `执行指令：\n${member.instructions}` : '',
+            mem?.prompt ? `关于用户的记忆：\n${mem.prompt}` : '',
+            '只使用你当前可用的工具。没有完成的事项必须明确说明，不要替协调员做最终汇总。',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          model: memberModel,
+          tools: describeTools(memberTools),
+          skills: [...(memberLocalSkills.length ? ['/skills/'] : []), ...memberMounts.map((mount) => `/ext/${mount.id}/`)],
+        }
+      })
+      for (const entry of workgroupEntries) runState.tools.set(entry.tool.name, entry)
       const req: RunRequest = {
         runId,
         executionId,
@@ -758,6 +807,12 @@ export class AgentService {
               workspaceRoot,
               runtime.capabilities.browserSubagent === true,
               agentProfile ?? undefined,
+              projectMembers.length
+                ? projectMembers.map((binding, index) => ({
+                    name: `member_${index + 1}（${binding.agent.name}）`,
+                    description: binding.agent.description || binding.agent.instructions,
+                  }))
+                : undefined,
             )
           : [
               `You are working in the local directory: ${workspaceRoot}.`,
@@ -779,6 +834,7 @@ export class AgentService {
                 (t) => !allowed.has(t),
               ),
         browserSubagent: runtime.capabilities.browserSubagent === true && settings.browserSubagent,
+        workgroup,
         ...fileConfig,
         devMode: settings.devMode,
         langfuse: langfuseConfig(),
@@ -902,7 +958,9 @@ export class AgentService {
     if (entry.source !== 'navo' && !run.capabilities.navoTools) throw new Error(t('当前运行时没有权限调用 Navo 工具'))
     const workspaceTool =
       req.name === 'read_file' || req.name === 'write_file' || req.name === 'edit_file' || req.name === 'grep' || req.name === 'ls' || req.name === RUN_COMMAND
-    if (workspaceTool && !run.capabilities.workspaceTools) throw new Error(t('当前运行时没有权限访问项目工作区'))
+    // A runtime may expose file tools directly (Pi/external) or through workgroup members
+    // compiled by the agent host. Presence in the run tool map is the authority boundary.
+    if (workspaceTool && !entry) throw new Error(t('当前运行时没有权限访问项目工作区'))
     const auditId = startToolAudit(db(), {
       threadId: req.threadId,
       projectId: run.projectId,

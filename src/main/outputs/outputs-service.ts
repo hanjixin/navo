@@ -1,7 +1,8 @@
 import type { ArtifactsQuery, ArtifactsPage } from '@shared/files-query'
 import { BrowserWindow, dialog, shell } from 'electron'
 import { closeSync, copyFileSync, existsSync, fstatSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
-import { basename, dirname, extname, join, relative, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import * as XLSX from 'xlsx'
 import type { Artifact, DownloadInfo, ExportFormat, OutputFile, OutputPreview } from '@shared/types'
 import { db } from '../core/db'
@@ -407,6 +408,26 @@ class OutputsService {
   async open(id: string): Promise<void> {
     const err = await shell.openPath(absOf(this.row(id)))
     if (err) throw new Error(err)
+  }
+
+  async openReference(threadId: string | null, path: string): Promise<void> {
+    let abs: string
+    if (path.startsWith(VIRTUAL)) {
+      const context = threadId
+        ? (db().prepare('SELECT p.working_directory AS root FROM threads t LEFT JOIN projects p ON p.id=t.project_id WHERE t.id=?').get(threadId) as
+            { root: string | null } | undefined)
+        : undefined
+      abs = workspaceFile(context?.root ?? paths.workspace, path.slice(VIRTUAL.length))
+    } else if (path.startsWith('~/')) {
+      const home = resolve(homedir())
+      abs = resolve(home, path.slice(2))
+      if (abs !== home && !abs.startsWith(home + sep)) throw new Error(t('文件路径无效'))
+    } else {
+      throw new Error(t('只能打开 /workspace 或用户目录下的文件'))
+    }
+    if (!existsSync(abs)) throw new Error(t('文件不存在：{{v0}}', { v0: path }))
+    const error = await shell.openPath(abs)
+    if (error) throw new Error(error)
   }
 
   /** For the agent's export_file: /workspace/report.md → /workspace/report.docx */

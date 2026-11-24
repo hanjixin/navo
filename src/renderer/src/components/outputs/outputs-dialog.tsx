@@ -1,5 +1,6 @@
 import { Download, ExternalLink, FileDown, FolderOpen, PackageOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import type { ExportFormat, OutputFile, OutputPreview } from '@shared/types'
 import { Markdown } from '@/components/chat/markdown'
@@ -10,6 +11,8 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { AsyncView, EmptyState, ErrorState, ListSkeleton, Skeleton } from '@/components/ui/states'
 import { useAsync } from '@/hooks/use-async'
 import { call, on } from '@/lib/ipc'
+import { currentSearchParams } from '@/lib/routes'
+import { sameFileReference } from '@shared/file-link'
 import { cn, errorMessage, timeAgo } from '@/lib/utils'
 import { formatFileSize } from '@/stores/files'
 import { t } from '@shared/i18n'
@@ -28,12 +31,12 @@ const ICON_KIND: Record<OutputFile['kind'], string | null> = {
   other: null,
 }
 
-export function PreviewBody({ p }: { p: OutputPreview }) {
+export function PreviewBody({ p, onFileOpen }: { p: OutputPreview; onFileOpen?: (path: string) => void | Promise<void> }) {
   switch (p.kind) {
     case 'markdown':
       return (
         <div className="selectable px-5 py-4 text-sm">
-          <Markdown text={p.text} />
+          <Markdown text={p.text} onFileOpen={onFileOpen} />
           {p.truncated ? <p className="mt-3 text-xs text-subtle-foreground">{t('（文件较长，只显示了开头）')}</p> : null}
         </div>
       )
@@ -41,7 +44,7 @@ export function PreviewBody({ p }: { p: OutputPreview }) {
     case 'pdf':
       return (
         <div className="selectable px-5 py-4 text-sm">
-          <Markdown text={p.markdown} />
+          <Markdown text={p.markdown} onFileOpen={onFileOpen} />
         </div>
       )
     case 'text':
@@ -86,6 +89,7 @@ export function PreviewBody({ p }: { p: OutputPreview }) {
 }
 
 export function Preview({ file, artifact = false }: { file: OutputFile; artifact?: boolean }) {
+  const [, setParams] = useSearchParams()
   const preview = useAsync(
     () => (artifact ? call('artifacts.preview', file.id) : call('outputs.preview', file.id)),
     [artifact, file.id, file.at, file.unavailableReason, file.size],
@@ -101,6 +105,26 @@ export function Preview({ file, artifact = false }: { file: OutputFile; artifact
       toast.error(t('操作失败'), { description: errorMessage(e) })
     } finally {
       setBusy(null)
+    }
+  }
+
+  const openRelatedFile = async (path: string) => {
+    try {
+      const files = await call('outputs.list', file.threadId)
+      const target = files.find((item) => sameFileReference(item.path, path))
+      if (!target) {
+        await call('outputs.openReference', file.threadId, path)
+        return
+      }
+      setParams(() => {
+        const next = currentSearchParams()
+        next.set('artifact', target.id)
+        next.delete('file')
+        next.delete('panel')
+        return next
+      })
+    } catch (error) {
+      toast.error(t('打开文件失败'), { description: errorMessage(error) })
     }
   }
 
@@ -180,7 +204,7 @@ export function Preview({ file, artifact = false }: { file: OutputFile; artifact
             <Skeleton className="h-4 w-2/3" />
           </div>
         ) : (
-          <PreviewBody p={preview.data} />
+          <PreviewBody p={preview.data} onFileOpen={openRelatedFile} />
         )}
       </div>
     </div>

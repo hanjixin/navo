@@ -72,11 +72,13 @@ function AssistantBlock({
   results,
   running,
   onRegenerate,
+  onFileOpen,
 }: {
   msg: ChatMessage
   results: Map<string, UIMessage>
   running: boolean
   onRegenerate?: () => void
+  onFileOpen?: (path: string) => void | Promise<void>
 }) {
   const hasText = !!msg.content.trim()
   return (
@@ -84,7 +86,7 @@ function AssistantBlock({
       {msg.reasoning ? <Reasoning text={msg.reasoning} live={!!msg.streaming && !hasText} /> : null}
       {hasText ? (
         <div className="relative">
-          <Markdown text={msg.content} />
+          <Markdown text={msg.content} onFileOpen={onFileOpen} />
           {msg.streaming ? <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-caret bg-foreground/70" /> : null}
         </div>
       ) : null}
@@ -239,18 +241,19 @@ function UserBubble({ msg, running, onEdit }: { msg: ChatMessage; running: boole
   )
 }
 
-function SubagentBlock({ msgs, running }: { msgs: ChatMessage[]; running: boolean }) {
+function SubagentBlock({ msgs, running, onFileOpen }: { msgs: ChatMessage[]; running: boolean; onFileOpen?: (path: string) => void | Promise<void> }) {
   const [open, setOpen] = useState(false)
   const results = useMemo(() => new Map(msgs.filter((m) => m.role === 'tool' && m.toolCallId).map((m) => [m.toolCallId!, m])), [msgs])
   const calls = msgs.flatMap((m) => m.toolCalls ?? [])
   const lastText = [...msgs].reverse().find((m) => m.role === 'assistant' && m.content.trim())?.content
+  const agentName = msgs.find((m) => m.agentName)?.agentName
   const active = running && !results.has(calls.at(-1)?.id ?? '')
   return (
     <div className="min-w-0 rounded-md border border-dashed border-border bg-card/50">
       <button onClick={() => setOpen((v) => !v)} className="interactive flex h-8 w-full items-center gap-2 px-2.5 text-left text-xs hover:bg-accent/50">
         <ChevronRight className={cn('size-3 text-subtle-foreground transition-transform duration-150', open && 'rotate-90')} />
         <Bot className="size-3.5 stroke-[1.75] text-muted-foreground" />
-        <span className="font-medium">{t('子代理')}</span>
+        <span className="font-medium">{agentName ?? t('子代理')}</span>
         <span className="text-muted-foreground">{t('{{v0}} 次工具调用', { v0: calls.length })}</span>
         {active ? <span className="ml-auto size-1.5 animate-pulse rounded-full bg-brand" /> : null}
       </button>
@@ -259,7 +262,7 @@ function SubagentBlock({ msgs, running }: { msgs: ChatMessage[]; running: boolea
           {msgs
             .filter((m) => m.role === 'assistant')
             .map((m) => (
-              <AssistantBlock key={m.id} msg={m} results={results} running={running} />
+              <AssistantBlock key={m.id} msg={m} results={results} running={running} onFileOpen={onFileOpen} />
             ))}
         </div>
       ) : lastText ? (
@@ -269,7 +272,17 @@ function SubagentBlock({ msgs, running }: { msgs: ChatMessage[]; running: boolea
   )
 }
 
-export function MessageList({ messages, running, actions }: { messages: ChatMessage[]; running: boolean; actions?: MessageActions }) {
+export function MessageList({
+  messages,
+  running,
+  actions,
+  onFileOpen,
+}: {
+  messages: ChatMessage[]
+  running: boolean
+  actions?: MessageActions
+  onFileOpen?: (path: string) => void | Promise<void>
+}) {
   const results = useMemo(() => new Map(messages.filter((m) => m.role === 'tool' && m.toolCallId && !m.ns).map((m) => [m.toolCallId!, m])), [messages])
   const blocks = useMemo(() => groupMessages(messages), [messages])
   const last = messages.at(-1)
@@ -290,11 +303,12 @@ export function MessageList({ messages, running, actions }: { messages: ChatMess
             results={results}
             running={running}
             onRegenerate={actions && i === lastAssistantIdx && lastUser ? () => actions.onRegenerate(lastUser.msg.id) : undefined}
+            onFileOpen={onFileOpen}
           />
         ) : b.kind === 'tools' ? (
           <ToolGroup key={b.id} calls={b.calls} results={results} running={running} />
         ) : (
-          <SubagentBlock key={`sub-${i}`} msgs={b.msgs} running={running} />
+          <SubagentBlock key={`sub-${i}`} msgs={b.msgs} running={running} onFileOpen={onFileOpen} />
         ),
       )}
       {thinking ? (

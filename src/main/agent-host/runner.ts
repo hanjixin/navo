@@ -4,7 +4,7 @@ import { Command } from '@langchain/langgraph'
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite'
 import type Database from 'better-sqlite3'
 import { createDeepAgent } from 'deepagents'
-import { ClearToolUsesEdit, contextEditingMiddleware, createMiddleware } from 'langchain'
+import { ClearToolUsesEdit, contextEditingMiddleware, createAgent, createMiddleware, humanInTheLoopMiddleware } from 'langchain'
 import type { PendingInterrupt, ChatEvent, ThreadState, Todo, UIMessage } from '@shared/types'
 import { reasoningOf, textOf, toPendingInterrupt, toTodos, toUIMessage } from '../agent/messages'
 import { TraceHandler } from '../dev/trace'
@@ -109,26 +109,28 @@ export class Runner {
     this.running.get(threadId)?.abort()
   }
 
-  private proxyTools(req: RunRequest): { all: StructuredTool[]; web: StructuredTool[] } {
-    const make = (d: ToolDescriptor) =>
-      tool(
-        async (args: Record<string, unknown>, config?: { toolCall?: { id?: string } }) => {
-          try {
-            return await this.deps.callTool({ runId: req.runId, threadId: req.threadId, name: d.name, args: args ?? {} })
-          } catch (err) {
-            // a failing tool is something the model should see and work around, not the end of the run
-            const content = `工具 ${d.name} 执行失败：${err instanceof Error ? err.message : String(err)}`
-            const id = config?.toolCall?.id
-            return id ? new ToolMessage({ content, tool_call_id: id, name: d.name, status: 'error' }) : content
-          }
-        },
-        {
-          name: d.name,
-          description: d.description,
-          schema: d.schema,
-        },
-      ) as unknown as StructuredTool
-    const all = req.tools.map((d) => ({ d, t: make(d) }))
+  private proxyTool(req: RunRequest, d: ToolDescriptor): StructuredTool {
+    return tool(
+      async (args: Record<string, unknown>, config?: { toolCall?: { id?: string } }) => {
+        try {
+          return await this.deps.callTool({ runId: req.runId, threadId: req.threadId, name: d.name, args: args ?? {} })
+        } catch (err) {
+          // a failing tool is something the model should see and work around, not the end of the run
+          const content = `工具 ${d.name} 执行失败：${err instanceof Error ? err.message : String(err)}`
+          const id = config?.toolCall?.id
+          return id ? new ToolMessage({ content, tool_call_id: id, name: d.name, status: 'error' }) : content
+        }
+      },
+      {
+        name: d.name,
+        description: d.description,
+        schema: d.schema,
+      },
+    ) as unknown as StructuredTool
+  }
+
+  private proxyTools(req: RunRequest, descriptors = req.tools): { all: StructuredTool[]; web: StructuredTool[] } {
+    const all = descriptors.map((d) => ({ d, t: this.proxyTool(req, d) }))
     return { all: all.map((x) => x.t), web: all.filter((x) => ['browser', 'plugin', 'macro'].includes(x.d.source)).map((x) => x.t) }
   }
 
@@ -140,6 +142,18 @@ export class Runner {
     const interruptOn = req.interruptOn.length
       ? Object.fromEntries(req.interruptOn.map((n) => [n, { allowedDecisions: ['approve', 'edit', 'reject'] as ('approve' | 'edit' | 'reject')[] }]))
       : undefined
+    const workgroup = (req.workgroup ?? []).map((member) => ({
+      name: member.name,
+      description: member.description,
+      runnable: createAgent({
+        model: buildChatModel(member.model, [
+          new UsageHandler((usage) => this.deps.usage({ threadId: req.threadId, modelId: member.model.id, model: member.model.model, usage })),
+        ]),
+        tools: member.tools.map((tool) => this.proxyTool(req, tool)),
+        systemPrompt: member.systemPrompt,
+        middleware: [loopGuard(), trimOldToolResults(), ...(interruptOn ? [humanInTheLoopMiddleware({ interruptOn })] : [])],
+      }),
+    }))
     const backend = createRuntimeFilesystem(req, (path) => this.deps.workspaceWrite({ runId: req.runId, threadId: req.threadId, path }))
     return createDeepAgent({
       name: 'navo',
@@ -152,21 +166,24 @@ export class Runner {
       skills: [...req.mounts.map((m) => `/ext/${m.id}/`), ...(req.localSkills == null || req.localSkills.length ? ['/skills/'] : [])],
       interruptOn,
       middleware: [loopGuard(), trimOldToolResults()],
-      subagents: req.browserSubagent
-        ? [
-            {
-              name: 'browser-operator',
-              description: '擅长在本对话的浏览器中完成多步骤网页任务（搜索、填表、翻页采集、下单前准备等）。传入清晰的目标与完成标准，它会返回结果摘要。',
-              systemPrompt:
-                '你是浏览器操作专家。使用 browser_* 工具以及匹配的 plugin_* / macro_* 工具完成任务。按主 Agent 指定的浏览器操作，先用 browser_snapshot 了解页面。切换到用户的 Chrome / Edge 后，只操作已授权标签页，也不要把 browser_tabs 的列表当成整个浏览器的标签页。操作类工具会返回页面变化，无需每步都重新快照。完成后用简洁的中文总结结果与关键数据；遇到登录/验证码/不可逆操作时停止并说明原因。' +
-                // the user's preferences and site experience apply to the subagent's work too
-                (req.memoryPrompt ? `\n\n## 关于用户的记忆（遵循其中的偏好）\n${req.memoryPrompt}` : ''),
-              tools: tools.web,
-              interruptOn,
-              middleware: [loopGuard(), trimOldToolResults()],
-            },
-          ]
-        : [],
+      subagents: [
+        ...(req.browserSubagent
+          ? [
+              {
+                name: 'browser-operator',
+                description: '擅长在本对话的浏览器中完成多步骤网页任务（搜索、填表、翻页采集、下单前准备等）。传入清晰的目标与完成标准，它会返回结果摘要。',
+                systemPrompt:
+                  '你是浏览器操作专家。使用 browser_* 工具以及匹配的 plugin_* / macro_* 工具完成任务。按主 Agent 指定的浏览器操作，先用 browser_snapshot 了解页面。切换到用户的 Chrome / Edge 后，只操作已授权标签页，也不要把 browser_tabs 的列表当成整个浏览器的标签页。操作类工具会返回页面变化，无需每步都重新快照。完成后用简洁的中文总结结果与关键数据；遇到登录/验证码/不可逆操作时停止并说明原因。' +
+                  // the user's preferences and site experience apply to the subagent's work too
+                  (req.memoryPrompt ? `\n\n## 关于用户的记忆（遵循其中的偏好）\n${req.memoryPrompt}` : ''),
+                tools: tools.web,
+                interruptOn,
+                middleware: [loopGuard(), trimOldToolResults()],
+              },
+            ]
+          : []),
+        ...workgroup,
+      ],
     })
   }
 
@@ -180,6 +197,52 @@ export class Runner {
     let interrupted = false
     let error: string | undefined
     const seen = new Set<string>()
+    const taskMembers = new Map<string, string>()
+    const namespaceMembers = new Map<string, string>()
+    const pendingMembers: string[] = []
+    const memberNames = new Map((req.workgroup ?? []).map((member) => [member.name, member.displayName]))
+    const taskStoreKey = `workgroup.tasks.${threadId}`
+    const storedTasks = this.deps.db.prepare('SELECT value FROM kv WHERE key=?').get(taskStoreKey) as { value: string } | undefined
+    const taskDetails = new Map<string, { subtype: string; displayName?: string }>(Object.entries(storedTasks?.value ? JSON.parse(storedTasks.value) : {}))
+    const rememberTaskCalls = (message: BaseMessage): void => {
+      const calls = (message as unknown as { tool_calls?: { id?: string; name: string; args?: Record<string, unknown> }[] }).tool_calls ?? []
+      for (const call of calls) {
+        const subtype = call.name === 'task' && typeof call.args?.subagent_type === 'string' ? call.args.subagent_type : null
+        if (!call.id || !subtype || taskDetails.has(call.id)) continue
+        const detail = { subtype, ...(memberNames.has(subtype) ? { displayName: memberNames.get(subtype) } : {}) }
+        taskDetails.set(call.id, detail)
+        taskMembers.set(call.id, subtype)
+        pendingMembers.push(subtype)
+      }
+      this.deps.db
+        .prepare('INSERT INTO kv(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+        .run(taskStoreKey, JSON.stringify(Object.fromEntries(taskDetails)))
+    }
+    const decorateTaskCalls = (message: UIMessage): void => {
+      for (const call of message.toolCalls ?? []) {
+        const member = call.name === 'task' ? taskDetails.get(call.id) : undefined
+        if (!member || !member.displayName) continue
+        call.activity = { ...call.activity, kind: call.activity?.kind ?? 'tool', label: t('委派给 {{v0}}', { v0: member.displayName }) }
+      }
+    }
+    const memberForNamespace = (namespace: string[]): string | undefined => {
+      const key = namespace.join('|')
+      const assigned = namespaceMembers.get(key)
+      if (assigned) return memberNames.get(assigned) ?? assigned
+      for (const part of namespace) {
+        if (!part.startsWith('tools:')) continue
+        const member = taskMembers.get(part.slice('tools:'.length))
+        if (member) {
+          namespaceMembers.set(key, member)
+          return memberNames.get(member) ?? member
+        }
+      }
+      const pending = pendingMembers.shift()
+      if (!pending) return undefined
+      namespaceMembers.set(key, pending)
+      taskMembers.set(namespace.find((part) => part.startsWith('tools:'))?.slice('tools:'.length) ?? key, pending)
+      return memberNames.get(pending) ?? pending
+    }
     let traceUrl: string | undefined
     const tracing = await startTracing(req).catch((err) => {
       console.error('[langfuse] tracing disabled for this run:', err)
@@ -230,14 +293,16 @@ export class Runner {
         const [namespace, mode, data] = chunk
         // subagents run inside the `tools` node, so their namespace contains a `tools:<id>` segment
         const ns = namespace.filter((n) => n.startsWith('tools:')).join('|')
+        const agentName = ns ? memberForNamespace(namespace) : undefined
         if (mode === 'messages') {
           const [msg] = data as [BaseMessage & { additional_kwargs?: Record<string, unknown> }, unknown]
           const type = (msg as unknown as { type?: string }).type ?? (msg as unknown as { _getType?: () => string })._getType?.()
           if ((type === 'ai' || type === 'AIMessageChunk') && msg.id) {
+            rememberTaskCalls(msg)
             const r = reasoningOf(msg.content, msg.additional_kwargs)
-            if (r) emit({ type: 'token', threadId, messageId: msg.id, text: r, ns, reasoning: true })
+            if (r) emit({ type: 'token', threadId, messageId: msg.id, text: r, ns, agentName, reasoning: true })
             const t = textOf(msg.content)
-            if (t) emit({ type: 'token', threadId, messageId: msg.id, text: t, ns })
+            if (t) emit({ type: 'token', threadId, messageId: msg.id, text: t, ns, agentName })
           }
           continue
         }
@@ -253,8 +318,15 @@ export class Runner {
           const u = (update ?? {}) as { messages?: unknown; todos?: unknown }
           if (Array.isArray(u.messages)) {
             for (const m of u.messages as BaseMessage[]) {
+              rememberTaskCalls(m)
               const ui = toUIMessage(m, ns)
               if (!ui || seen.has(ui.id + ui.role)) continue
+              decorateTaskCalls(ui)
+              if (agentName) ui.agentName = agentName
+              const rawName = (m as unknown as { name?: string; additional_kwargs?: { agent_name?: string; lc_agent_name?: string } }).name
+              const advertised = (m as unknown as { additional_kwargs?: { agent_name?: string; lc_agent_name?: string } }).additional_kwargs
+              const declared = rawName ?? advertised?.agent_name ?? advertised?.lc_agent_name
+              if (declared && memberNames.has(declared)) ui.agentName = memberNames.get(declared)
               seen.add(ui.id + ui.role)
               if (ui.role === 'user' && !ns) continue // emitted by the main process on send
               emit({ type: 'message', threadId, message: ui })
@@ -292,7 +364,19 @@ export class Runner {
   async state(threadId: string): Promise<Omit<ThreadState, 'running'>> {
     const tuple = await this.saver.getTuple({ configurable: { thread_id: threadId } })
     const values = (tuple?.checkpoint.channel_values ?? {}) as { messages?: BaseMessage[]; todos?: unknown }
-    const messages = (values.messages ?? []).map((m) => toUIMessage(m)).filter((m): m is UIMessage => !!m)
+    const stored = this.deps.db.prepare('SELECT value FROM kv WHERE key=?').get(`workgroup.tasks.${threadId}`) as { value: string } | undefined
+    const tasks = new Map<string, { subtype: string; displayName?: string }>(Object.entries(stored?.value ? JSON.parse(stored.value) : {}))
+    const messages = (values.messages ?? [])
+      .map((m) => toUIMessage(m))
+      .filter((m): m is UIMessage => !!m)
+      .map((message) => {
+        for (const call of message.toolCalls ?? []) {
+          const member = call.name === 'task' ? tasks.get(call.id) : undefined
+          if (member?.displayName)
+            call.activity = { ...call.activity, kind: call.activity?.kind ?? 'tool', label: t('委派给 {{v0}}', { v0: member.displayName }) }
+        }
+        return message
+      })
     const interruptWrite = tuple?.pendingWrites?.find(([, channel]) => channel === '__interrupt__')
     return { messages, todos: toTodos(values.todos) ?? [], interrupt: interruptWrite ? toPendingInterrupt(interruptWrite[2]) : null }
   }

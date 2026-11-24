@@ -3,6 +3,7 @@ import { Streamdown } from 'streamdown'
 import { code } from '@streamdown/code'
 import { cjk } from '@streamdown/cjk'
 import { cn } from '@/lib/utils'
+import { fileReferenceFromHref, rehypeFileLinks } from '@shared/file-link'
 import { t } from '@shared/i18n'
 
 const plugins = { code, cjk }
@@ -33,21 +34,45 @@ const translations = {
   zoomOut: t('缩小'),
 }
 
-export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+export const Markdown = memo(function Markdown({
+  text,
+  className,
+  onFileOpen,
+}: {
+  text: string
+  className?: string
+  onFileOpen?: (path: string) => void | Promise<void>
+}) {
   return (
     <Streamdown
       className={cn('prose-chat', className)}
       plugins={plugins}
       controls={{ code: true, table: true, image: true }}
       linkSafety={{ enabled: false }}
+      rehypePlugins={onFileOpen ? [rehypeFileLinks] : undefined}
       translations={translations}
       data-testid="markdown"
       components={{
-        a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noreferrer">
-            {children}
-          </a>
-        ),
+        a: ({ href, children }) => {
+          const path = fileReferenceFromHref(href)
+          return path ? (
+            <a
+              href={href}
+              title={t('打开文件：{{v0}}', { v0: path })}
+              className="navo-file-link"
+              onClick={(event) => {
+                event.preventDefault()
+                void onFileOpen?.(path)
+              }}
+            >
+              {children}
+            </a>
+          ) : (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          )
+        },
       }}
     >
       {text}
