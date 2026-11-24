@@ -5,7 +5,7 @@ import type { DiscoveredMcp, McpServer, McpStatus, McpTransport } from '@shared/
 import { Page, PageHeader } from '@/components/layout/page'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardGrid } from '@/components/ui/card'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Field, Input, Textarea } from '@/components/ui/input'
@@ -349,6 +349,8 @@ export function McpPage() {
   const [importing, setImporting] = useState(false)
   const [discovering, setDiscovering] = useState(false)
   const [tab, setTab] = useState<'servers' | 'expose'>('servers')
+  const [query, setQuery] = useState('')
+  const filtered = servers.data?.filter((s) => s.name.toLowerCase().includes(query.trim().toLowerCase()))
   const [expanded, setExpanded] = useState<string | null>(null)
 
   useEffect(() => {
@@ -370,23 +372,23 @@ export function McpPage() {
     <Page>
       <PageHeader
         title="MCP"
+        count={tab === 'servers' ? servers.data?.length : undefined}
+        search={tab === 'servers' ? { label: t('搜索 MCP 服务器'), value: query, onChange: setQuery } : undefined}
+        more={
+          tab === 'servers'
+            ? [
+                { label: t('导入 JSON'), icon: FileJson, run: () => setImporting(true) },
+                { label: t('扫描本机'), icon: Radar, run: () => setDiscovering(true) },
+              ]
+            : undefined
+        }
         description={t('连接 MCP 服务器为 Navo 扩展工具；也可以把 Navo 自身作为 MCP 服务提供给其他 Agent。')}
         actions={
-          tab === 'servers' && servers.data?.length ? (
-            <>
-              <Button variant="secondary" onClick={() => setDiscovering(true)}>
-                <Radar />
-                {t('扫描本机')}
-              </Button>
-              <Button variant="secondary" onClick={() => setImporting(true)}>
-                <FileJson />
-                {t('导入 JSON')}
-              </Button>
-              <Button variant="primary" onClick={() => setEditing('new')}>
-                <Plus />
-                {t('添加服务器')}
-              </Button>
-            </>
+          tab === 'servers' ? (
+            <Button variant="primary" size="sm" onClick={() => setEditing('new')}>
+              <Plus />
+              {t('添加服务器')}
+            </Button>
           ) : null
         }
       />
@@ -403,63 +405,71 @@ export function McpPage() {
         </TabsList>
         <TabsContent value="servers">
           <AsyncView
-            state={servers}
+            state={{ ...servers, data: filtered }}
             loading={<ListSkeleton rows={3} />}
             empty={
-              <Card>
-                <EmptyState
-                  icon={Server}
-                  title={t('还没有 MCP 服务器')}
-                  description={t('从 .agents、Claude Code、Cursor、Codex 等工具的配置中一键导入，或手动添加本地 stdio / 远程 HTTP 服务器。')}
-                  action={
-                    <div className="flex gap-2">
-                      <Button variant="primary" onClick={() => setDiscovering(true)}>
-                        <Radar />
-                        {t('扫描本机')}
-                      </Button>
-                      <Button variant="secondary" onClick={() => setEditing('new')}>
-                        {t('手动添加')}
-                      </Button>
-                    </div>
-                  }
-                />
-              </Card>
+              servers.data?.length ? (
+                <p className="py-5 text-center text-sm text-muted-foreground">{t('没有匹配的服务器')}</p>
+              ) : (
+                <Card>
+                  <EmptyState
+                    icon={Server}
+                    title={t('还没有 MCP 服务器')}
+                    description={t('从 .agents、Claude Code、Cursor、Codex 等工具的配置中一键导入，或手动添加本地 stdio / 远程 HTTP 服务器。')}
+                    action={
+                      <div className="flex gap-2">
+                        <Button variant="primary" onClick={() => setDiscovering(true)}>
+                          <Radar />
+                          {t('扫描本机')}
+                        </Button>
+                        <Button variant="secondary" onClick={() => setEditing('new')}>
+                          {t('手动添加')}
+                        </Button>
+                      </div>
+                    }
+                  />
+                </Card>
+              )
             }
           >
             {(list) => (
-              <div className="grid gap-2">
+              <CardGrid>
                 {list.map((s) => {
                   const st = status[s.id]
                   const info = stateInfo(s.enabled ? st : undefined)
                   const open = expanded === s.id
                   return (
-                    <Card key={s.id} className="animate-fade-in">
-                      <div className="flex items-center gap-3 px-4 py-3">
+                    <Card key={s.id} className="min-w-0 animate-fade-in">
+                      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2 gap-y-1 p-3">
+                        <div className="col-span-2 flex min-w-0 items-center gap-2">
+                          <Server className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-sm font-medium" title={s.name}>
+                            {s.name}
+                          </span>
+                          <Badge variant="outline">{s.transport}</Badge>
+                        </div>
+                        <div className="col-span-3 row-start-2 truncate font-mono text-xs text-muted-foreground">
+                          {s.transport === 'stdio' ? `${s.command} ${(s.args ?? []).join(' ')}` : s.url}
+                        </div>
                         <button
                           onClick={() => setExpanded(open ? null : s.id)}
-                          className="interactive -ml-1 rounded-sm p-1 text-subtle-foreground hover:text-foreground"
-                          aria-label={t('展开')}
+                          className="interactive col-span-2 row-start-3 -ml-1 flex min-h-7 items-center gap-1.5 justify-self-start rounded-sm px-1 text-xs text-muted-foreground enabled:hover:bg-accent"
+                          aria-expanded={open}
                           disabled={!st?.tools.length}
                         >
-                          <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
-                        </button>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{s.name}</span>
-                            <Badge variant="outline">{s.transport}</Badge>
-                          </div>
-                          <div className="truncate font-mono text-xs text-muted-foreground">
-                            {s.transport === 'stdio' ? `${s.command} ${(s.args ?? []).join(' ')}` : s.url}
-                          </div>
-                        </div>
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <StatusDot status={info.dot} />
                           {info.label}
-                        </span>
-                        <Switch checked={s.enabled} onCheckedChange={(v) => void toggle(s, v)} aria-label={t('启用')} />
+                          {st?.tools.length ? <ChevronRight className={cn('size-3.5', open && 'rotate-90')} /> : null}
+                        </button>
+                        <Switch
+                          className="col-start-3 row-start-3 justify-self-end"
+                          checked={s.enabled}
+                          onCheckedChange={(v) => void toggle(s, v)}
+                          aria-label={t('启用')}
+                        />
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon-sm" aria-label={t('更多')}>
+                            <Button variant="ghost" size="icon-sm" className="col-start-3 row-start-1 justify-self-end" aria-label={t('更多')}>
                               <MoreHorizontal />
                             </Button>
                           </DropdownMenuTrigger>
@@ -488,9 +498,9 @@ export function McpPage() {
                       {open && st?.tools.length ? (
                         <div className="grid animate-fade-in gap-px border-t border-border px-4 py-2">
                           {st.tools.map((t) => (
-                            <div key={t.name} className="flex gap-3 py-1.5 text-xs">
-                              <span className="w-64 shrink-0 truncate font-mono font-medium">{t.name}</span>
-                              <span className="line-clamp-2 text-muted-foreground">{t.description}</span>
+                            <div key={t.name} className="grid min-w-0 gap-0.5 py-1 text-xs">
+                              <span className="font-mono font-medium break-all">{t.name}</span>
+                              <span className="line-clamp-2 break-words text-muted-foreground">{t.description}</span>
                             </div>
                           ))}
                         </div>
@@ -498,7 +508,7 @@ export function McpPage() {
                     </Card>
                   )
                 })}
-              </div>
+              </CardGrid>
             )}
           </AsyncView>
         </TabsContent>

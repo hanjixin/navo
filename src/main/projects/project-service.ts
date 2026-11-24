@@ -1,11 +1,20 @@
-import type { Project, ProjectInput, ProjectSummary, ProjectDetail, Thread } from '@shared/types'
+import type { Project, ProjectInput, ProjectSummary, ProjectDetail, Thread, ProjectAgentBinding, AgentProfile, AgentInfrastructure } from '@shared/types'
 import { db } from '../core/db'
 import { newId } from '../core/id'
 import { emit } from '../core/ipc'
 import { validateWorkingDirectory } from './workspace-directory'
 import { t } from '@shared/i18n'
+import { SYSTEM_AGENT_ID, systemAgentDefaults } from '@shared/agent-templates'
 
-type Row = { id: string; name: string; description: string; created_at: number; updated_at: number; working_directory: string | null }
+type Row = {
+  id: string
+  name: string
+  description: string
+  created_at: number
+  updated_at: number
+  working_directory: string | null
+  default_agent_id: string | null
+}
 
 const toProject = (r: Row): Project => ({
   workingDirectory: r.working_directory ?? null,
@@ -14,6 +23,7 @@ const toProject = (r: Row): Project => ({
   description: r.description,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  defaultAgentId: r.default_agent_id ?? null,
 })
 
 type SummaryRow = Row & { thread_count: number; artifact_count: number; last_activity_at: number }
@@ -49,7 +59,43 @@ class ProjectService {
         'SELECT id, title, model_id AS modelId, runtime_id AS runtimeId, project_id AS projectId, created_at AS createdAt, updated_at AS updatedAt FROM threads WHERE project_id=? AND hidden=0 ORDER BY updated_at DESC',
       )
       .all(id) as Thread[]
-    return { ...project, threads }
+    return { ...project, threads, agents: this.agents(id) }
+  }
+
+  agents(projectId: string): ProjectAgentBinding[] {
+    const rows = db()
+      .prepare(
+        'SELECT a.*, pa.role FROM project_agents pa JOIN agents a ON a.id=pa.agent_id WHERE pa.project_id=? ORDER BY pa.is_coordinator DESC, pa.agent_id',
+      )
+      .all(projectId) as (AgentRow & { role: 'coordinator' | 'member' })[]
+    return rows.flatMap((row) => {
+      const agent = toAgent(row)
+      return agent ? [{ agent, role: row.role }] : []
+    })
+  }
+
+  defaultAgentId(projectId: string): string | null {
+    return this.basic(projectId)?.defaultAgentId ?? null
+  }
+
+  setAgents(projectId: string, defaultAgentId: string | null, agentIds: string[]): ProjectAgentBinding[] {
+    if (!this.exists(projectId)) throw new Error(t('项目不存在'))
+    const ids = [...new Set(agentIds)]
+    if (defaultAgentId && !ids.includes(defaultAgentId)) ids.unshift(defaultAgentId)
+    const agents = ids.map((id) => db().prepare('SELECT id FROM agents WHERE id=?').get(id) as { id: string } | undefined)
+    if (agents.some((agent) => !agent)) throw new Error(t('智能体不存在'))
+    const coordinator = defaultAgentId ?? null
+    const apply = () => {
+      db().prepare('DELETE FROM project_agents WHERE project_id=?').run(projectId)
+      const insert = db().prepare('INSERT INTO project_agents(project_id,agent_id,role,is_coordinator) VALUES(?,?,?,?)')
+      for (const id of ids) insert.run(projectId, id, id === coordinator ? 'coordinator' : 'member', id === coordinator ? 1 : 0)
+      db().prepare('UPDATE projects SET default_agent_id=?, updated_at=? WHERE id=?').run(coordinator, Date.now(), projectId)
+    }
+    if (typeof db().transaction === 'function') db().transaction(apply)()
+    else apply()
+    emit('projects.changed')
+    emit('threads.changed')
+    return this.agents(projectId)
   }
 
   exists(id: string): boolean {
@@ -94,6 +140,43 @@ class ProjectService {
     emit('projects.changed')
     emit('threads.changed')
     emit('artifacts.changed')
+  }
+}
+
+type AgentRow = {
+  id: string
+  name: string
+  description: string
+  instructions: string
+  runtime_id: string
+  model_id: string | null
+  infrastructure: string
+  created_at: number
+  updated_at: number
+}
+
+function toAgent(row: AgentRow): AgentProfile | null {
+  if (!row) return null
+  const defaults = row.id === SYSTEM_AGENT_ID && !row.name ? systemAgentDefaults() : null
+  return {
+    id: row.id,
+    templateId: null,
+    name: row.name || defaults?.name || row.id,
+    description: row.description || defaults?.description || '',
+    instructions: row.instructions || defaults?.instructions || '',
+    runtimeId: row.runtime_id,
+    modelId: row.model_id,
+    infrastructure: parseInfrastructure(row.infrastructure),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function parseInfrastructure(value: string): AgentInfrastructure {
+  try {
+    return JSON.parse(value) as AgentInfrastructure
+  } catch {
+    return { skillIds: [], mcpServerIds: [], connectorIds: [], pluginIds: [] }
   }
 }
 export const projects = new ProjectService()

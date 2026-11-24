@@ -359,6 +359,7 @@ export function TasksPage() {
     <Page>
       <PageHeader
         title={t('任务')}
+        count={tasks.data?.length}
         description={t('保存常用的 Agent 任务，手动或按计划在后台运行。')}
         actions={
           <Button variant="primary" onClick={() => setEditing('new')}>

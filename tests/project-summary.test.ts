@@ -19,6 +19,25 @@ afterEach(() => {
 })
 
 describe('project summaries and details', () => {
+  it('binds a default agent and workgroup members to a project', () => {
+    const project = projects.save({ name: 'Agent project' })
+    for (const [id, name] of [
+      ['lead', 'Lead'],
+      ['member', 'Member'],
+    ])
+      state.db
+        .prepare('INSERT INTO agents(id,name,description,instructions,runtime_id,model_id,infrastructure,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
+        .run(id, name, '', '', 'builtin', null, JSON.stringify({ skillIds: [], mcpServerIds: [], connectorIds: [], pluginIds: [] }), 1, 1)
+    const bindings = projects.setAgents(project.id, 'lead', ['lead', 'member'])
+    expect(bindings.map((binding) => [binding.agent.id, binding.role])).toEqual([
+      ['lead', 'coordinator'],
+      ['member', 'member'],
+    ])
+    expect(projects.get(project.id)?.defaultAgentId).toBe('lead')
+    expect(projects.get(project.id)?.agents.map((binding) => binding.agent.name)).toEqual(['Lead', 'Member'])
+    expect(() => projects.setAgents(project.id, 'missing', [])).toThrow('智能体不存在')
+  })
+
   it('computes counts without multiplying artifacts by threads and excludes hidden conversations', () => {
     const p = projects.save({ name: 'Project' })
     state.db.prepare('INSERT INTO threads(id,title,created_at,updated_at,project_id,hidden) VALUES(?,?,?,?,?,?)').run('a', 'A', 1, 10, p.id, 0)

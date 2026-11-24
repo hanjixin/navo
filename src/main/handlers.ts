@@ -32,6 +32,7 @@ import { voice } from './voice/voice-service'
 import { resolveLanguage } from './core/language'
 import { outputs } from './outputs/outputs-service'
 import { projects } from './projects/project-service'
+import { agentProfiles } from './agents/agent-profile-service'
 import { projectFiles } from './projects/project-files'
 import { traces } from './dev/traces-store'
 import { files } from './files/file-service'
@@ -80,6 +81,16 @@ export function registerHandlers(): void {
         request,
       })),
     ],
+    'agents.list': () => agentProfiles.list(),
+    'agents.get': (id) => agentProfiles.get(id),
+    'agents.save': (input) => agentProfiles.save(input),
+    'agents.addTemplate': (id) => agentProfiles.addTemplate(id),
+    'agents.addTemplateTeam': (id) => agentProfiles.addTemplateTeam(id),
+    'agents.delete': (id) => agentProfiles.delete(id),
+    'agents.start': (id, projectId) => {
+      const profile = agentProfiles.snapshot(id)
+      return agent.createThread(profile.modelId, { projectId, runtimeId: profile.runtimeId, agent: profile })
+    },
     'providers.list': () => providers.list(),
     'providers.save': (input) => providers.save(input),
     'providers.delete': (id) => providers.delete(id),
@@ -114,6 +125,8 @@ export function registerHandlers(): void {
     'projects.get': (id) => projects.get(id),
     'projects.save': (input) => projects.save(input),
     'projects.delete': (id) => projects.delete(id),
+    'projects.agents': (id) => projects.agents(id),
+    'projects.setAgents': (id, defaultAgentId, agentIds) => projects.setAgents(id, defaultAgentId, agentIds),
     'threads.rename': (id, title) => agent.renameThread(id, title),
     'threads.delete': (id) => agent.deleteThread(id),
     'threads.setModel': (id, modelId) => agent.setThreadModel(id, modelId),

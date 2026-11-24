@@ -281,8 +281,9 @@ class ConnectorService {
       .filter(isWriteTool)
   }
 
-  tools(): StructuredToolInterface[] {
-    return [...this.live.values()].flatMap((l) => l.tools)
+  tools(allowedIds?: string[]): StructuredToolInterface[] {
+    const allowed = allowedIds ? new Set(allowedIds) : null
+    return [...this.live].filter(([id]) => !allowed || allowed.has(id)).flatMap(([, live]) => live.tools)
   }
 
   async closeAll(): Promise<void> {

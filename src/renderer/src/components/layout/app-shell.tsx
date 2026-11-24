@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Brain,
+  Bot,
   FolderOpen,
   FolderKanban,
   FileBox,
@@ -63,6 +64,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: t('能力'),
     items: [
+      { to: '/agents', label: t('智能体'), icon: Bot },
       { to: '/skills', label: 'Skill', icon: Sparkles },
       { to: '/connectors', label: t('连接器'), icon: Plug },
       { to: '/mcp', label: 'MCP', icon: Server },

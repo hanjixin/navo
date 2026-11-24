@@ -323,39 +323,43 @@ export class PluginService {
   }
 
   /** Tools for plugins that match the given tab, rebuilt every agent run. */
-  tools(getTab: () => WebContents = () => browser.active()): StructuredToolInterface[] {
+  tools(getTab: () => WebContents = () => browser.active(), allowedIds?: string[]): StructuredToolInterface[] {
     const url = getTab().getURL()
-    return this.matching(url).flatMap((p) => {
-      let snapshot: PluginSnapshot
-      try {
-        snapshot = this.snapshot(p.id)
-      } catch {
-        return []
-      }
-      return snapshot.plugin.actions.map((a) =>
-        tool(
-          async (args: Record<string, unknown>) => {
-            const wc = getTab()
-            const page = { url: wc.getURL(), epoch: this.document(wc).epoch }
-            this.assertAction(p.id, a.name, wc, snapshot.generation, page)
-            await browser.setControlled(wc, true)
-            this.assertAction(p.id, a.name, wc, snapshot.generation, page)
-            const res = await this.runAction(p.id, a.name, args ?? {}, wc, snapshot.generation, page)
-            return typeof res === 'string' ? res : JSON.stringify(res ?? null, null, 2)
-          },
-          {
-            name: `plugin_${p.id.replace(/-/g, '_')}_${a.name}`.slice(0, 64),
-            description: `[站点插件 ${p.name}] ${a.description}`,
-            schema: a.parameters as Record<string, unknown>,
-          },
-        ),
-      )
-    }) as StructuredToolInterface[]
+    const allowed = allowedIds ? new Set(allowedIds) : null
+    return this.matching(url)
+      .filter((p) => !allowed || allowed.has(p.id))
+      .flatMap((p) => {
+        let snapshot: PluginSnapshot
+        try {
+          snapshot = this.snapshot(p.id)
+        } catch {
+          return []
+        }
+        return snapshot.plugin.actions.map((a) =>
+          tool(
+            async (args: Record<string, unknown>) => {
+              const wc = getTab()
+              const page = { url: wc.getURL(), epoch: this.document(wc).epoch }
+              this.assertAction(p.id, a.name, wc, snapshot.generation, page)
+              await browser.setControlled(wc, true)
+              this.assertAction(p.id, a.name, wc, snapshot.generation, page)
+              const res = await this.runAction(p.id, a.name, args ?? {}, wc, snapshot.generation, page)
+              return typeof res === 'string' ? res : JSON.stringify(res ?? null, null, 2)
+            },
+            {
+              name: `plugin_${p.id.replace(/-/g, '_')}_${a.name}`.slice(0, 64),
+              description: `[站点插件 ${p.name}] ${a.description}`,
+              schema: a.parameters as Record<string, unknown>,
+            },
+          ),
+        )
+      }) as StructuredToolInterface[]
   }
 
   /** Short description for the system prompt so the model knows plugins exist for other sites too. */
-  describe(): string {
-    const list = this.list().filter((p) => p.enabled && !p.error)
+  describe(allowedIds?: string[]): string {
+    const allowed = allowedIds ? new Set(allowedIds) : null
+    const list = this.list().filter((p) => p.enabled && !p.error && (!allowed || allowed.has(p.id)))
     if (!list.length) return ''
     return list.map((p) => `- ${p.name}（${p.matches.join(', ')}）: ${p.actions.map((a) => a.name).join(', ')}`).join('\n')
   }

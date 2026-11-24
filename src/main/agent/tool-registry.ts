@@ -17,6 +17,7 @@ import { SANDBOX } from '../external-browser/targets'
 import { createDesktopTools } from '../desktop/tools'
 import { RUN_COMMAND, runtimeFileTools } from '../agent-runtime/file-tools'
 import type { RuntimeFilesystemConfig } from '../agent-runtime/filesystem'
+import type { AgentInfrastructure, AgentProfile } from '@shared/types'
 
 export interface ToolEntry {
   tool: StructuredToolInterface
@@ -55,6 +56,7 @@ export function collectTools(
   workspaceRoot?: string,
   filesystem?: RuntimeFilesystemConfig,
   commandSignal?: AbortSignal,
+  infrastructure?: AgentInfrastructure,
 ): ToolEntry[] {
   const myBrowser = getSettings().computerUse.myBrowser
   const builtin = myBrowser ? (t: StructuredToolInterface) => builtinOnly(t, ctx.threadId ?? SANDBOX) : (t: StructuredToolInterface) => t
@@ -67,10 +69,10 @@ export function collectTools(
           source: 'desktop' as const,
         }))
       : []),
-    ...plugins.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'plugin' as const })),
+    ...plugins.tools(ctx.tab, infrastructure?.pluginIds).map((tool) => ({ tool: builtin(tool), source: 'plugin' as const })),
     ...recorder.tools(ctx.tab).map((tool) => ({ tool: builtin(tool), source: 'macro' as const })),
-    ...mcp.tools(ctx.projectId).map((tool) => ({ tool, source: 'mcp' as const })),
-    ...connectors.tools().map((tool) => ({ tool, source: 'connector' as const })),
+    ...mcp.tools(ctx.projectId, infrastructure?.mcpServerIds).map((tool) => ({ tool, source: 'mcp' as const })),
+    ...connectors.tools(infrastructure?.connectorIds).map((tool) => ({ tool, source: 'connector' as const })),
     ...navoTools(ctx.threadId),
     ...(ctx.threadId ? [{ source: 'navo' as const, tool: exportFileTool(ctx.threadId, workspaceRoot) }] : []),
     ...(filesystem ? runtimeFileTools(filesystem, commandSignal).map((tool) => ({ tool, source: 'navo' as const })) : []),
@@ -128,14 +130,16 @@ export function systemPrompt(
   project?: { name: string; description: string },
   workspaceRoot?: string,
   browserSubagent = true,
+  agent?: AgentProfile,
 ): string {
   const s = getSettings()
-  const pluginList = plugins.describe()
+  const pluginList = plugins.describe(agent?.infrastructure.pluginIds)
   return `你是 Navo —— 一个会自己上网干活的桌面 AI 助手，能够控制一个内置浏览器、调用 MCP/连接器工具、使用 Skill，并通过文件系统管理工作文件。
 当前时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}
 回答使用用户提问所用的语言（用户用英文就用英文回答）${language() === 'en' ? '；用户的界面是英文，无法判断时用英文' : ''}。
 ${page ? `${page.mine ? '本对话使用用户自己浏览器中的标签页' : '本对话使用的浏览器标签页'}: ${page.title} (${page.url})` : ''}
 ${project ? `\n## 当前项目\n项目名称：${project.name}\n${project.description ? `项目描述：${project.description}\n` : ''}本项目用于组织当前对话及其产物。` : ''}
+${agent ? `\n## 当前智能体\n名称：${agent.name}\n${agent.description ? `职责：${agent.description}\n` : ''}${agent.instructions ? `执行指令：\n${agent.instructions}` : ''}` : ''}
 
 ## 浏览器操作准则
 - 网页导航、读取和操作使用 Navo 的 browser_* 工具。不要用 node_repl、Shell 或环境变量探测来查找浏览器连接或绕过标签页授权。

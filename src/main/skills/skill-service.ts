@@ -94,7 +94,7 @@ export const skills = {
 
   /** Mounts for the agent backend: only enabled, non-shadowed external skills are visible. */
   /** Enabled external Skill mounts, optionally filtered by a project's local deny list. */
-  mounts(projectId?: string | null): { id: string; root: string; allowed: Set<string> }[] {
+  mounts(projectId?: string | null, allowedIds?: string[]): { id: string; root: string; allowed: Set<string> }[] {
     const localNames = new Set(
       listLocal()
         .filter((s) => s.enabled)
@@ -102,15 +102,30 @@ export const skills = {
     )
     const off = disabledExternal()
     const projectOff = projectId ? new Set(kv.get<string[]>(`project.skills.disabled.${projectId}`, [])) : new Set<string>()
+    const allowed = allowedIds ? new Set(allowedIds) : null
     return scanSources()
       .map((m) => ({
         id: m.id,
         root: m.root,
         allowed: new Set(
-          m.skills.filter((s) => !off.has(extId(m.id, s.dir)) && !projectOff.has(extId(m.id, s.dir)) && !localNames.has(s.name)).map((s) => s.dir),
+          m.skills
+            .filter(
+              (s) =>
+                !off.has(extId(m.id, s.dir)) && !projectOff.has(extId(m.id, s.dir)) && !localNames.has(s.name) && (!allowed || allowed.has(extId(m.id, s.dir))),
+            )
+            .map((s) => s.dir),
         ),
       }))
       .filter((m) => m.allowed.size > 0)
+  },
+
+  /** null means the ordinary global set; an array is an agent's explicit local Skill allow-list. */
+  localAllowed(allowedIds?: string[]): string[] | null {
+    if (!allowedIds) return null
+    const allowed = new Set(allowedIds)
+    return listLocal()
+      .filter((skill) => skill.enabled && allowed.has(skill.id))
+      .map((skill) => skill.id)
   },
 
   /** Enable or disable one read-only external Skill for a project. */

@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import type { ChatEvent, Decision, Thread, ThreadState } from '@shared/types'
+import type { AgentProfile, ChatEvent, Decision, Thread, ThreadState } from '@shared/types'
 import { buildAttachmentContext } from '../files/attachments'
 import { flows } from '../flows/flows'
 import { trace } from '../flows/trace'
@@ -35,6 +35,7 @@ import { finishToolAudit, startToolAudit } from './tool-audit'
 import { targets } from '../external-browser/instance'
 import { computerUse } from '../computer-use'
 import { projects } from '../projects/project-service'
+import { agentProfiles } from '../agents/agent-profile-service'
 import { projectFiles } from '../projects/project-files'
 import { drafts } from '../chat/drafts'
 import { submissions, submissionPayload } from '../chat/submissions'
@@ -48,6 +49,7 @@ interface ThreadRow {
   updated_at: number
   project_id: string | null
   runtime_id: string
+  agent_id: string | null
 }
 
 const toThread = (r: ThreadRow): Thread => ({
@@ -58,6 +60,7 @@ const toThread = (r: ThreadRow): Thread => ({
   updatedAt: r.updated_at,
   projectId: r.project_id ?? null,
   runtimeId: r.runtime_id ?? 'builtin',
+  agentId: r.agent_id ?? null,
 })
 const RESET = '__reset__'
 
@@ -270,17 +273,35 @@ export class AgentService {
     return r ? toThread(r) : null
   }
 
-  createThread(modelId?: string | null, opts: { title?: string; hidden?: boolean; projectId?: string | null; runtimeId?: string } = {}): Thread {
-    const profile = this.registry.capture(opts.runtimeId)
-    const capabilities = this.registry.info(profile.id).capabilities
-    if (capabilities.requiresNavoModel ?? capabilities.navoTools) modelId = resolveModel(modelId).id ?? modelId
+  createThread(
+    modelId?: string | null,
+    opts: { title?: string; hidden?: boolean; projectId?: string | null; runtimeId?: string; agent?: AgentProfile | null } = {},
+  ): Thread {
     if (opts.projectId != null && !projects.exists(opts.projectId)) throw new Error(t('项目不存在'))
     const id = newId()
     const now = Date.now()
+    const projectAgentId = opts.projectId && !opts.agent && typeof projects.defaultAgentId === 'function' ? projects.defaultAgentId(opts.projectId) : null
+    const agentConfig = opts.agent ? structuredClone(opts.agent) : projectAgentId ? agentProfiles.snapshot(projectAgentId) : null
+    const profile = this.registry.capture(agentConfig?.runtimeId ?? opts.runtimeId)
+    const capabilities = this.registry.info(profile.id).capabilities
+    if (capabilities.requiresNavoModel ?? capabilities.navoTools) modelId = resolveModel(modelId ?? agentConfig?.modelId).id ?? modelId ?? agentConfig?.modelId
+    if (agentConfig && (agentConfig.runtimeId !== profile.id || agentConfig.modelId !== (modelId ?? null))) throw new Error(t('智能体执行配置不一致'))
     db().transaction(() => {
       db()
-        .prepare('INSERT INTO threads(id, title, model_id, created_at, updated_at, hidden, project_id) VALUES(?, ?, ?, ?, ?, ?, ?)')
-        .run(id, opts.title ?? '新对话', modelId ?? null, now, now, opts.hidden ? 1 : 0, opts.projectId ?? null)
+        .prepare(
+          'INSERT INTO threads(id, title, model_id, created_at, updated_at, hidden, project_id, agent_id, agent_config) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          id,
+          opts.title ?? agentConfig?.name ?? '新对话',
+          modelId ?? null,
+          now,
+          now,
+          opts.hidden ? 1 : 0,
+          opts.projectId ?? null,
+          agentConfig?.id ?? null,
+          agentConfig ? JSON.stringify(agentConfig) : null,
+        )
       this.registry.bind(id, profile)
     })()
     if (!opts.hidden) {
@@ -415,8 +436,10 @@ export class AgentService {
       const existing = input.threadId ? this.getThread(threadId) : null
       if (input.threadId && !existing) throw new Error(t('会话不存在'))
       if (submissions.execution(threadId)?.phase === 'waiting_approval') throw new Error('Resolve the pending approval before sending')
-      const requestedModelId = input.modelId ?? existing?.modelId ?? null
-      const profile = existing ? this.registry.profile(threadId) : this.registry.capture(input.runtimeId)
+      const projectAgentId = !existing && input.projectId && typeof projects.defaultAgentId === 'function' ? projects.defaultAgentId(input.projectId) : null
+      const projectAgent = projectAgentId ? agentProfiles.snapshot(projectAgentId) : null
+      const requestedModelId = input.modelId ?? projectAgent?.modelId ?? existing?.modelId ?? null
+      const profile = existing ? this.registry.profile(threadId) : this.registry.capture(projectAgent?.runtimeId ?? input.runtimeId)
       // New drafts show the default model before an explicit selection. Capture that
       // model at acceptance; legacy Pi conversations must still select a model.
       const model = this.model(profile, requestedModelId, !existing || profile.kind === 'builtin')
@@ -449,8 +472,17 @@ export class AgentService {
       db().transaction(() => {
         if (!existing)
           db()
-            .prepare('INSERT INTO threads(id,title,model_id,created_at,updated_at,hidden,project_id) VALUES(?,?,?,?,?,0,?)')
-            .run(threadId, input.text.trim().replace(/\s+/g, ' ').slice(0, 40) || '新对话', modelId, now, now, projectId)
+            .prepare('INSERT INTO threads(id,title,model_id,created_at,updated_at,hidden,project_id,agent_id,agent_config) VALUES(?,?,?,?,?,0,?,?,?)')
+            .run(
+              threadId,
+              input.text.trim().replace(/\s+/g, ' ').slice(0, 40) || '新对话',
+              modelId,
+              now,
+              now,
+              projectId,
+              projectAgent?.id ?? null,
+              projectAgent ? JSON.stringify(projectAgent) : null,
+            )
         else {
           if (modelId !== existing.modelId) db().prepare('UPDATE threads SET model_id=? WHERE id=?').run(modelId, threadId)
           if (existing.title === '新对话' && (input.text.trim() || fileIds.length)) {
@@ -661,6 +693,15 @@ export class AgentService {
       if (runtime.capabilities.navoTools) await computerUse.beginRun(threadId, executionId)
       this.assertActive(lock)
       const project = thread.projectId ? projects.get(thread.projectId) : null
+      const agentRow = db().prepare('SELECT agent_config FROM threads WHERE id=?').get(threadId) as { agent_config: string | null } | undefined
+      let agentProfile: AgentProfile | null = null
+      if (agentRow?.agent_config) {
+        try {
+          agentProfile = JSON.parse(agentRow.agent_config) as AgentProfile
+        } catch {
+          agentProfile = null
+        }
+      }
       const workspaceRoot = resolveRunWorkspaceRoot(
         input.kind,
         project?.workingDirectory ?? null,
@@ -670,9 +711,13 @@ export class AgentService {
       kv.set(`thread.workspace.${threadId}`, workspaceRoot)
       runState.workspaceRoot = workspaceRoot
       const resolved = opts.model ?? this.model(profile, thread.modelId)
+      const bound = agentProfile?.infrastructure
       const fileConfig = {
         paths: { skills: paths.skills, workspace: workspaceRoot, uploads: paths.uploads },
-        mounts: runtime.capabilities.navoTools ? skills.mounts(thread.projectId).map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] })) : [],
+        localSkills: runtime.capabilities.navoTools && typeof skills.localAllowed === 'function' ? skills.localAllowed(bound?.skillIds) : null,
+        mounts: runtime.capabilities.navoTools
+          ? skills.mounts(thread.projectId, bound?.skillIds).map((m) => ({ id: m.id, root: m.root, allowed: [...m.allowed] }))
+          : [],
       }
       const entries = runtime.capabilities.navoTools
         ? collectTools(
@@ -681,6 +726,7 @@ export class AgentService {
             workspaceRoot,
             runtime.capabilities.workspaceTools ? fileConfig : undefined,
             runState.commandAbort.signal,
+            bound,
           ).filter((entry) => entry.tool.name !== RUN_COMMAND || (!opts.headless && runtime.capabilities.approvals))
         : []
       runState.tools = new Map(entries.map((e) => [e.tool.name, e]))
@@ -705,11 +751,21 @@ export class AgentService {
         recoverUnknownTool: opts.recoverUnknownTool,
         model: resolved,
         systemPrompt: runtime.capabilities.navoTools
-          ? systemPrompt(page, mem ? mem.prompt : null, project ?? undefined, workspaceRoot, runtime.capabilities.browserSubagent === true)
+          ? systemPrompt(
+              page,
+              mem ? mem.prompt : null,
+              project ?? undefined,
+              workspaceRoot,
+              runtime.capabilities.browserSubagent === true,
+              agentProfile ?? undefined,
+            )
           : [
               `You are working in the local directory: ${workspaceRoot}.`,
               'Navo browser, desktop, plugin, memory, and approval tools are not available in this runtime. Use only tools provided by your agent runtime.',
               project ? `Project: ${project.name}\n${project.description ?? ''}` : '',
+              agentProfile
+                ? `Agent profile: ${agentProfile.name}\n${agentProfile.description ? `${agentProfile.description}\n` : ''}${agentProfile.instructions}`
+                : '',
               mem?.prompt ?? '',
             ]
               .filter(Boolean)

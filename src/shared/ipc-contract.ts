@@ -1,4 +1,5 @@
 import type { AgentRuntimeInfo, AgentRuntimeProfile, AgentRuntimeStatus } from './agent-runtime'
+import type { AgentTemplateId, AgentTemplateTeamId } from './agent-templates'
 import type { ProjectFilePage, ProjectFileSearchResult, ArtifactsQuery, ArtifactsPage } from './files-query'
 import type { DesktopGrant, UnifiedApproval } from './control-state'
 import type { ExternalViewState } from './external-view'
@@ -67,8 +68,11 @@ import type {
   ProjectInput,
   ProjectSummary,
   ProjectDetail,
+  ProjectAgentBinding,
   ProjectFileListing,
   Artifact,
+  AgentProfile,
+  AgentProfileInput,
   ExportFormat,
   Thread,
   ThreadState,
@@ -88,6 +92,14 @@ export interface Api {
   'drafts.move': (source: DraftScope, target: DraftScope, version: number) => { moved: boolean; draft: ChatDraft }
   'chat.submit': (input: ChatSubmitInput) => ChatSubmitReceipt
   'approvals.list': () => UnifiedApproval[]
+  // reusable agents
+  'agents.list': () => AgentProfile[]
+  'agents.get': (id: string) => AgentProfile | null
+  'agents.save': (input: AgentProfileInput) => AgentProfile
+  'agents.addTemplate': (id: AgentTemplateId) => AgentProfile
+  'agents.addTemplateTeam': (id: AgentTemplateTeamId) => void
+  'agents.delete': (id: string) => void
+  'agents.start': (id: string, projectId?: string | null) => Thread
   // models
   'providers.list': () => Provider[]
   'providers.save': (input: ProviderInput) => Provider
@@ -119,6 +131,8 @@ export interface Api {
   'projects.get': (id: string) => ProjectDetail | null
   'projects.save': (input: ProjectInput) => Project
   'projects.delete': (id: string) => void
+  'projects.agents': (id: string) => ProjectAgentBinding[]
+  'projects.setAgents': (id: string, defaultAgentId: string | null, agentIds: string[]) => ProjectAgentBinding[]
   'threads.rename': (id: string, title: string) => void
   'threads.delete': (id: string) => void
   'threads.setModel': (id: string, modelId: string) => void
@@ -372,6 +386,7 @@ export interface Api {
 
 /** Push events: main -> renderer */
 export interface Events {
+  'agents.changed': void
   'runtimes.changed': void
   'integrations.changed': void
   'drafts.changed': DraftScope

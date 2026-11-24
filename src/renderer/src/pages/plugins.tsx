@@ -147,24 +147,20 @@ export function PluginsPage() {
   }
 
   return (
-    <div className="@container flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8">
+    <div className="@container flex h-full flex-col px-4 pt-3 pb-4 @4xl:px-6">
       <PageHeader
         title={t('站点插件')}
+        count={list.data?.length}
+        more={[
+          { label: t('导入'), icon: FolderInput, run: () => call('plugins.import').then(list.reload, (e) => toast.error(errorMessage(e))) },
+          { label: t('重新加载'), icon: RotateCw, run: () => call('plugins.reload').then(list.reload, (e) => toast.error(errorMessage(e))) },
+        ]}
         description={t('为特定网站注入 DOM 脚本并暴露动作。打开匹配的网站时，动作会作为 plugin_* 工具提供给 Agent，比逐步点击更快更稳。')}
         actions={
-          <>
-            <Button variant="ghost" size="icon" onClick={async () => (await call('plugins.reload'), list.reload())} aria-label={t('重新加载')}>
-              <RotateCw />
-            </Button>
-            <Button variant="secondary" onClick={async () => (await call('plugins.import'), list.reload())}>
-              <FolderInput />
-              {t('导入')}
-            </Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              <Plus />
-              {t('新建插件')}
-            </Button>
-          </>
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <Plus />
+            {t('新建插件')}
+          </Button>
         }
       />
       <div className="flex min-h-0 flex-1 gap-4">

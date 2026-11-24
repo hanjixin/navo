@@ -124,6 +124,11 @@ export interface Project {
   description: string
   createdAt: number
   updatedAt: number
+  defaultAgentId?: string | null
+}
+export interface ProjectAgentBinding {
+  agent: AgentProfile
+  role: 'coordinator' | 'member'
 }
 export interface ProjectSummary extends Project {
   threadCount: number
@@ -132,6 +137,7 @@ export interface ProjectSummary extends Project {
 }
 export interface ProjectDetail extends ProjectSummary {
   threads: Thread[]
+  agents: ProjectAgentBinding[]
 }
 export interface ProjectFileEntry {
   name: string
@@ -151,6 +157,38 @@ export interface ProjectInput {
   id?: string
   name: string
   description?: string
+}
+
+// ---------- Agents ----------
+export interface AgentInfrastructure {
+  skillIds: string[]
+  mcpServerIds: string[]
+  connectorIds: string[]
+  pluginIds: string[]
+}
+
+/** A reusable agent profile with an isolated set of infrastructure bindings. */
+export interface AgentProfile {
+  templateId?: string | null
+  id: string
+  name: string
+  description: string
+  instructions: string
+  runtimeId: string
+  modelId: string | null
+  infrastructure: AgentInfrastructure
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AgentProfileInput {
+  id?: string
+  name: string
+  description?: string
+  instructions?: string
+  runtimeId: string
+  modelId?: string | null
+  infrastructure: AgentInfrastructure
 }
 
 export interface Artifact extends OutputFile {
@@ -187,6 +225,8 @@ export interface Thread {
   createdAt: number
   updatedAt: number
   projectId: string | null
+  /** The reusable profile this conversation was created from, if any. */
+  agentId?: string | null
 }
 
 export interface ToolCall {

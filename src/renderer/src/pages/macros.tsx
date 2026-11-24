@@ -555,9 +555,10 @@ export function MacrosPage() {
   }
 
   return (
-    <div className="@container flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8">
+    <div className="@container flex h-full flex-col px-4 pt-3 pb-4 @4xl:px-6">
       <PageHeader
         title={t('录制宏')}
+        count={list.data?.length}
         description={t('录制你在浏览器中的操作，回放或作为工具交给 Agent 调用。值中可用 {{参数}} 实现参数化。')}
         actions={
           <Button variant={state.recording ? 'danger' : 'primary'} onClick={toggleRecording}>

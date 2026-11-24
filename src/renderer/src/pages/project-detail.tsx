@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal, Activity, PackageOpen, ShieldCheck, Cpu } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, FolderOpen, SquareTerminal, Activity, PackageOpen, ShieldCheck, Cpu, Bot, Users } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Select } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { ErrorState, ListSkeleton } from '@/components/ui/states'
 import { ProjectEditor, ProjectDeleteDialog } from '@/components/projects/project-dialogs'
 import { ThreadList } from '@/components/chat/thread-list'
@@ -17,7 +20,7 @@ import { mainDraftScope, submitDraft } from '@/stores/drafts'
 import { useModels } from '@/stores/models'
 import { call } from '@/lib/ipc'
 import { currentSearchParams, projectPath, threadPath } from '@/lib/routes'
-import { cn } from '@/lib/utils'
+import { cn, errorMessage } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 const runStatusLabel = (status?: string | null) =>
@@ -64,6 +67,16 @@ export function ProjectDetailPage() {
       servers.map(async (server) => ({ ...server, projectEnabled: projectId ? await call('mcp.projectEnabled', projectId, server.id) : true })),
     )
   }, [projectId, revision])
+  const allAgents = useAsync(() => call('agents.list'), [revision])
+  const saveProjectAgents = async (defaultAgentId: string | null, agentIds: string[]) => {
+    try {
+      if (!projectId) return
+      await call('projects.setAgents', projectId, defaultAgentId, agentIds)
+      detail.reload()
+    } catch (error) {
+      toast.error(t('操作失败'), { description: errorMessage(error) })
+    }
+  }
   const summary = useAsync(async () => {
     const ids = new Set(project?.threads.map((thread) => thread.id) ?? [])
     const [artifacts, approvals, runs] = await Promise.all([call('artifacts.list', projectId), call('approvals.list'), call('tasks.runs')])
@@ -200,6 +213,62 @@ export function ProjectDetailPage() {
             <p className="mt-2 mb-5 font-mono text-sm break-all text-muted-foreground">{project.workingDirectory ?? t('默认 Navo 工作区')}</p>
             <h2 className="font-medium">{t('项目说明')}</h2>
             <p className="mt-2 text-sm whitespace-pre-wrap text-muted-foreground">{project.description || t('暂无项目说明')}</p>
+            <div className="mt-5 rounded-lg border border-border p-3">
+              <div className="flex items-start gap-3">
+                <Bot className="mt-0.5 size-4 shrink-0 text-brand" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-medium">{t('项目助手')}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('新建项目会话会继承默认智能体；已有会话保留创建时的配置。')}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3">
+                <Select
+                  value={project.defaultAgentId ?? 'none'}
+                  onChange={(value) => {
+                    const next = value === 'none' ? null : value
+                    const ids = [...new Set([...(project.agents ?? []).map((item) => item.agent.id), ...(next ? [next] : [])])]
+                    void saveProjectAgents(next, ids)
+                  }}
+                  options={[
+                    { value: 'none', label: t('未设置默认智能体'), hint: t('新建会话沿用手动选择') },
+                    ...(allAgents.data ?? []).map((agent) => ({ value: agent.id, label: agent.name, hint: agent.description })),
+                  ]}
+                />
+                <div className="rounded-md bg-muted/50 p-2">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Users className="size-3.5" />
+                    {t('工作组成员')}
+                  </div>
+                  <div className="grid gap-1">
+                    {(allAgents.data ?? []).map((agent) => {
+                      const members = new Set((project.agents ?? []).map((item) => item.agent.id))
+                      const selected = members.has(agent.id)
+                      const coordinator = project.defaultAgentId === agent.id
+                      return (
+                        <label key={agent.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent">
+                          <Switch
+                            checked={selected}
+                            onCheckedChange={(enabled) => {
+                              const next = new Set(members)
+                              if (enabled) next.add(agent.id)
+                              else next.delete(agent.id)
+                              const nextDefault = coordinator && !enabled ? ([...next][0] ?? null) : (project.defaultAgentId ?? null)
+                              void saveProjectAgents(nextDefault, [...next])
+                            }}
+                            aria-label={agent.name}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+                          {coordinator ? <Badge variant="primary">{t('协调员')}</Badge> : null}
+                        </label>
+                      )
+                    })}
+                    {!allAgents.loading && !(allAgents.data ?? []).length ? (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">{t('还没有智能体，请先创建一个')}</p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="mt-5 flex items-center justify-between rounded-lg border border-border p-3">
               <div>
                 <h2 className="font-medium">{t('项目记忆')}</h2>

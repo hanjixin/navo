@@ -269,9 +269,10 @@ export class McpService {
     }
   }
 
-  tools(projectId?: string | null): StructuredToolInterface[] {
+  tools(projectId?: string | null, allowedIds?: string[]): StructuredToolInterface[] {
     const disabled = projectId ? new Set(kv.get<string[]>(`project.mcp.disabled.${projectId}`, [])) : new Set<string>()
-    return [...this.conns.entries()].filter(([id]) => !disabled.has(id)).flatMap(([, c]) => c.tools)
+    const allowed = allowedIds ? new Set(allowedIds) : null
+    return [...this.conns.entries()].filter(([id]) => !disabled.has(id) && (!allowed || allowed.has(id))).flatMap(([, c]) => c.tools)
   }
 
   projectEnabled(projectId: string, serverId: string): boolean {

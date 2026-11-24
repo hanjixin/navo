@@ -197,6 +197,33 @@ const MIGRATIONS: string[] = [
   ALTER TABLE threads ADD COLUMN runtime_id TEXT NOT NULL DEFAULT 'builtin';
   ALTER TABLE threads ADD COLUMN runtime_config TEXT;
   `,
+  `
+  CREATE TABLE agents (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', instructions TEXT NOT NULL DEFAULT '',
+    runtime_id TEXT NOT NULL, model_id TEXT, infrastructure TEXT NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  );
+  ALTER TABLE threads ADD COLUMN agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
+  ALTER TABLE threads ADD COLUMN agent_config TEXT;
+  CREATE INDEX threads_agent ON threads(agent_id, updated_at);
+  `,
+  `
+  ALTER TABLE agents ADD COLUMN template_id TEXT;
+  CREATE UNIQUE INDEX agents_template ON agents(template_id) WHERE template_id IS NOT NULL;
+  INSERT INTO agents(id,name,runtime_id,infrastructure,created_at,updated_at)
+    VALUES('navo-assistant','','builtin','{"skillIds":[],"mcpServerIds":[],"connectorIds":[],"pluginIds":[]}',0,0);
+  `,
+  `
+  ALTER TABLE projects ADD COLUMN default_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
+  CREATE TABLE project_agents (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member',
+    is_coordinator INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(project_id, agent_id)
+  );
+  CREATE INDEX project_agents_project ON project_agents(project_id, is_coordinator DESC);
+  `,
 ]
 
 /** Opens (and migrates) the app database. No Electron imports: also used by the agent process. */

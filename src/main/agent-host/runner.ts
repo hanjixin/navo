@@ -149,7 +149,7 @@ export class Runner {
       checkpointer: this.saver,
       backend,
       // later sources win on name clashes, so local skills override external ones
-      skills: [...req.mounts.map((m) => `/ext/${m.id}/`), '/skills/'],
+      skills: [...req.mounts.map((m) => `/ext/${m.id}/`), ...(req.localSkills == null || req.localSkills.length ? ['/skills/'] : [])],
       interruptOn,
       middleware: [loopGuard(), trimOldToolResults()],
       subagents: req.browserSubagent

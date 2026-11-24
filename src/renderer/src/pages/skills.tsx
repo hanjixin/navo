@@ -29,7 +29,6 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
 import { AsyncView, EmptyState, ErrorState, ListSkeleton, Skeleton } from '@/components/ui/states'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip } from '@/components/ui/tooltip'
 import { useAsync } from '@/hooks/use-async'
 import { useSkillEvolution } from '@/hooks/use-skill-evolution'
 import { call } from '@/lib/ipc'
@@ -285,6 +284,7 @@ function DiscoverDialog({ onClose, onInstalled }: { onClose: () => void; onInsta
 export function SkillsPage() {
   const list = useAsync(() => call('skills.list'))
   const [selected, setSelected] = useState<string | null>(null)
+  const [inspect, setInspect] = useState(false)
   const [content, setContent] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -313,18 +313,31 @@ export function SkillsPage() {
     return [...m.entries()]
   }, [list.data, q])
 
-  useEffect(() => {
-    if (!selected && list.data?.length) setSelected(list.data[0].id)
-  }, [list.data, selected])
-
   const current = list.data?.find((s) => s.id === selected)
+  const inspecting = !!current && inspect
+  const openSkill = (id: string) => {
+    if (dirty && selected !== id && !window.confirm(t('放弃未保存的修改？'))) return
+    setSelected(id)
+    setInspect(true)
+  }
 
   useEffect(() => {
     if (!selected) return
     setContent(null)
     setLoadError(null)
     setDirty(false)
-    call('skills.read', selected).then(setContent, (e) => setLoadError(errorMessage(e)))
+    let active = true
+    call('skills.read', selected).then(
+      (value) => {
+        if (active) setContent(value)
+      },
+      (e) => {
+        if (active) setLoadError(errorMessage(e))
+      },
+    )
+    return () => {
+      active = false
+    }
   }, [selected, revision])
 
   const save = async () => {
@@ -353,6 +366,7 @@ export function SkillsPage() {
       setNewName('')
       list.reload()
       setSelected(name)
+      setInspect(true)
     } catch (e) {
       toast.error(t('创建失败'), { description: errorMessage(e) })
     }
@@ -375,6 +389,7 @@ export function SkillsPage() {
       toast.success(t('已复制到本地：{{v0}}', { v0: s.name }), { description: t('本地版本会覆盖同名的外部 Skill') })
       list.reload()
       setSelected(s.id)
+      setInspect(true)
     } catch (e) {
       toast.error(t('复制失败'), { description: errorMessage(e) })
     }
@@ -384,9 +399,36 @@ export function SkillsPage() {
   const enabled = list.data?.filter((s) => s.enabled && !s.shadowed).length ?? 0
 
   return (
-    <div className="@container flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8">
+    <div className="@container flex h-full flex-col px-4 pt-3 pb-4 @4xl:px-6">
       <PageHeader
         title="Skill"
+        count={list.data?.length}
+        search={{
+          label: t('搜索 Skill'),
+          value: q,
+          onChange: setQ,
+        }}
+        more={[
+          { label: t('发现'), icon: Search, run: () => setDiscoverOpen(true) },
+          {
+            label: t('导入'),
+            icon: FolderInput,
+            run: async () => {
+              try {
+                const imported = await call('skills.import')
+                if (imported.length) {
+                  toast.success(t('已导入 {{v0}} 个 Skill', { v0: imported.length }))
+                  list.reload()
+                }
+              } catch (error) {
+                toast.error(t('操作失败'), { description: errorMessage(error) })
+              }
+            },
+          },
+          { label: t('来源'), icon: FolderCog, run: () => setSourcesOpen(true) },
+          { label: t('自迭代'), icon: WandSparkles, run: () => setEvolutionOpen(true) },
+          { label: t('重新扫描'), icon: RotateCw, run: list.reload, disabled: list.loading },
+        ]}
         description={
           <>
             {t('可复用的专业流程说明（SKILL.md）。同时扫描')} <code className="font-mono text-xs">~/.agents/skills</code>{' '}
@@ -395,46 +437,15 @@ export function SkillsPage() {
           </>
         }
         actions={
-          <>
-            <Tooltip content={t('重新扫描')}>
-              <Button variant="ghost" size="icon" onClick={list.reload} aria-label={t('重新扫描')}>
-                <RotateCw className={cn(list.loading && 'animate-spin')} />
-              </Button>
-            </Tooltip>
-            <Button variant="secondary" onClick={() => setEvolutionOpen(true)}>
-              <WandSparkles />
-              {t('自迭代')}
-            </Button>
-            <Button variant="secondary" onClick={() => setDiscoverOpen(true)}>
-              <Search />
-              {t('发现')}
-            </Button>
-            <Button variant="secondary" onClick={() => setSourcesOpen(true)}>
-              <FolderCog />
-              {t('来源')}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                const imported = await call('skills.import')
-                if (imported.length) toast.success(t('已导入 {{v0}} 个 Skill', { v0: imported.length }))
-                list.reload()
-              }}
-            >
-              <FolderInput />
-              {t('导入')}
-            </Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              <Plus />
-              {t('新建 Skill')}
-            </Button>
-          </>
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <Plus />
+            {t('新建 Skill')}
+          </Button>
         }
       />
       <ProposalCards proposals={proposals} />
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="flex w-56 shrink-0 flex-col @4xl:w-72">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('搜索 Skill')} className="mb-3 h-7 text-xs" />
+        <div className="flex w-64 shrink-0 flex-col @4xl:w-72">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <AsyncView
               state={list}
@@ -462,28 +473,28 @@ export function SkillsPage() {
                           <span className="truncate">{t(label)}</span>
                           <span className="ml-auto">{items.length}</span>
                         </div>
-                        <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+                        <div className="grid grid-cols-1 gap-1.5">
                           {items.map((s) => (
                             <div
                               key={s.id}
-                              onClick={() => setSelected(s.id)}
                               className={cn(
-                                'card-hover cursor-default rounded-lg border bg-card px-3.5 py-3',
-                                selected === s.id ? 'border-primary/40 ring-1 ring-primary/15' : 'border-border',
+                                'card-hover relative min-w-0 rounded-lg border bg-card p-3',
+                                inspecting && selected === s.id ? 'border-primary/40 ring-1 ring-primary/15' : 'border-border',
                               )}
                             >
                               <div className="flex items-center gap-2">
-                                <span
-                                  className={cn('min-w-0 flex-1 truncate font-mono text-sm font-medium', (!s.enabled || s.shadowed) && 'text-muted-foreground')}
+                                <button
+                                  type="button"
+                                  onClick={() => openSkill(s.id)}
+                                  title={s.name}
+                                  className={cn(
+                                    'min-w-0 flex-1 truncate text-left font-mono text-sm font-medium after:absolute after:inset-0 after:rounded-lg',
+                                    (!s.enabled || s.shadowed) && 'text-muted-foreground',
+                                  )}
                                 >
                                   {s.name}
-                                </span>
-                                <Switch
-                                  checked={s.enabled}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onCheckedChange={(v) => void toggle(s, v)}
-                                  aria-label={t('启用')}
-                                />
+                                </button>
+                                <Switch checked={s.enabled} className="relative z-10" onCheckedChange={(v) => void toggle(s, v)} aria-label={t('启用')} />
                               </div>
                               <p data-user-content className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                                 {s.description || t('（缺少描述）')}
@@ -519,84 +530,82 @@ export function SkillsPage() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {!current ? (
-            list.data?.length ? null : (
-              <div className="flex-1 rounded-lg border border-dashed border-border" />
-            )
-          ) : loadError ? (
-            <ErrorState error={loadError} onRetry={() => setSelected((s) => s)} />
-          ) : content == null ? (
-            <div className="grid gap-2">
-              <Skeleton className="h-8 w-1/3" />
-              <Skeleton className="h-[420px]" />
-            </div>
-          ) : (
-            <>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="min-w-0 truncate font-mono text-sm font-medium">
-                  {current.readOnly ? current.path.replace(/^\/Users\/[^/]+/, '~') : `${current.name}/SKILL.md`}
-                </span>
-                {dirty ? <span className="text-xs text-warning">{t('未保存')}</span> : null}
-                <div className="ml-auto flex gap-1.5">
-                  <Button variant="ghost" size="sm" onClick={() => void call('skills.reveal', current.id)}>
-                    <FolderOpen />
-                    {t('打开目录')}
-                  </Button>
-                  {current.readOnly ? (
-                    <Button variant="primary" size="sm" onClick={copyToLocal} disabled={current.shadowed}>
-                      <Copy />
-                      {t('复制到本地编辑')}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                        <History />
-                        {t('版本')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="hover:text-danger"
-                        onClick={async () => {
-                          await call('skills.delete', current.id)
-                          setSelected(null)
-                          list.reload()
-                        }}
-                      >
-                        <Trash2 />
-                        {t('删除')}
-                      </Button>
-                      <Button variant="primary" size="sm" loading={saving} disabled={!dirty} onClick={save}>
-                        {!saving ? <Save /> : null}
-                        {t('保存')}
-                      </Button>
-                    </>
-                  )}
-                </div>
+        {inspecting && current ? (
+          <div className="flex min-w-0 flex-1 flex-col">
+            {loadError ? (
+              <ErrorState error={loadError} onRetry={() => setRevision((n) => n + 1)} />
+            ) : content == null ? (
+              <div className="grid gap-2">
+                <Skeleton className="h-8 w-1/3" />
+                <Skeleton className="h-[420px]" />
               </div>
-              {current.readOnly ? (
-                <div className="mb-2 flex animate-fade-in items-center gap-2 rounded-md bg-info-soft px-3 py-2 text-xs text-muted-foreground">
-                  <Lock className="size-3.5 shrink-0 text-brand" />
-                  {t('来自 {{v0}}，与其他 Agent 共享，这里以只读方式使用。', { v0: current.sourceLabel })}
-                  {current.shadowed ? t('本地已有同名 Skill，Agent 会优先使用本地版本。') : ''}
+            ) : (
+              <>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="min-w-0 truncate font-mono text-sm font-medium">
+                    {current.readOnly ? current.path.replace(/^\/Users\/[^/]+/, '~') : `${current.name}/SKILL.md`}
+                  </span>
+                  {dirty ? <span className="text-xs text-warning">{t('未保存')}</span> : null}
+                  <div className="ml-auto flex gap-1.5">
+                    <Button variant="ghost" size="sm" onClick={() => void call('skills.reveal', current.id)}>
+                      <FolderOpen />
+                      {t('打开目录')}
+                    </Button>
+                    {current.readOnly ? (
+                      <Button variant="primary" size="sm" onClick={copyToLocal} disabled={current.shadowed}>
+                        <Copy />
+                        {t('复制到本地编辑')}
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                          <History />
+                          {t('版本')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="hover:text-danger"
+                          onClick={async () => {
+                            await call('skills.delete', current.id)
+                            setSelected(null)
+                            list.reload()
+                          }}
+                        >
+                          <Trash2 />
+                          {t('删除')}
+                        </Button>
+                        <Button variant="primary" size="sm" loading={saving} disabled={!dirty} onClick={save}>
+                          {!saving ? <Save /> : null}
+                          {t('保存')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              ) : null}
-              <CodeEditor
-                className="min-h-0 flex-1"
-                value={content}
-                language="markdown"
-                readOnly={current.readOnly}
-                onSave={save}
-                onChange={(v) => {
-                  setContent(v)
-                  setDirty(true)
-                }}
-              />
-              {!current.enabled ? <p className="mt-2 text-xs text-muted-foreground">{t('该 Skill 已禁用，Agent 不会加载。')}</p> : null}
-            </>
-          )}
-        </div>
+                {current.readOnly ? (
+                  <div className="mb-2 flex animate-fade-in items-center gap-2 rounded-md bg-info-soft px-3 py-2 text-xs text-muted-foreground">
+                    <Lock className="size-3.5 shrink-0 text-brand" />
+                    {t('来自 {{v0}}，与其他 Agent 共享，这里以只读方式使用。', { v0: current.sourceLabel })}
+                    {current.shadowed ? t('本地已有同名 Skill，Agent 会优先使用本地版本。') : ''}
+                  </div>
+                ) : null}
+                <CodeEditor
+                  className="min-h-0 flex-1"
+                  value={content}
+                  language="markdown"
+                  readOnly={current.readOnly}
+                  onSave={save}
+                  onChange={(v) => {
+                    setContent(v)
+                    setDirty(true)
+                  }}
+                />
+                {!current.enabled ? <p className="mt-2 text-xs text-muted-foreground">{t('该 Skill 已禁用，Agent 不会加载。')}</p> : null}
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <Dialog open={creating} onOpenChange={setCreating}>

@@ -165,7 +165,7 @@ export function FilesPage() {
 
   return (
     <div
-      className="@container relative flex h-full flex-col px-6 pt-6 pb-6 @4xl:px-8"
+      className="@container relative flex h-full flex-col px-4 pt-3 pb-4 @4xl:px-6"
       onDragOver={(e) => {
         e.preventDefault()
         setDragging(true)
@@ -175,18 +175,14 @@ export function FilesPage() {
     >
       <PageHeader
         title={t('文件')}
+        count={items?.length}
+        more={[{ label: t('解析引擎'), icon: Cpu, run: () => setEnginesOpen(true) }]}
         description={t('上传的文件会被解析为保留结构的 Markdown（标题、列表、表格、页码），供 Agent 阅读和引用。')}
         actions={
-          <>
-            <Button variant="secondary" onClick={() => setEnginesOpen(true)}>
-              <Cpu />
-              {t('解析引擎')}
-            </Button>
-            <Button variant="primary" onClick={() => void pick().then((r) => r[0] && setSelected(r[0].id))}>
-              <Upload />
-              {t('上传文件')}
-            </Button>
-          </>
+          <Button variant="primary" size="sm" onClick={() => void pick().then((r) => r[0] && setSelected(r[0].id))}>
+            <Upload />
+            {t('上传文件')}
+          </Button>
         }
       />
 

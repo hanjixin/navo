@@ -29,7 +29,7 @@ export function ArtifactsPage() {
     }
   }, [projects, projectId, setParams])
   return (
-    <div className="@container flex h-full min-w-0 flex-col px-6 py-6 @4xl:px-8">
+    <div className="@container flex h-full min-w-0 flex-col px-4 pt-3 pb-4 @4xl:px-6">
       <PageHeader
         title={t('Artifacts')}
         description={t('按项目查看 Agent 写下或下载的文件。')}

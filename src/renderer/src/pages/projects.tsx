@@ -1,9 +1,8 @@
-import { FolderKanban, Plus, Search, ChevronRight, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { FolderKanban, Plus, ChevronRight, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Page, PageHeader } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { EmptyState, ErrorState, ListSkeleton } from '@/components/ui/states'
 import type { Project } from '@shared/types'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -28,6 +27,8 @@ export function ProjectsPage() {
     <Page>
       <PageHeader
         title={t('项目')}
+        count={projects?.length}
+        search={{ label: t('搜索项目'), value: query, onChange: setQuery }}
         description={t('进入项目，继续对话或查看产物。')}
         actions={
           <Button variant="primary" onClick={() => setCreating(true)}>
@@ -36,10 +37,6 @@ export function ProjectsPage() {
           </Button>
         }
       />
-      <div className="relative mb-5">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('搜索项目')} className="pl-9" />
-      </div>
       {error ? <ErrorState error={error} onRetry={() => void load()} className="mb-4" /> : null}
       {!projects ? (
         <ListSkeleton />

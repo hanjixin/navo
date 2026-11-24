@@ -34,6 +34,8 @@ import { ArtifactsPage } from '@/pages/artifacts'
 import { wireProjectEvents } from '@/stores/projects'
 import { wireArtifactEvents } from '@/stores/artifacts'
 import { wireDraftEvents } from '@/stores/drafts'
+import { AgentsPage } from '@/pages/agents'
+import { wireAgentEvents } from '@/stores/agents'
 
 /** this renderer is the quick window (global shortcut), not the main window */
 const isQuick = window.location.hash.startsWith('#/quick')
@@ -55,6 +57,7 @@ export function App() {
     wireFlowEvents()
     wireProjectEvents()
     wireArtifactEvents()
+    wireAgentEvents()
   }, [load])
 
   return (
@@ -79,6 +82,7 @@ export function App() {
               <Route path="/files" element={<FilesPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/artifacts" element={<ArtifactsPage />} />
+              <Route path="/agents" element={<AgentsPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/connectors" element={<ConnectorsPage />} />
               <Route path="/mcp" element={<McpPage />} />

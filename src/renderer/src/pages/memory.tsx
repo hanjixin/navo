@@ -696,22 +696,18 @@ export function MemoryPage() {
   const enabled = settings?.memory.enabled ?? true
 
   return (
-    <div className="@container flex h-full flex-col overflow-y-auto px-6 pt-6 pb-10 @4xl:px-8">
+    <div className="@container flex h-full flex-col overflow-y-auto px-4 pt-3 pb-8 @4xl:px-6">
       <div className="mx-auto w-full max-w-3xl">
         <PageHeader
           title={t('记忆')}
+          count={items?.length}
+          more={[{ label: t('设置'), icon: Settings2, run: () => setSettingsOpen(true), disabled: !settings }]}
           description={t('Navo 记住的关于你的信息，会在相关对话中自动使用，可随时修改或删除。')}
           actions={
-            <>
-              <Button variant="secondary" onClick={() => setSettingsOpen(true)} disabled={!settings}>
-                <Settings2 />
-                {t('设置')}
-              </Button>
-              <Button variant="primary" onClick={() => setEditing({})}>
-                <Plus />
-                {t('新建记忆')}
-              </Button>
-            </>
+            <Button variant="primary" size="sm" onClick={() => setEditing({})}>
+              <Plus />
+              {t('新建记忆')}
+            </Button>
           }
         />
 

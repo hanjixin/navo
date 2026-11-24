@@ -57,6 +57,8 @@ export interface RunRequest {
   /** the run's memory section, also given to the browser-operator subagent */
   memoryPrompt?: string
   mounts: { id: string; root: string; allowed: string[] }[]
+  /** null uses all enabled local skills; an array is an explicit agent allow-list. */
+  localSkills?: string[] | null
   paths: { skills: string; workspace: string; uploads: string }
   devMode: boolean
   langfuse?: LangfuseConfig
